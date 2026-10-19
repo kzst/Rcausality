@@ -57,6 +57,11 @@ plot.causres <- function(x, type = c("network", "heatmap", "bars", "both"),
     m <- (a2 + b2) / 2 + nrm * 0.07
     graphics::text(m[1], m[2], S$lag[i], cex = 0.75, col = "#444444")
   }
+  Cd <- x$classes[x$classes$common_driver %in% TRUE, , drop = FALSE]
+  for (i in seq_len(nrow(Cd))) {
+    a <- xy[Cd$var1[i], ]; b <- xy[Cd$var2[i], ]
+    graphics::segments(a[1], a[2], b[1], b[2], lty = 2, lwd = 2, col = "#E69F00")
+  }
   deg_out <- vapply(vars, function(v) sum(S$cause == v), 0)
   deg_in <- vapply(vars, function(v) sum(S$effect == v), 0)
   fill <- ifelse(deg_in + deg_out == 0, .pal$nocausal,
@@ -66,10 +71,10 @@ plot.causres <- function(x, type = c("network", "heatmap", "bars", "both"),
   graphics::text(xy[, 1], xy[, 2], vars, cex = 0.85, col = .pal$text)
   graphics::legend("bottomleft", bty = "n", cex = 0.7,
                    legend = c("positive net effect", "negative net effect",
-                              "driver", "target/mediator", "isolated"),
-                   col = c(.pal$pos, .pal$neg, NA, NA, NA), lty = c(1, 1, NA, NA, NA),
-                   pt.bg = c(NA, NA, .pal$causal, .pal$node, .pal$nocausal),
-                   pch = c(NA, NA, 22, 22, 22), pt.cex = 1.4)
+                              "common-driver evidence", "driver", "target/mediator", "isolated"),
+                   col = c(.pal$pos, .pal$neg, "#E69F00", NA, NA, NA), lty = c(1, 1, 2, NA, NA, NA),
+                   pt.bg = c(NA, NA, NA, .pal$causal, .pal$node, .pal$nocausal),
+                   pch = c(NA, NA, NA, 22, 22, 22), pt.cex = 1.4)
   graphics::mtext(sprintf("edge width ~ %s; label = lag; %s", .evid_lab(evidence), x$settings$method),
                   side = 1, line = -0.2, cex = 0.7, col = "grey40")
 }

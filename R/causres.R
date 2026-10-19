@@ -19,7 +19,7 @@
 NULL
 
 .new_causres <- function(pairs, series, causes, effects, method, conditional,
-                         alpha, bf_threshold, adjust, n, call, data) {
+                         alpha, bf_threshold, adjust, n, call, data, instant = NULL) {
   # unordered-pair classification
   key <- function(a, b) paste(pmin(a, b), pmax(a, b), sep = "\r")
   up <- unique(data.frame(v1 = pmin(pairs$cause, pairs$effect),
@@ -36,7 +36,14 @@ NULL
         if (is.na(s_ab) && is.na(s_ba)) NA_character_ else "independent"
     # one-sided blocks (x -> y only tested): the reverse is not assessed
     tested_both <- nrow(ab) > 0 && nrow(ba) > 0
-    data.frame(var1 = a, var2 = b, class = cl, both_directions_tested = tested_both,
+    cd <- FALSE
+    if (!is.null(instant)) {
+      ii <- instant[instant$var1 == a & instant$var2 == b, , drop = FALSE]
+      cd <- nrow(ii) > 0 && isTRUE(ii$significant)
+      if (cd && cl == "independent") cl <- "common_cause"
+    }
+    data.frame(var1 = a, var2 = b, class = cl, common_driver = cd,
+               both_directions_tested = tested_both,
                p_adj_12 = if (nrow(ab)) ab$p_adj else NA_real_,
                p_adj_21 = if (nrow(ba)) ba$p_adj else NA_real_,
                bf10_12 = if (nrow(ab)) ab$bf10 else NA_real_,
@@ -48,14 +55,18 @@ NULL
     ifelse(classes$class == "x_to_y", paste(classes$var1, "->", classes$var2),
     ifelse(classes$class == "y_to_x", paste(classes$var2, "->", classes$var1),
     ifelse(classes$class == "bidirectional", paste(classes$var1, "<->", classes$var2),
-           paste(classes$var1, "|", classes$var2)))))
+    ifelse(classes$class == "common_cause", paste(classes$var1, "<-L->", classes$var2),
+           paste(classes$var1, "|", classes$var2))))))
+  classes$relation <- ifelse(!is.na(classes$class) & classes$common_driver &
+                               classes$class != "common_cause",
+                             paste0(classes$relation, " (+ common driver?)"), classes$relation)
   # direction labels are relative to (var1, var2): x = var1, y = var2
   structure(list(pairs = pairs, classes = classes, series = series,
                  causes = causes, effects = effects,
                  settings = list(method = method, conditional = conditional,
                                  alpha = alpha, bf_threshold = bf_threshold,
                                  adjust = adjust, n = n),
-                 call = call, data = data),
+                 call = call, data = data, instant = instant),
             class = "causres")
 }
 
@@ -89,7 +100,8 @@ print.causres <- function(x, digits = 3, ...) {
   s <- x$settings
   mname <- c(granger = "Granger causality (F-test)",
              bayes_granger = "Bayesian Granger causality (BIC Bayes factor)",
-             cmi = "Conditional mutual information (kNN, local permutation)")[[s$method]]
+             cmi = "Conditional mutual information (kNN, local permutation)",
+             cmi_lag = "Lag-shifted conditional mutual information (Zlatniczki et al., 2021)")[[s$method]]
   cat("\n  Rcausality: ", mname, "\n", sep = "")
   cat("  ", length(x$series), " series, n = ", s$n, ", ",
       nrow(x$pairs), " directed tests",
@@ -110,9 +122,19 @@ print.causres <- function(x, digits = 3, ...) {
     P.post = formatC(P$post_prob, digits = digits, format = "f"),
     sig = ifelse(P$significant, paste0("yes ", .stars(P$p_adj)), "no"),
     check.names = FALSE, stringsAsFactors = FALSE)
-  names(tab)[names(tab) == "F"] <- if (s$method == "cmi") "CMI" else "F"
-  if (s$method == "cmi") tab <- tab[, !names(tab) %in% c("df", "BF10", "P.post")]
+  cmi_like <- s$method %in% c("cmi", "cmi_lag")
+  names(tab)[names(tab) == "F"] <- if (cmi_like) "CMI" else "F"
+  if (cmi_like) tab <- tab[, !names(tab) %in% c("df", "BF10", "P.post")]
   print(tab, row.names = FALSE, right = FALSE)
+  if (!is.null(x$instant)) {
+    cat("\n  Contemporaneous dependence given both pasts (k = 0; common-driver evidence):\n")
+    I <- x$instant
+    print(data.frame(pair = paste(I$var1, "~", I$var2),
+                     CMI = formatC(I$cmi, digits = digits, format = "f"),
+                     p = .fmt_p(I$p_value), p.adj = .fmt_p(I$p_adj),
+                     common.driver = ifelse(I$significant, "yes", "no"),
+                     check.names = FALSE), row.names = FALSE, right = FALSE)
+  }
   cat("\n  Classification of series pairs:\n")
   C <- x$classes
   ct <- data.frame(pair = paste(C$var1, "~", C$var2), class = C$class,

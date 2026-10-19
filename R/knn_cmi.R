@@ -96,21 +96,93 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
 }
 
 # Directed CMI test for one ordered pair, scanning lags ---------------------
-.cmi_pair <- function(effect, cause, controls, lags, history, k, k_perm, n_perm) {
-  n <- length(effect); Lmax <- max(lags, history)
-  yt <- effect[(Lmax + 1):n]
-  hist_m <- do.call(cbind, lapply(seq_len(history), function(l) effect[(Lmax + 1 - l):(n - l)]))
-  ctrl <- if (is.null(controls)) NULL else
-    do.call(cbind, lapply(seq_len(ncol(controls)), function(j)
-      do.call(cbind, lapply(seq_len(history), function(l) controls[(Lmax + 1 - l):(n - l), j]))))
-  Z <- cbind(hist_m, ctrl)
+# I(cause[t-tau]; effect[t] | effect history, [cause history before t-tau],
+#   [controls history]);  `cause_past = TRUE` adds the cause's own past
+# (full transfer-entropy-type conditioning, Zlatniczki et al. 2021).
+.hist_cols <- function(v, t_idx, history, shift = 0L) {
+  do.call(cbind, lapply(seq_len(history), function(l) v[t_idx - shift - l]))
+}
+
+.cmi_pair <- function(effect, cause, controls, lags, history, k, k_perm, n_perm,
+                      cause_past = FALSE) {
+  n <- length(effect)
+  Lmax <- if (cause_past) max(lags) + history else max(lags, history)
+  t_idx <- (Lmax + 1):n
+  yt <- effect[t_idx]
+  Z <- .hist_cols(effect, t_idx, history)
+  if (!is.null(controls))
+    Z <- cbind(Z, do.call(cbind, lapply(seq_len(ncol(controls)),
+                                        function(j) .hist_cols(controls[, j], t_idx, history))))
   res <- lapply(lags, function(tau) {
-    xt <- cause[(Lmax + 1 - tau):(n - tau)]
-    r <- local_permutation_test(xt, yt, Z, k = k, k_perm = k_perm, n_perm = n_perm)
+    xt <- cause[t_idx - tau]
+    Zt <- if (cause_past) cbind(Z, .hist_cols(cause, t_idx, history, shift = tau)) else Z
+    r <- local_permutation_test(xt, yt, Zt, k = k, k_perm = k_perm, n_perm = n_perm)
     c(cmi = r$cmi, p = r$p_value)
   })
   res <- do.call(rbind, res)
   b <- which.min(res[, "p"])
   list(lag = lags[b], statistic = res[b, "cmi"],
-       p_value = min(1, res[b, "p"] * length(lags)), n_eff = n - Lmax)
+       p_value = min(1, res[b, "p"] * length(lags)), n_eff = n - Lmax,
+       by_lag = data.frame(lag = lags, cmi = res[, "cmi"], p = res[, "p"]))
+}
+
+# Contemporaneous (k = 0) dependence given both pasts: I(x[t]; y[t] | pasts).
+# Evidence of a common driver (or instantaneous causation) in the sense of
+# Zlatniczki et al. (2021), Relation 1.
+.cmi_instant <- function(x, y, controls, history, k, k_perm, n_perm) {
+  n <- length(y); t_idx <- (history + 1):n
+  Z <- cbind(.hist_cols(x, t_idx, history), .hist_cols(y, t_idx, history))
+  if (!is.null(controls))
+    Z <- cbind(Z, do.call(cbind, lapply(seq_len(ncol(controls)),
+                                        function(j) .hist_cols(controls[, j], t_idx, history))))
+  r <- local_permutation_test(x[t_idx], y[t_idx], Z, k = k, k_perm = k_perm, n_perm = n_perm)
+  list(cmi = r$cmi, p_value = r$p_value)
+}
+
+#' Conditional mutual information as a function of the history depth
+#'
+#' Computes I(x[t-lag]; y[t] | x and y histories of depth d) for a sequence
+#' of depths `d`. In the framework of Zlatniczki et al. (2021, App. A), for a
+#' lag `k` below the minimal driving lag the CMI tends to 0 as the depth grows
+#' when there is no hidden common driver, but converges to a positive
+#' constant if there is one.
+#'
+#' @param x,y numeric vectors.
+#' @param lag lag `k >= 0` (0 = contemporaneous).
+#' @param depths integer vector of history depths.
+#' @param k number of neighbours.
+#' @return A data frame with columns `depth` and `cmi`.
+#' @references Zlatniczki et al. (2021) Entropy 23(11), 1450.
+#' @export
+#' @examples
+#' set.seed(1); e <- rnorm(400); x <- e + rnorm(400, 0, .5); y <- e + rnorm(400, 0, .5)
+#' cmi_convergence(x, y, lag = 0, depths = 1:3)
+cmi_convergence <- function(x, y, lag = 0L, depths = 1:4, k = 5L) {
+  n <- length(y); dmax <- max(depths)
+  t_idx <- (max(dmax, dmax + 0L) + 1L + lag):n
+  vals <- vapply(depths, function(d) {
+    Z <- cbind(.hist_cols(x, t_idx - lag, d), .hist_cols(y, t_idx, d))
+    knn_cmi(x[t_idx - lag], y[t_idx], Z, k = k)
+  }, 0)
+  data.frame(depth = depths, cmi = vals)
+}
+
+#' Lag triangle-inequality check (geodesic spaces)
+#'
+#' Zlatniczki et al. (2021), Sect. 2.4-2.6: in a geodesic space with constant
+#' propagation speed, lags obey the triangle inequality. Given the minimal lags
+#' from a candidate common driver L to X and to Y and the lag X -> Y it tells
+#' whether L can be a common driver.
+#'
+#' @param tau_LX,tau_LY,tau_XY minimal lags L->X, L->Y and X->Y.
+#' @return One of `"direct driving (no common driver)"` (when
+#'   `tau_LY > tau_LX + tau_XY`), `"common driver"` (when
+#'   `tau_LY < tau_LX + tau_XY`) or `"ambiguous (confounder / chain L->X->Y)"`.
+#' @export
+#' @examples
+#' lag_triangle_check(2, 5, 1)
+lag_triangle_check <- function(tau_LX, tau_LY, tau_XY) {
+  if (tau_LY > tau_LX + tau_XY) "direct driving (no common driver)"
+  else if (tau_LY < tau_LX + tau_XY) "common driver"
+  else "ambiguous (confounder / chain L->X->Y)"
 }

@@ -14,7 +14,11 @@
 #'   (decision by BIC-approximated Bayes factor; both report p-value *and*
 #'   Bayes factor) or `"cmi"` (model-free: kNN conditional mutual information
 #'   I(x[t-lag]; y[t] | history of y, controls) with a local-permutation
-#'   p-value; detects non-linear dependence).
+#'   p-value; detects non-linear dependence) or `"cmi_lag"` (the
+#'   lag-shifted CMI scheme of Zlatniczki et al. (2021): like `"cmi"` but
+#'   also conditioning on the cause's own past, plus a contemporaneous
+#'   test I(x[t]; y[t] | pasts) whose significance, without lagged links,
+#'   indicates a *common driver*; `common_cause` class available).
 #' @param lag integer lag order or `"auto"` (selected by `lag_criterion` on
 #'   the VAR of the involved series).
 #' @param max_lag largest lag order considered when `lag = "auto"`.
@@ -50,7 +54,7 @@
 #' d3 <- sim_var(400, n_series = 4, seed = 2)
 #' r3 <- rcausality(d3)
 #' plot(r3)
-rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"),
+rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi", "cmi_lag"),
                        lag = "auto", max_lag = 8L,
                        lag_criterion = c("BIC", "AIC", "HQ"),
                        alpha = 0.05, bf_threshold = 3,
@@ -91,7 +95,7 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
   if (nrow(grid) == 0L) stop("No pairs to test.", call. = FALSE)
 
   if (!is.null(seed)) set.seed(seed)
-  if (method == "cmi") {
+  if (method %in% c("cmi", "cmi_lag")) {
     n_lags <- if (identical(lag, "auto")) min(as.integer(max_lag), 3L) else 1L
     need <- min(999L, ceiling(n_lags * nrow(grid) / alpha))
     if (n_perm < need) {
@@ -106,11 +110,12 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
   for (i in seq_len(nrow(grid))) {
     cs <- grid$cause[i]; ef <- grid$effect[i]
     ctrl_names <- if (conditional) setdiff(names(all), c(cs, ef)) else character(0)
-    if (method == "cmi") {
+    if (method %in% c("cmi", "cmi_lag")) {
       g <- .cmi_pair(all[[ef]], all[[cs]],
                      if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL,
                      lags = if (is.null(fixed_lag)) seq_len(min(as.integer(max_lag), 3L)) else fixed_lag,
-                     history = history, k = k, k_perm = k_perm, n_perm = n_perm)
+                     history = history, k = k, k_perm = k_perm, n_perm = n_perm,
+                     cause_past = (method == "cmi_lag"))
       rows[[i]] <- data.frame(cause = cs, effect = ef, lag = g$lag,
                               statistic = g$statistic, df1 = NA_real_, df2 = NA_real_,
                               p_value = g$p_value, bf10 = NA_real_,
@@ -131,12 +136,29 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
                             stringsAsFactors = FALSE)
   }
   pairs <- do.call(rbind, rows)
+  instant <- NULL
+  if (method == "cmi_lag") {
+    up <- unique(data.frame(v1 = pmin(grid$cause, grid$effect), v2 = pmax(grid$cause, grid$effect),
+                            stringsAsFactors = FALSE))
+    ins <- lapply(seq_len(nrow(up)), function(i) {
+      ctrl_names <- if (conditional) setdiff(names(all), c(up$v1[i], up$v2[i])) else character(0)
+      g <- .cmi_instant(all[[up$v1[i]]], all[[up$v2[i]]],
+                        if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL,
+                        history, k, k_perm, n_perm)
+      data.frame(var1 = up$v1[i], var2 = up$v2[i], cmi = g$cmi, p_value = g$p_value,
+                 stringsAsFactors = FALSE)
+    })
+    instant <- do.call(rbind, ins)
+    instant$p_adj <- if (adjust == "none") instant$p_value else
+      stats::p.adjust(instant$p_value, method = adjust)
+    instant$significant <- instant$p_adj < alpha
+  }
   pairs$p_adj <- if (adjust == "none") pairs$p_value else
     stats::p.adjust(pairs$p_value, method = adjust)
   pairs$post_prob <- (pairs$bf10 * prior_prob) /
     (pairs$bf10 * prior_prob + (1 - prior_prob))
   pairs$evidence <- as.character(bf_evidence(pairs$bf10))
-  pairs$significant <- if (method %in% c("granger", "cmi")) {
+  pairs$significant <- if (method %in% c("granger", "cmi", "cmi_lag")) {
     !is.na(pairs$p_adj) & pairs$p_adj < alpha
   } else {
     !is.na(pairs$bf10) & pairs$bf10 > bf_threshold
@@ -148,5 +170,5 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
   .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                method = method, conditional = conditional, alpha = alpha,
                bf_threshold = bf_threshold, adjust = adjust, n = nrow(all),
-               call = cl, data = all)
+               call = cl, data = all, instant = instant)
 }

@@ -7,7 +7,7 @@
 rcausality(
   x,
   y = NULL,
-  method = c("granger", "bayes_granger", "cmi"),
+  method = c("granger", "bayes_granger", "cmi", "cmi_lag"),
   lag = "auto",
   max_lag = 8L,
   lag_criterion = c("BIC", "AIC", "HQ"),
@@ -36,7 +36,11 @@ columns of `x` are tested.}
 (decision by BIC-approximated Bayes factor; both report p-value *and*
 Bayes factor) or `"cmi"` (model-free: kNN conditional mutual information
 I(x[t-lag]; y[t] | history of y, controls) with a local-permutation
-p-value; detects non-linear dependence).}
+p-value; detects non-linear dependence) or `"cmi_lag"` (the
+lag-shifted CMI scheme of Zlatniczki et al. (2021): like `"cmi"` but
+also conditioning on the cause's own past, plus a contemporaneous
+test I(x[t]; y[t] | pasts) whose significance, without lagged links,
+indicates a *common driver*; `common_cause` class available).}
 
 \item{lag}{integer lag order or `"auto"` (selected by `lag_criterion` on
 the VAR of the involved series).}
