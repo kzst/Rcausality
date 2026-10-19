@@ -88,28 +88,30 @@ as.matrix.causres <- function(x, what = "p_adj", ...) {
 print.causres <- function(x, digits = 3, ...) {
   s <- x$settings
   mname <- c(granger = "Granger causality (F-test)",
-             bayes_granger = "Bayesian Granger causality (BIC Bayes factor)")[[s$method]]
+             bayes_granger = "Bayesian Granger causality (BIC Bayes factor)",
+             cmi = "Conditional mutual information (kNN, local permutation)")[[s$method]]
   cat("\n  Rcausality: ", mname, "\n", sep = "")
   cat("  ", length(x$series), " series, n = ", s$n, ", ",
       nrow(x$pairs), " directed tests",
       if (s$conditional) " (conditional on the other series)" else " (pairwise)",
       "\n", sep = "")
   cat("  decision: ",
-      if (s$method == "granger") sprintf("adjusted p < %g (%s)", s$alpha, s$adjust)
+      if (s$method != "bayes_granger") sprintf("adjusted p < %g (%s)", s$alpha, s$adjust)
       else sprintf("BF10 > %g", s$bf_threshold), "\n\n", sep = "")
   P <- x$pairs
   tab <- data.frame(
     link = paste(P$cause, "->", P$effect),
     lag = P$lag,
     F = formatC(P$statistic, digits = digits, format = "f"),
-    df = paste0(P$df1, ",", P$df2),
+    df = ifelse(is.na(P$df1), "-", paste0(P$df1, ",", P$df2)),
     p = .fmt_p(P$p_value),
     p.adj = .fmt_p(P$p_adj),
     BF10 = .fmt_bf(P$bf10),
     P.post = formatC(P$post_prob, digits = digits, format = "f"),
     sig = ifelse(P$significant, paste0("yes ", .stars(P$p_adj)), "no"),
     check.names = FALSE, stringsAsFactors = FALSE)
-  names(tab)[names(tab) == "F"] <- "F"
+  names(tab)[names(tab) == "F"] <- if (s$method == "cmi") "CMI" else "F"
+  if (s$method == "cmi") tab <- tab[, !names(tab) %in% c("df", "BF10", "P.post")]
   print(tab, row.names = FALSE, right = FALSE)
   cat("\n  Classification of series pairs:\n")
   C <- x$classes

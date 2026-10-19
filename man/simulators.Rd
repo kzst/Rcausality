@@ -22,7 +22,7 @@ sim_var(
 sim_logistic(
   n = 500,
   scenario = "x_to_y",
-  coupling = 0.3,
+  coupling = 0.2,
   noise = 0,
   r = 3.9,
   seed = NULL,
@@ -32,7 +32,7 @@ sim_logistic(
 sim_tent(
   n = 500,
   scenario = "x_to_y",
-  coupling = 0.3,
+  coupling = 0.2,
   noise = 0,
   seed = NULL,
   burn = 200L
@@ -62,7 +62,8 @@ sim_markov01(
 
 \item{scenario}{causal scenario (see Details).}
 
-\item{coupling}{coupling strength.}
+\item{coupling}{coupling strength (maps: coupled as
+`(1-c) f(y) + c f(x)`; strong coupling synchronises the systems).}
 
 \item{noise}{standard deviation of additive observational noise
 (relative to the signal sd).}

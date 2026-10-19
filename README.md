@@ -27,7 +27,7 @@ as `x_to_y`, `y_to_x`, `bidirectional`, `independent` (and `common_cause`
 for methods that can detect it).
 
 ## Roadmap
-M1 kNN-CMI, Markov test, lag-shifted CMI, df-variance; M2 Bayesian dimensional
+M1 (kNN-CMI + local permutation: done; `method = "cmi"`) Markov test, lag-shifted CMI (Zlatniczki), df-variance; M2 Bayesian dimensional
 causality, CCDH; M3 df entropy + random forest, TE/CCM baselines, `compare_methods()`;
 M4 vignettes + CRAN checks; M5 Hirata, Krakovska, MAR-PID, PCMCI wrapper;
 `forecast()`/`predict()` methods; Bayesian variants of all methods.

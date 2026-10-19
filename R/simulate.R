@@ -8,7 +8,8 @@
 #'
 #' @param n number of observations returned.
 #' @param scenario causal scenario (see Details).
-#' @param coupling coupling strength.
+#' @param coupling coupling strength (maps: coupled as
+#'   `(1-c) f(y) + c f(x)`; strong coupling synchronises the systems).
 #' @param noise standard deviation of additive observational noise
 #'   (relative to the signal sd).
 #' @param seed optional RNG seed.
@@ -87,27 +88,29 @@ sim_var <- function(n = 500, scenario = "x_to_y", coupling = 0.4, noise = 0,
       src <- which(A[i, ] > 0)
       c_i <- if (length(src)) A[i, src[1]] else 0
       drive <- if (length(src)) prev[src[1]] else prev[i]
-      X[t, i] <- f((1 - c_i) * prev[i] + c_i * drive)
+      X[t, i] <- (1 - c_i) * f(prev[i]) + c_i * f(drive)
       if (i == 3) X[t, i] <- f(prev[3])
     }
     X[t, ] <- pmin(pmax(X[t, ], 1e-6), 1 - 1e-6)
   }
   X <- X[-seq_len(burn), , drop = FALSE]
   X <- X[, 1:2]; colnames(X) <- c("x", "y")
+  if (max(abs(X[, 1] - X[, 2])) < 1e-6)
+    warning("The two systems synchronised; lower 'coupling'.", call. = FALSE)
   .finish(X, scenario, noise)
 }
 
 #' @rdname simulators
 #' @param r growth parameter of the logistic / tent map.
 #' @export
-sim_logistic <- function(n = 500, scenario = "x_to_y", coupling = 0.3, noise = 0,
+sim_logistic <- function(n = 500, scenario = "x_to_y", coupling = 0.2, noise = 0,
                          r = 3.9, seed = NULL, burn = 200L) {
   .coupled_map(function(u) r * u * (1 - u), n, scenario, coupling, noise, seed, burn)
 }
 
 #' @rdname simulators
 #' @export
-sim_tent <- function(n = 500, scenario = "x_to_y", coupling = 0.3, noise = 0,
+sim_tent <- function(n = 500, scenario = "x_to_y", coupling = 0.2, noise = 0,
                      seed = NULL, burn = 200L) {
   .coupled_map(function(u) 1.99 * (0.5 - abs(u - 0.5)) * 1, n, scenario, coupling, noise, seed, burn)
 }

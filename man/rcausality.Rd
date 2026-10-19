@@ -7,7 +7,7 @@
 rcausality(
   x,
   y = NULL,
-  method = c("granger", "bayes_granger"),
+  method = c("granger", "bayes_granger", "cmi"),
   lag = "auto",
   max_lag = 8L,
   lag_criterion = c("BIC", "AIC", "HQ"),
@@ -17,7 +17,12 @@ rcausality(
   conditional = FALSE,
   prior_prob = 0.5,
   impute = TRUE,
-  directions = c("both", "forward")
+  directions = c("both", "forward"),
+  k = 5L,
+  k_perm = 5L,
+  n_perm = 200L,
+  history = 1L,
+  seed = NULL
 )
 }
 \arguments{
@@ -27,9 +32,11 @@ rcausality(
 effects). If `NULL` and `x` has several columns, all ordered pairs of the
 columns of `x` are tested.}
 
-\item{method}{`"granger"` (F-test, default) or `"bayes_granger"`
-(decision by BIC-approximated Bayes factor). Both report p-value *and*
-Bayes factor.}
+\item{method}{`"granger"` (F-test, default), `"bayes_granger"`
+(decision by BIC-approximated Bayes factor; both report p-value *and*
+Bayes factor) or `"cmi"` (model-free: kNN conditional mutual information
+I(x[t-lag]; y[t] | history of y, controls) with a local-permutation
+p-value; detects non-linear dependence).}
 
 \item{lag}{integer lag order or `"auto"` (selected by `lag_criterion` on
 the VAR of the involved series).}
@@ -57,6 +64,13 @@ tests are pairwise.}
 \item{directions}{for two series / two blocks: `"both"` (default) tests
 x -> y and y -> x; `"forward"` only the causes-in-`x`, effects-in-`y`
 direction. Ignored when `y` is `NULL` (all ordered pairs are tested).}
+
+\item{k, k_perm, n_perm, history, seed}{settings of `method = "cmi"`: number
+of neighbours of the estimator, size of the local-permutation
+neighbourhood, number of permutations, order of the conditioning
+history of the effect series, and RNG seed. With `lag = "auto"` every
+lag `1..max_lag` is tested and the best one is reported with a
+Bonferroni-corrected p-value (`max_lag` defaults to at most 3 here).}
 }
 \value{
 An object of class [`causres`][causres-class].

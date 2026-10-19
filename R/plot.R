@@ -106,9 +106,9 @@ plot.causres <- function(x, type = c("network", "heatmap", "bars", "both"),
   o <- order(ev); P <- P[o, , drop = FALSE]; ev <- ev[o]
   lab <- paste(P$cause, "->", P$effect, paste0("(lag ", P$lag, ")"))
   op <- graphics::par(mar = c(4, max(8, 0.55 * max(nchar(lab))), 3, 1)); on.exit(graphics::par(op))
-  thr <- if (x$settings$method == "granger") -log10(x$settings$alpha) else log10(x$settings$bf_threshold)
+  thr <- if (x$settings$method != "bayes_granger") -log10(x$settings$alpha) else log10(x$settings$bf_threshold)
   if (evidence == "p" && x$settings$method != "granger") thr <- NA
-  if (evidence == "bf" && x$settings$method == "granger") thr <- NA
+  if (evidence == "bf" && x$settings$method != "bayes_granger") thr <- NA
   graphics::barplot(ev, horiz = TRUE, names.arg = lab, las = 1, cex.names = 0.75,
                     col = ifelse(P$significant, .pal$causal, .pal$nocausal), border = .pal$border,
                     xlab = .evid_lab(evidence), main = if (is.null(main)) "Evidence per directed pair" else main)
