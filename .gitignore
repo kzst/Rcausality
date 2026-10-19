@@ -1,0 +1,8 @@
+.Rproj.user
+.Rhistory
+.RData
+*.o
+*.so
+*.dll
+Rcausality_*.tar.gz
+Rcausality.Rcheck/

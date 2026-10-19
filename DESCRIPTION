@@ -1,0 +1,22 @@
+Package: Rcausality
+Type: Package
+Title: Causality Analysis for Time Series
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Zsolt Tibor", "Kosztyán", email = "kzst@gtk.uni-pannon.hu",
+           role = c("aut", "cre", "cph")))
+Description: A unified interface to causality detection methods for time
+    series: Granger causality and its Bayesian (Bayes factor) variant, and
+    - in forthcoming releases - the Markov-chain, conditional-mutual-
+    information, dimensional, entropy-based and partial-information-
+    decomposition approaches. Works with two series, a data frame
+    (all pairs) or two blocks of series (MIMO), and returns a rich
+    'causres' object with 'print', 'summary' and 'plot' methods.
+License: GPL-3
+Encoding: UTF-8
+Depends: R (>= 4.0.0)
+Imports: stats, graphics, grDevices
+Suggests: testthat (>= 3.0.0), knitr, rmarkdown, lmtest
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+RoxygenNote: 7.3.1

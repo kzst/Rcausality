@@ -1,0 +1,5 @@
+^\.git$
+^\.github$
+^README\.Rmd$
+^\.claude$
+^CLAUDE\.md$
