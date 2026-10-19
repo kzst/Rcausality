@@ -19,7 +19,7 @@
 NULL
 
 .new_causres <- function(pairs, series, causes, effects, method, conditional,
-                         alpha, bf_threshold, adjust, n, call, data, instant = NULL) {
+                         alpha, bf_threshold, adjust, n, call, data, instant = NULL, markov = NULL) {
   # unordered-pair classification
   key <- function(a, b) paste(pmin(a, b), pmax(a, b), sep = "\r")
   up <- unique(data.frame(v1 = pmin(pairs$cause, pairs$effect),
@@ -66,7 +66,7 @@ NULL
                  settings = list(method = method, conditional = conditional,
                                  alpha = alpha, bf_threshold = bf_threshold,
                                  adjust = adjust, n = n),
-                 call = call, data = data, instant = instant),
+                 call = call, data = data, instant = instant, markov = markov),
             class = "causres")
 }
 
@@ -101,7 +101,8 @@ print.causres <- function(x, digits = 3, ...) {
   mname <- c(granger = "Granger causality (F-test)",
              bayes_granger = "Bayesian Granger causality (BIC Bayes factor)",
              cmi = "Conditional mutual information (kNN, local permutation)",
-             cmi_lag = "Lag-shifted conditional mutual information (Zlatniczki et al., 2021)")[[s$method]]
+             cmi_lag = "Lag-shifted conditional mutual information (Zlatniczki et al., 2021)",
+             markov = "Markov-chain approach (Stippinger et al., 2023)")[[s$method]]
   cat("\n  Rcausality: ", mname, "\n", sep = "")
   cat("  ", length(x$series), " series, n = ", s$n, ", ",
       nrow(x$pairs), " directed tests",
@@ -122,7 +123,7 @@ print.causres <- function(x, digits = 3, ...) {
     P.post = formatC(P$post_prob, digits = digits, format = "f"),
     sig = ifelse(P$significant, paste0("yes ", .stars(P$p_adj)), "no"),
     check.names = FALSE, stringsAsFactors = FALSE)
-  cmi_like <- s$method %in% c("cmi", "cmi_lag")
+  cmi_like <- s$method %in% c("cmi", "cmi_lag", "markov")
   names(tab)[names(tab) == "F"] <- if (cmi_like) "CMI" else "F"
   if (cmi_like) tab <- tab[, !names(tab) %in% c("df", "BF10", "P.post")]
   print(tab, row.names = FALSE, right = FALSE)
@@ -134,6 +135,17 @@ print.causres <- function(x, digits = 3, ...) {
                      p = .fmt_p(I$p_value), p.adj = .fmt_p(I$p_adj),
                      common.driver = ifelse(I$significant, "yes", "no"),
                      check.names = FALSE), row.names = FALSE, right = FALSE)
+  }
+  if (!is.null(x$markov)) {
+    cat("\n  Markov property (p small = not Markov) and decision-table case:\n")
+    M <- x$markov
+    print(data.frame(pair = paste(M$var1, "~", M$var2), m = M$memory,
+                     p.x = .fmt_p(M$p_markov_x), p.y = .fmt_p(M$p_markov_y),
+                     p.joint = .fmt_p(M$p_markov_joint),
+                     case = M$case, `x->y` = M$inj_x_to_y, `y->x` = M$inj_y_to_x,
+                     hidden = M$hidden, consistent = M$consistent, check.names = FALSE),
+          row.names = FALSE, right = FALSE)
+    cat("  injection: i.i. = i.i.d. injection, n.i. = non-i.i.d., d = driving; U_* = hidden own-source\n")
   }
   cat("\n  Classification of series pairs:\n")
   C <- x$classes

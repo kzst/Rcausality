@@ -7,7 +7,7 @@
 rcausality(
   x,
   y = NULL,
-  method = c("granger", "bayes_granger", "cmi", "cmi_lag"),
+  method = c("granger", "bayes_granger", "cmi", "cmi_lag", "markov"),
   lag = "auto",
   max_lag = 8L,
   lag_criterion = c("BIC", "AIC", "HQ"),
@@ -22,7 +22,12 @@ rcausality(
   k_perm = 5L,
   n_perm = 200L,
   history = 1L,
-  seed = NULL
+  seed = NULL,
+  memory = "auto",
+  iid_injection = c("allowed", "forbidden"),
+  k_nn = NULL,
+  n_bins = NULL,
+  n_markov = 99L
 )
 }
 \arguments{
@@ -75,6 +80,15 @@ neighbourhood, number of permutations, order of the conditioning
 history of the effect series, and RNG seed. With `lag = "auto"` every
 lag `1..max_lag` is tested and the best one is reported with a
 Bonferroni-corrected p-value (`max_lag` defaults to at most 3 here).}
+
+\item{memory, iid_injection, k_nn, n_bins, n_markov}{settings of
+`method = "markov"` (Markov-chain approach of Stippinger et al., 2023):
+memory (embedding dimension; `"auto"` from the PACF), whether i.i.d.
+injection of one series into the other is `"allowed"` (default, Occam's
+razor) or `"forbidden"` in the decision table, local-neighbourhood size,
+number of bins of the local contingency tables and number of local
+permutations of the Markov tests. Pairwise only (`conditional` is not
+supported). Lags are fixed to 1 in this version.}
 }
 \value{
 An object of class [`causres`][causres-class].

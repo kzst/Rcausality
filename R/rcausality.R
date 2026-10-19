@@ -40,6 +40,14 @@
 #'   history of the effect series, and RNG seed. With `lag = "auto"` every
 #'   lag `1..max_lag` is tested and the best one is reported with a
 #'   Bonferroni-corrected p-value (`max_lag` defaults to at most 3 here).
+#' @param memory,iid_injection,k_nn,n_bins,n_markov settings of
+#'   `method = "markov"` (Markov-chain approach of Stippinger et al., 2023):
+#'   memory (embedding dimension; `"auto"` from the PACF), whether i.i.d.
+#'   injection of one series into the other is `"allowed"` (default, Occam's
+#'   razor) or `"forbidden"` in the decision table, local-neighbourhood size,
+#'   number of bins of the local contingency tables and number of local
+#'   permutations of the Markov tests. Pairwise only (`conditional` is not
+#'   supported). Lags are fixed to 1 in this version.
 #' @param prior_prob prior probability of a causal link (for the posterior).
 #' @param impute logical; interpolate missing values?
 #' @return An object of class [`causres`][causres-class].
@@ -54,7 +62,7 @@
 #' d3 <- sim_var(400, n_series = 4, seed = 2)
 #' r3 <- rcausality(d3)
 #' plot(r3)
-rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi", "cmi_lag"),
+rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi", "cmi_lag", "markov"),
                        lag = "auto", max_lag = 8L,
                        lag_criterion = c("BIC", "AIC", "HQ"),
                        alpha = 0.05, bf_threshold = 3,
@@ -62,11 +70,13 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
                        prior_prob = 0.5, impute = TRUE,
                        directions = c("both", "forward"),
                        k = 5L, k_perm = 5L, n_perm = 200L, history = 1L,
-                       seed = NULL) {
+                       seed = NULL, memory = "auto", iid_injection = c("allowed", "forbidden"),
+                       k_nn = NULL, n_bins = NULL, n_markov = 99L) {
   cl <- match.call()
   method <- match.arg(method)
   lag_criterion <- match.arg(lag_criterion)
   directions <- match.arg(directions)
+  iid_injection <- match.arg(iid_injection)
   fr <- .as_series_frame(x, y, xname = if (is.null(y)) "x" else "x", yname = "y")
   if (is.null(fr$Y) && ncol(fr$X) < 2L) {
     stop("Supply two series (x, y) or a data frame with at least two columns.",
@@ -95,7 +105,7 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
   if (nrow(grid) == 0L) stop("No pairs to test.", call. = FALSE)
 
   if (!is.null(seed)) set.seed(seed)
-  if (method %in% c("cmi", "cmi_lag")) {
+  if (method %in% c("cmi", "cmi_lag", "markov")) {
     n_lags <- if (identical(lag, "auto")) min(as.integer(max_lag), 3L) else 1L
     need <- min(999L, ceiling(n_lags * nrow(grid) / alpha))
     if (n_perm < need) {
@@ -106,6 +116,11 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
     }
   }
   fixed_lag <- if (identical(lag, "auto")) NULL else as.integer(lag)
+  if (method == "markov") {
+    if (conditional) stop("method = \"markov\" supports pairwise analysis only.", call. = FALSE)
+    return(.rcausality_markov(all, grid, causes, effects, alpha, adjust, memory, iid_injection,
+                              k_nn, n_bins, n_markov, k, k_perm, n_perm, cl, directions))
+  }
   rows <- vector("list", nrow(grid))
   for (i in seq_len(nrow(grid))) {
     cs <- grid$cause[i]; ef <- grid$effect[i]
@@ -171,4 +186,55 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
                method = method, conditional = conditional, alpha = alpha,
                bf_threshold = bf_threshold, adjust = adjust, n = nrow(all),
                call = cl, data = all, instant = instant)
+}
+
+# Markov-chain method driver ------------------------------------------------
+.rcausality_markov <- function(all, grid, causes, effects, alpha, adjust, memory, iid,
+                               k_nn, n_bins, n_markov, k, k_perm, n_perm, cl, directions) {
+  up <- unique(data.frame(v1 = pmin(grid$cause, grid$effect), v2 = pmax(grid$cause, grid$effect),
+                          stringsAsFactors = FALSE))
+  # keep the (var1, var2) = (earlier name, later name) orientation used by causres
+  res <- lapply(seq_len(nrow(up)), function(i)
+    .markov_pair(all[[up$v1[i]]], all[[up$v2[i]]], memory, k_nn, n_bins, n_markov, k, k_perm, n_perm))
+  rows <- list(); ins <- list(); mk <- list()
+  for (i in seq_len(nrow(up))) {
+    r <- res[[i]]; a <- up$v1[i]; b <- up$v2[i]; n_eff <- r$xy$n_eff
+    for (dir in c("ab", "ba")) {
+      g <- if (dir == "ab") r$xy else r$yx
+      rows[[length(rows) + 1L]] <- data.frame(
+        cause = if (dir == "ab") a else b, effect = if (dir == "ab") b else a,
+        lag = 1L, statistic = g$statistic, df1 = NA_real_, df2 = NA_real_,
+        p_value = g$p_value, bf10 = NA_real_, effect_size = g$statistic, r2_gain = NA_real_,
+        sign = NA_real_, n_eff = n_eff, stringsAsFactors = FALSE)
+    }
+    ins[[i]] <- data.frame(var1 = a, var2 = b, cmi = r$i0$cmi, p_value = r$i0$p_value,
+                           stringsAsFactors = FALSE)
+  }
+  pairs <- do.call(rbind, rows)
+  pairs$p_adj <- if (adjust == "none") pairs$p_value else stats::p.adjust(pairs$p_value, method = adjust)
+  pairs$post_prob <- NA_real_; pairs$bf10 <- NA_real_; pairs$evidence <- NA_character_
+  instant <- do.call(rbind, ins)
+  instant$p_adj <- if (adjust == "none") instant$p_value else stats::p.adjust(instant$p_value, method = adjust)
+  instant$significant <- instant$p_adj < alpha
+  pairs$significant <- FALSE
+  for (i in seq_len(nrow(up))) {
+    r <- res[[i]]; a <- up$v1[i]; b <- up$v2[i]
+    ja <- which(pairs$cause == a & pairs$effect == b); jb <- which(pairs$cause == b & pairs$effect == a)
+    dec <- .markov_decide(r$p_x >= alpha, r$p_y >= alpha, r$p_j >= alpha,
+                          pairs$p_adj[ja] < alpha, pairs$p_adj[jb] < alpha,
+                          instant$significant[i], iid)
+    pairs$significant[ja] <- dec$ab != "n"; pairs$significant[jb] <- dec$ba != "n"
+    mk[[i]] <- data.frame(var1 = a, var2 = b, memory = r$m, p_markov_x = r$p_x, p_markov_y = r$p_y,
+                          p_markov_joint = r$p_j, p_joint_x_earlier = r$p_jm1, p_joint_x_later = r$p_jp1,
+                          case = dec$case, inj_x_to_y = dec$ab, inj_y_to_x = dec$ba,
+                          hidden = dec$hidden, consistent = dec$consistent, stringsAsFactors = FALSE)
+  }
+  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
+                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
+                     "r2_gain", "sign", "n_eff", "significant")]
+  rownames(pairs) <- NULL
+  .new_causres(pairs, series = names(all), causes = names(all), effects = names(all),
+               method = "markov", conditional = FALSE, alpha = alpha, bf_threshold = NA_real_,
+               adjust = adjust, n = nrow(all), call = cl, data = all, instant = instant,
+               markov = do.call(rbind, mk))
 }

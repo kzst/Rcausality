@@ -3,3 +3,6 @@
 ^README\.Rmd$
 ^\.claude$
 ^CLAUDE\.md$
+^.*\.Rproj$
+^\.Rproj\.user$
+^Rcausality\.Rcheck$
