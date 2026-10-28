@@ -1,0 +1,44 @@
+Package: Rcausality
+Type: Package
+Title: Causality Analysis for Time Series
+Version: 0.0.1
+Authors@R: c(
+    person("Zsolt T.", "Kosztyán", email = "kosztyan.zsolt@gtk.uni-pannon.hu",
+           role = c("aut", "cre", "cph")))
+Description: A unified interface to causality detection methods for time
+    series, returning one result object ('causres') with 'print', 'summary'
+    and 'plot' methods for two series, a data frame (all pairs) or two
+    blocks of series. Implements Granger causality with classical and
+    Bayesian (spike-and-slab regression, BIC, g-prior and hyper-g Bayes
+    factor) decisions; conditional
+    mutual information with local-permutation tests and the lag-shifted
+    scheme of Zlatniczki et al. (2021) <doi:10.3390/e23111450>; the
+    Markov-chain approach of Stippinger et al. (2023)
+    <doi:10.3390/math11040852>; the degrees-of-freedom (conditional
+    variance) method of Telcs, Kurbucz and Jakovac (2025)
+    <doi:10.1103/PhysRevE.112.014204>; Bayesian dimensional causality of
+    Benko et al. (2024) <doi:10.1016/j.chaos.2024.115142>; the
+    complexity-based CCDH method of Stippinger et al. (2023)
+    <doi:10.1016/j.chaos.2023.114054> and the df-entropy method of Jakovac
+    et al.; finite-resolution MAR-PID of Telcs (2026)
+    <doi:10.3390/e28060641>; the recurrence-plot criteria of Hirata and
+    Aihara (2010) <doi:10.1103/PhysRevE.81.016203> and the
+    correlation-dimension relations of Krakovska (2019)
+    <doi:10.3390/e21090818>; transfer entropy and convergent cross mapping
+    as baselines; an optional wrapper for PCMCI (Runge et al., 2019,
+    <doi:10.1126/sciadv.aau4996>); tools to compare and benchmark methods,
+    causality-informed forecasting, multi-core execution, and a Bayesian
+    variant of every method with explicit priors, posterior draws and
+    Bayes-factor or posterior-probability decisions.
+License: GPL-3
+URL: https://github.com/kzst/rcausality
+BugReports: https://github.com/kzst/rcausality/issues
+Encoding: UTF-8
+Depends: R (>= 4.0.0)
+Imports: stats, graphics, grDevices, parallel, Rcpp
+LinkingTo: Rcpp
+Suggests: testthat (>= 3.0.0), lmtest, ranger, reticulate, knitr, rmarkdown, FNN, svglite
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3

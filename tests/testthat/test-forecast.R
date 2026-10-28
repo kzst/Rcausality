@@ -1,0 +1,35 @@
+test_that("predict.causres returns a causfc with sensible evaluation", {
+  d <- sim_var(400, "x_to_y", seed = 1)
+  r <- rcausality(d)
+  fc <- predict(r, h = 5)
+  expect_s3_class(fc, "causfc")
+  expect_equal(nrow(fc$forecasts), 10L)
+  expect_equal(fc$fitted_causes$y, "x")
+  expect_length(fc$fitted_causes$x, 0L)
+  E <- fc$evaluation
+  expect_equal(E$improvement[E$series == "x"], 0)
+  expect_gt(E$improvement[E$series == "y"], 0.02)
+  expect_true(all(fc$forecasts$lower < fc$forecasts$point & fc$forecasts$point < fc$forecasts$upper))
+  expect_output(print(fc), "Causality-informed forecasts")
+  s <- summary(fc)
+  expect_s3_class(s, "summary.causfc")
+  expect_output(print(s), "mean RMSE improvement")
+  expect_equal(s$best, "y")
+})
+
+test_that("forecast_causal wrapper and plot work", {
+  d <- sim_var(300, n_series = 3, seed = 2)
+  fc <- forecast_causal(d, h = 3, seed = 1, p = 2, holdout = 0.25)
+  expect_s3_class(fc, "causfc")
+  expect_equal(fc$p, 2L)
+  expect_equal(fc$holdout, 0.25)
+  expect_equal(max(fc$forecasts$horizon), 3L)
+  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
+  expect_silent(plot(fc))
+})
+
+test_that("predict.causres refuses too short series", {
+  d <- sim_var(40, "x_to_y", seed = 1)
+  r <- rcausality(d, max_lag = 2)
+  expect_error(predict(r, h = 2, p = 8, holdout = 0.5), "too short")
+})

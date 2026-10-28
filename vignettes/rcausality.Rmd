@@ -1,0 +1,482 @@
+---
+title: "Getting started with Rcausality"
+author: "Zsolt T. Kosztyán (University of Pannonia)"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    css: rcausality.css
+vignette: >
+  %\VignetteIndexEntry{Getting started with Rcausality}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE, warning = FALSE,
+                      fig.width = 7.5, fig.height = 4.6, fig.align = "center", out.width = "100%",
+                      dev = if (requireNamespace("svglite", quietly = TRUE)) "svglite" else
+                        if (isTRUE(capabilities("cairo"))) "svg" else "png")
+library(Rcausality)
+```
+
+# What the package does
+
+`Rcausality` detects **directed (causal) relations between time series**.
+Two traditions meet here:
+
+* the **predictive** notion of Granger (1969): $x$ causes $y$ if the past
+  of $x$ helps to predict $y$ beyond what the past of $y$ already tells
+  (linear Granger causality, Bayesian Granger causality, conditional mutual
+  information, transfer entropy, partial information decomposition, the
+  Markov-chain approach, the degrees-of-freedom / conditional-variance
+  method);
+* the **dynamical-systems** notion built on the embedding theorem of
+  Takens (1981) and the reconstruction of a driver from the driven
+  system:
+  convergent cross mapping, dimensional causality, the complexity-based
+  CCDH, recurrence-plot criteria and correlation-dimension relations.
+
+All methods are called through **one function**, `rcausality()`, and return
+**one kind of object**, `causres`, that prints, summarises, plots and
+compares the same way. Every method reports, per ordered pair of series,
+a test statistic, a p-value and/or a Bayes factor, an effect size and a
+decision, and classifies each unordered pair into one of five cases:
+
+| class | meaning |
+|---|---|
+| `x_to_y` | $x$ drives $y$ |
+| `y_to_x` | $y$ drives $x$ |
+| `bidirectional` | mutual coupling |
+| `common_cause` | no directed link, but a hidden common driver (only for methods able to detect it) |
+| `independent` | no relation found |
+
+This vignette shows the everyday use. The companion vignette
+*The methods, paper by paper* (`vignette("methods", package = "Rcausality")`)
+explains every method, gives the full references and reproduces results
+of the papers they come from.
+
+# A first analysis
+
+## Simulated data with a known answer
+
+The package ships simulators whose causal structure is known, so every
+step can be checked. `sim_var()` draws a bivariate VAR(1) process in which
+`x` drives `y` with one lag:
+
+$$x_t = 0.5\,x_{t-1} + \varepsilon_{x,t}, \qquad
+  y_t = 0.5\,y_{t-1} + 0.4\,x_{t-1} + \varepsilon_{y,t}.$$
+
+```{r data, fig.height = 3.8, fig.cap = "Two simulated AR(1) series; x drives y with one lag (sim_var, scenario x_to_y)."}
+d <- sim_var(400, "x_to_y", seed = 1)
+plot_series(d, n_last = 200, main = "sim_var(400, 'x_to_y')")
+```
+
+## Granger causality in one call
+
+```{r granger}
+r <- rcausality(d)          # Granger causality (F-test); lag order chosen by BIC
+r
+```
+
+How to read the output:
+
+* **one row per directed test** (`y -> x` and `x -> y`): `lag` is the
+  VAR order selected by the information criterion, `F` the test statistic
+  with its degrees of freedom, `p` the raw and `p.adj` the Holm-adjusted
+  p-value, `BF10` the BIC-approximated Bayes factor for the link and
+  `P.post` the posterior probability of the link given a 50 % prior;
+* `sig` is the decision (`*` codes as in `summary.lm`);
+* the **classification** block reads the two directions together.
+
+`summary()` gives the compact version and the object can be turned into a
+data frame or a matrix:
+
+```{r summary}
+summary(r)
+as.data.frame(r)[, c("cause", "effect", "lag", "statistic", "p_adj", "effect_size", "r2_gain", "significant")]
+as.matrix(r, "p_adj")      # cause (rows) -> effect (columns)
+```
+
+The effect size is Geweke's (1982) measure $\log(RSS_r / RSS_u)$ and the
+$R^2$ gain of adding the cause's lags; `sign` gives the sign of the summed
+coefficients of the cause.
+
+# Several series
+
+## All ordered pairs of a data frame
+
+A data frame with more columns is analysed for every ordered pair. For a
+random sparse VAR network the true adjacency matrix is attached to the
+simulated data:
+
+```{r network-data, fig.height = 5, fig.cap = "A four-variable VAR network (sim_var with n_series = 4)."}
+net <- sim_var(500, n_series = 4, seed = 42)
+attr(net, "adjacency")         # TRUE where row -> column in the simulation
+plot_series(net, n_last = 150)
+```
+
+```{r network}
+rn <- rcausality(net)
+rn$classes[, c("var1", "var2", "relation", "p_adj_12", "p_adj_21")]
+```
+
+## Plots: network, causal matrix, lag scan
+
+`plot()` draws the causal network (edge width ~ evidence, label = lag,
+colour = sign of the net effect), the causal matrix (cause rows -> effect
+columns, significant links starred), the statistic of every pair against
+the candidate lag, and the joint delay embedding of the strongest pair;
+`type = "all"` puts the four together.
+
+```{r plots, dev = "png", dpi = 110, fig.width = 9, fig.height = 8.5, fig.cap = "plot(rn, 'all'): causal network, causal matrix, lag scan and joint embedding."}
+plot(rn, "all")
+```
+
+The lag scan is useful when the coupling delay is unknown: the selected
+lag is marked by an open circle, significant pairs are drawn with solid
+lines.
+
+```{r lags, fig.height = 4.2, fig.cap = "Lag scan: F statistic of every directed pair against the candidate lag."}
+plot(rn, "lags")
+```
+
+## Blocks of series (MIMO) and conditioning
+
+Two blocks of series (`x` = candidate causes, `y` = candidate effects) are
+tested block-wise, in both directions by default or only forward:
+
+```{r blocks}
+rcausality(net[, 1:2], net[, 3:4], directions = "forward")$pairs[, c("cause", "effect", "lag", "p_adj", "significant")]
+```
+
+With several series an apparent link can be mediated by a third one
+(`v1 -> v2 -> v3` looks like `v1 -> v3` pairwise). `conditional = TRUE`
+conditions every test on the remaining series (conditional Granger
+causality), which keeps only direct links:
+
+```{r conditional}
+rcausality(net, conditional = TRUE)$classes[, c("var1", "var2", "relation")]
+```
+
+# Non-linear coupling: model-free methods
+
+Linear Granger causality tests a linear regression and can miss
+non-linear coupling. `sim_logistic()` couples two logistic maps,
+$x_{t+1} = r x_t (1 - x_t)$, with $x$ driving $y$ through a non-linear
+term. The time series look like noise, but the delay embedding reveals the
+deterministic structure.
+
+```{r logistic, fig.height = 3.8, fig.cap = "Coupled logistic maps (x drives y)."}
+lg <- sim_logistic(500, "x_to_y", seed = 2)
+plot_series(lg, n_last = 120)
+```
+
+```{r embedding, dev = "png", dpi = 110, fig.height = 4.2, fig.cap = "Delay embeddings: the driver x on its own (left) and the joint state (x[t-1], y[t], x[t]) (right)."}
+op <- par(mfrow = c(1, 2)); plot_embedding(lg$x, m = 2); plot_embedding(lg$x, lg$y); par(op)
+```
+
+`method = "cmi"` estimates the conditional mutual information
+$I(x_{t-\text{lag}};\, y_t \mid y_{t-1}, \dots)$ with the Frenzel-Pompe
+(2007) k-nearest-neighbour estimator and tests it with Runge's (2018)
+local-permutation null; `method = "te"` is the binned transfer entropy of
+Schreiber (2000); `method = "ccm"` is Sugihara et al.'s (2012) convergent
+cross mapping. The verdicts of several methods can be compared in one
+call:
+
+```{r compare, fig.height = 3.2, fig.cap = "compare_methods(): verdict of every method per pair with the majority consensus."}
+cm <- compare_methods(lg, methods = c("granger", "cmi", "te", "ccm"), seed = 1)
+cm
+plot(cm)
+```
+
+Granger misses the non-linear link here while the three model-free
+methods find it. The CCM result can be inspected through the cross-map
+skill against the library size (`plot(r, "lags")` for a `ccm` result):
+
+```{r ccm, fig.height = 4.2, fig.cap = "Convergent cross mapping: the skill of predicting x from the embedding of y rises with the library size (y 'knows' x because x drives it)."}
+rc <- rcausality(lg, method = "ccm", seed = 1)
+plot(rc, "lags")
+```
+
+# Hidden common drivers
+
+Two series can be correlated without either driving the other, because
+a third, unobserved process drives both. Zlatniczki et al. (2021) show
+that the contemporaneous dependence of $x_t$ and $y_t$ *given both pasts*
+reveals such a common driver when no lagged dependence exists;
+`method = "cmi_lag"` implements this and returns the `common_cause` class.
+
+```{r common}
+set.seed(5); n <- 400
+e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # shared innovation = hidden common driver
+cc <- data.frame(x = as.numeric(stats::filter(e1, 0.5, "recursive")),
+                 y = as.numeric(stats::filter(e2, 0.5, "recursive")))
+rcc <- rcausality(cc, method = "cmi_lag", seed = 1)
+rcc
+```
+
+The `instant` table holds the contemporaneous test; the network plot
+draws a dashed orange edge for common-driver evidence:
+
+```{r common-plot, fig.height = 4, fig.cap = "Common driver: no directed link, but contemporaneous dependence given both pasts."}
+plot(rcc, "both")
+```
+
+# Comparative analyses
+
+## Several data sets, several methods
+
+A quick way to see where methods agree is to run `compare_methods()` on
+data sets with different kinds of coupling. Here: a linear VAR link, a
+non-linear logistic link and the common-driver pair above.
+
+```{r compare-table}
+sets <- list(VAR = sim_var(400, "x_to_y", seed = 1), logistic = lg, common_driver = cc)
+meths <- c("granger", "cmi", "cmi_lag", "te")
+tab <- t(sapply(sets, function(s) compare_methods(s, methods = meths, seed = 1, lag = 1)$table[1, meths]))
+tab <- as.data.frame(tab); tab$truth <- c("x_to_y", "x_to_y", "common_cause"); tab
+```
+
+(`lag = 1` fixes the coupling lag, which is known here, and saves the lag
+search.) Only `cmi_lag` can name the common driver; the others report
+(correctly) that neither series Granger-causes the other, which the
+classification calls `independent`.
+
+## Benchmark with known truth
+
+`benchmark_methods()` simulates every scenario of a simulator several
+times, runs the methods and scores the class against the truth. Small
+sizes are used here to keep the vignette quick; in practice use more
+replications.
+
+```{r benchmark, fig.height = 4, fig.cap = "benchmark_methods(): accuracy per scenario on linear VAR data."}
+bm <- benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "bidirectional", "independent"),
+                        simulator = sim_var, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+bm
+plot(bm)
+```
+
+The same on coupled logistic maps, where the linear test is at a
+disadvantage:
+
+```{r benchmark2, fig.height = 4, fig.cap = "Accuracy per scenario on coupled logistic maps."}
+bm2 <- benchmark_methods(methods = c("granger", "cmi", "te", "ccm"), scenarios = c("x_to_y", "independent"),
+                         simulator = sim_logistic, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+plot(bm2)
+```
+
+`bm$confusion` holds the confusion matrix of every method and `bm$time`
+the mean seconds per run, which matters when choosing a method for long
+series.
+
+# Bayesian variants of the methods
+
+Every method has a Bayesian variant, switched on with `bayes = TRUE`; its
+priors, iterations and decision rule are collected in `bayes_control()`.
+The result is the same `causres` object, with `bf10` (Bayes factor),
+`post_prob` (posterior probability of the link) and `evidence` filled for
+every directed test, the details per link in `$bayes`, and a link declared
+when $BF_{10}$ exceeds `bf_threshold` (or, with
+`decision = "posterior"`, when the posterior exceeds `prob_threshold`).
+
+## Granger causality as a Bayesian regression
+
+The effect is regressed on its own past, the controls and the cause's
+past. With the default `prior = "spike_slab"` every cause lag has a
+point-mass spike at zero and a normal slab of scale `scale` $\times\sigma$
+(stochastic-search variable selection, George and McCulloch 1993); the
+lag subsets are enumerated exactly, so the posterior inclusion probability
+of every lag and the Bayes factor of "at least one lag" against "none" are
+exact, and `chains` $\times$ `n_iter` posterior draws (after `burnin`,
+every `thin`-th kept) give credible intervals of the coefficients and of
+Geweke's measure $\log(1 + \text{explained}/\sigma^2)$, with the effective
+sample size and the Gelman-Rubin $\hat R$ of the measure across the chains
+(values close to 1: the chains agree). With more than 12 lags the
+indicators are Gibbs-sampled instead of enumerated.
+
+```{r bayes}
+bc <- bayes_control(prior = "spike_slab", scale = 1, inclusion_prob = 0.5, n_iter = 1000, chains = 2, credible = 0.95)
+rb <- rcausality(d, bayes = TRUE, control = bc, seed = 1)
+rb
+rb$bayes_fits[["x -> y"]]
+```
+
+`prior = "normal"` compares the whole block of cause lags against none,
+and `"g"`, `"hyper_g"`, `"bic"` are the closed-form Bayes factors:
+
+```{r bayes-priors}
+sapply(c("spike_slab", "normal", "g", "hyper_g", "bic"), function(pr)
+  rcausality(d, bayes = TRUE, control = bayes_control(prior = pr, n_iter = 200, chains = 1))$pairs$bf10)
+```
+
+## The surrogate methods: a Bayesian surrogate test
+
+The model-free methods compare a statistic with surrogate / permutation
+draws. Their Bayesian variant keeps the surrogates as the null model
+(`null_model = "kde"` or `"normal"`) and puts a prior on the effect: a
+half-Cauchy (default), half-normal, Cauchy or normal distribution of scale
+`scale` surrogate standard deviations (`effect_prior`). The Bayes factor
+$f_1(T)/f_0(T)$ is integrated over the prior (`n_draws`), and the
+posterior of the effect is reported with a credible interval.
+
+```{r bayes2}
+rc <- rcausality(lg, method = "cmi", lag = 1, bayes = TRUE, seed = 1,
+                 control = bayes_control(effect_prior = "half_cauchy", scale = 1, null_model = "kde", n_draws = 4000))
+rc$bayes
+surrogate_bf(0.23, rnorm(200, 0, 0.02))     # the generic test on its own
+```
+
+The posterior-based methods take a prior over the five causal cases
+(`case_prior`), the Markov-chain approach combines the Bayes factors of
+its six tests through the decision table, and `plot(r, "posterior")`
+shows the posterior probabilities and effect intervals:
+
+```{r bayes-plot, fig.height = 4, fig.cap = "plot(rb, 'posterior'): posterior probability of every directed link with its Bayes factor, and the credible interval of Geweke's measure."}
+rcausality(sim_logistic_bdc(800, "x_to_y", seed = 1), method = "dc", bayes = TRUE,
+           control = bayes_control(case_prior = c(1, 1, 1, 4, 4)))$pairs[, c("cause", "effect", "post_prob", "bf10")]
+plot(rb, "posterior")
+```
+
+# Causality-informed forecasting
+
+The detected links define a **restricted VAR**: every series is regressed
+on its own lags and on the lags of its significant causes only.
+`predict()` compares this model with the own-lags model by rolling
+one-step forecasts on the last 20 % of the sample, and forecasts `h`
+steps ahead with intervals from the multi-step MSE recursion (Luetkepohl,
+2005):
+
+```{r forecast, fig.height = 7, fig.cap = "predict(): hold-out one-step predictions of the own-lags model (dashed) and the causal model (blue), and the h-step forecasts with 95 % intervals."}
+fc <- predict(rn, h = 8)
+fc
+plot(fc, n_last = 80)
+```
+
+The driven series gain from their causes; the undriven ones are forecast
+by their own lags alone (0 % change), as they should be.
+
+# Practical matters
+
+## Speed and several cores
+
+The kNN and surrogate-based methods cost $O(n^2)$ per permutation. A C++
+back-end keeps them fast for series of a few thousand points, and `cores`
+distributes the work over several CPU cores: the series pairs when there
+are at least as many pairs as cores, otherwise the permutations or
+surrogates of every test; `bayes_granger()` runs its chains in parallel,
+`benchmark_methods()` its replications. Every unit of work draws from its
+own L'Ecuyer-CMRG random stream, so **the results do not depend on the
+number of cores**: for a given `seed`, `cores = 1` and `cores = 8` give the
+same p-values, Bayes factors and verdicts to the last digit, and the
+session's generator is left where a serial call leaves it. Forked workers
+are used on Linux and macOS, a socket cluster (kept for the session) on
+Windows, where the package must be installed; a cluster object from
+`parallel::makeCluster()` is accepted too, and `options(Rcausality.cores =)`
+sets the default for the session (`?Rcausality-parallel`).
+
+```{r cores, eval = FALSE}
+rcausality(net, method = "cmi", cores = 4, seed = 1)
+rcausality(net, method = "cmi", cores = "auto", seed = 1)   # all physical cores but one
+options(Rcausality.cores = 4)                               # for every call of the session
+```
+
+```{r cores-check, echo = TRUE}
+r1 <- rcausality(lg, method = "te", seed = 1, cores = 1)
+r2 <- rcausality(lg, method = "te", seed = 1, cores = 2)
+identical(r1$pairs, r2$pairs)
+```
+
+## Your own data
+
+Numeric columns of a data frame are the series. `prep_series()`
+differences, standardises and imputes; stationarity matters for the
+regression-based methods, while the embedding-based ones need long, low-
+noise series.
+
+```{r own, eval = FALSE}
+my <- read.csv("series.csv")
+my <- prep_series(my, diff = 1)          # first differences, linear interpolation of NAs
+plot_series(my)
+res <- rcausality(my, method = "cmi", cores = "auto", seed = 1)
+res; plot(res, "all")
+compare_methods(my, methods = c("granger", "cmi", "te"), seed = 1)
+```
+
+## Which method?
+
+* Linear, stochastic series: `"granger"` / `"bayes_granger"`, with
+  `conditional = TRUE` for several series.
+* Non-linear stochastic coupling: `"cmi"`, `"te"`, `"pid"`; `"cmi_lag"`
+  when a hidden common driver is suspected; `"markov"` for the
+  Markov-property reading.
+* Deterministic (chaotic) systems observed with little noise: `"dc"`,
+  `"ccdh"`, `"ccm"`, `"hirata"`, `"cd"`; `"df"` for the
+  degrees-of-freedom reading of either kind of system.
+* Many autocorrelated candidates: `"pcmci"` (needs the Python package
+  tigramite) or conditional Granger / CMI.
+
+# References
+
+Frenzel, S. and Pompe, B. (2007). Partial mutual information for coupling
+analysis of multivariate time series. *Physical Review Letters*, 99,
+204101. <https://doi.org/10.1103/PhysRevLett.99.204101>
+
+George, E. I. and McCulloch, R. E. (1993). Variable selection via Gibbs
+sampling. *Journal of the American Statistical Association*, 88(423),
+881-889. <https://doi.org/10.1080/01621459.1993.10476353>
+
+Geweke, J. (1982). Measurement of linear dependence and feedback between
+multiple time series. *Journal of the American Statistical Association*,
+77(378), 304-313. <https://doi.org/10.1080/01621459.1982.10477803>
+
+Granger, C. W. J. (1969). Investigating causal relations by econometric
+models and cross-spectral methods. *Econometrica*, 37(3), 424-438.
+<https://doi.org/10.2307/1912791>
+
+Kass, R. E. and Raftery, A. E. (1995). Bayes factors. *Journal of the
+American Statistical Association*, 90(430), 773-795.
+<https://doi.org/10.1080/01621459.1995.10476572>
+
+Liang, F., Paulo, R., Molina, G., Clyde, M. A. and Berger, J. O. (2008).
+Mixtures of g priors for Bayesian variable selection. *Journal of the
+American Statistical Association*, 103(481), 410-423.
+<https://doi.org/10.1198/016214507000001337>
+
+Luetkepohl, H. (2005). *New Introduction to Multiple Time Series
+Analysis*. Springer, Berlin. <https://doi.org/10.1007/978-3-540-27752-1>
+
+Rouder, J. N., Speckman, P. L., Sun, D., Morey, R. D. and Iverson, G.
+(2009). Bayesian t tests for accepting and rejecting the null hypothesis.
+*Psychonomic Bulletin & Review*, 16, 225-237.
+<https://doi.org/10.3758/PBR.16.2.225>
+
+Runge, J. (2018). Conditional independence testing based on a
+nearest-neighbor estimator of conditional mutual information.
+*Proceedings of the 21st International Conference on Artificial
+Intelligence and Statistics (AISTATS)*, PMLR 84, 938-947.
+
+Schreiber, T. (2000). Measuring information transfer. *Physical Review
+Letters*, 85(2), 461-464. <https://doi.org/10.1103/PhysRevLett.85.461>
+
+Schwarz, G. (1978). Estimating the dimension of a model. *The Annals of
+Statistics*, 6(2), 461-464. <https://doi.org/10.1214/aos/1176344136>
+
+Sellke, T., Bayarri, M. J. and Berger, J. O. (2001). Calibration of p
+values for testing precise null hypotheses. *The American Statistician*,
+55(1), 62-71. <https://doi.org/10.1198/000313001300339950>
+
+Sugihara, G., May, R., Ye, H., Hsieh, C., Deyle, E., Fogarty, M. and
+Munch, S. (2012). Detecting causality in complex ecosystems. *Science*,
+338(6106), 496-500. <https://doi.org/10.1126/science.1227079>
+
+Takens, F. (1981). Detecting strange attractors in turbulence. In:
+*Dynamical Systems and Turbulence, Warwick 1980*, Lecture Notes in
+Mathematics 898, 366-381. Springer. <https://doi.org/10.1007/BFb0091924>
+
+Zlatniczki, A., Stippinger, M., Benko, Z., Somogyvari, Z. and Telcs, A.
+(2021). Relaxation of some confusions about confounders. *Entropy*,
+23(11), 1450. <https://doi.org/10.3390/e23111450>

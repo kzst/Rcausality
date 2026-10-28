@@ -1,0 +1,76 @@
+/* Rcausality vignette style: the rmarkdown html_vignette look with a fixed
+   sidebar table of contents on wide screens (no external assets). */
+
+body {
+  background-color: #fff;
+  margin: 1em auto;
+  max-width: 760px;
+  overflow: visible;
+  padding-left: 2em;
+  padding-right: 2em;
+  font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  color: #222;
+}
+
+h1.title { font-size: 1.9em; color: #1B4F72; margin-bottom: 0.2em; }
+h4.author, h4.date { font-weight: normal; color: #666; margin-top: 0; }
+h1 { font-size: 1.45em; color: #1B4F72; border-bottom: 2px solid #D6E4F0; padding-bottom: 0.15em; margin-top: 1.8em; }
+h2 { font-size: 1.2em; color: #1B4F72; margin-top: 1.5em; }
+h3 { font-size: 1.05em; color: #2B5C8A; }
+
+a { color: #1B7A43; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* table of contents: a box at the top on narrow screens ... */
+#TOC {
+  clear: both;
+  margin: 0 0 10px 0;
+  padding: 6px 10px;
+  border: 1px solid #CCCCCC;
+  border-radius: 5px;
+  background-color: #f6f8fa;
+  font-size: 13px;
+  line-height: 1.3;
+}
+#TOC .toctitle { font-weight: bold; font-size: 14px; margin-left: 2px; }
+#TOC ul { padding-left: 1.2em; margin: 4px 0; list-style: none; }
+#TOC ul ul { padding-left: 1em; }
+#TOC li { line-height: 17px; margin: 2px 0; }
+#TOC a { color: #1B4F72; }
+#TOC a:hover { color: #1B7A43; }
+
+/* ... and a fixed sidebar on wide screens */
+@media (min-width: 1150px) {
+  body { margin-left: 320px; }
+  #TOC {
+    position: fixed;
+    top: 1em;
+    left: 1em;
+    width: 250px;
+    max-height: calc(100vh - 3em);
+    overflow-y: auto;
+    z-index: 10;
+  }
+}
+
+/* code */
+pre, code { font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace; font-size: 13px; }
+pre { margin: 0.6em 0; padding: 8px 10px; background-color: #f7f7f7; border: 1px solid #e3e3e3; border-radius: 4px; overflow-x: auto; }
+code { color: #1B4F72; }
+pre code { color: inherit; }
+pre:not([class]) { background-color: #fbfbfb; color: #444; }
+
+/* tables */
+table { margin: 1em auto; border-collapse: collapse; font-size: 14px; }
+table th { background-color: #EAF1F8; border-bottom: 2px solid #B8CCE0; padding: 5px 9px; text-align: left; }
+table td { border-bottom: 1px solid #e3e3e3; padding: 4px 9px; line-height: 19px; vertical-align: top; }
+table tr:nth-child(even) td { background-color: #fafbfc; }
+
+/* figures */
+img { max-width: 100%; height: auto; border: 1px solid #e8e8e8; border-radius: 3px; }
+p.caption { color: #555; font-size: 13px; text-align: center; margin-top: 0.3em; }
+
+blockquote { border-left: 4px solid #D6E4F0; margin: 1em 0; padding: 0.2em 1em; color: #444; background: #fbfdff; }
+.paper { border-left: 4px solid #1B7A43; background: #f4faf6; padding: 0.4em 1em; margin: 1em 0; font-size: 14px; }

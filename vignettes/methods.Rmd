@@ -1,0 +1,748 @@
+---
+title: "The methods, paper by paper"
+author: "Zsolt T. Kosztyán (University of Pannonia)"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    css: rcausality.css
+vignette: >
+  %\VignetteIndexEntry{The methods, paper by paper}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE, warning = FALSE,
+                      fig.width = 7.5, fig.height = 4.6, fig.align = "center", out.width = "100%",
+                      dev = if (requireNamespace("svglite", quietly = TRUE)) "svglite" else
+                        if (isTRUE(capabilities("cairo"))) "svg" else "png")
+library(Rcausality)
+has_ranger <- requireNamespace("ranger", quietly = TRUE)
+has_tigramite <- pcmci_available()
+```
+
+# Overview
+
+This vignette goes through the methods of `rcausality()` one by one. For
+every method it gives the **full reference** of the paper it implements,
+explains the **idea** and what exactly is implemented, names **where in
+the paper** the reproduced result is, and runs a **reduced reproduction**
+with figures. The full-size reproduction scripts are installed with the
+package (`system.file("reproduce", package = "Rcausality")`) and their
+results are summarised in the README; the sizes here are kept small so
+that the vignette builds in a couple of minutes, so numbers are noisier
+than in the scripts. The last section compares the methods on common
+benchmarks.
+
+| `method` | Reference | Kind of system |
+|---|---|---|
+| `"granger"`, `"bayes_granger"` | Granger (1969); Geweke (1982); Kass & Raftery (1995); Liang et al. (2008) | linear, stochastic |
+| `"cmi"`, `"cmi_lag"` | Frenzel & Pompe (2007); Runge (2018); Zlatniczki et al. (2021) | non-linear, stochastic; hidden common driver |
+| `"markov"` | Stippinger et al. (2023) | stochastic dynamical systems |
+| `"df"` | Telcs, Kurbucz & Jakovac (2025) | deterministic or stochastic |
+| `"dc"` | Benko et al. (2024) | deterministic (chaotic) |
+| `"ccdh"` | Stippinger et al. (2023) | deterministic; hidden common cause |
+| `"dfe"` | Jakovac et al. (manuscript) | binary / stochastic |
+| `"pid"` | Telcs (2026); Mages et al. (2024) | stochastic, information atoms |
+| `"hirata"` | Hirata & Aihara (2010) | deterministic; hidden common cause |
+| `"cd"` | Krakovska (2019) | deterministic |
+| `"te"`, `"ccm"` | Schreiber (2000); Sugihara et al. (2012) | baselines |
+| `"pcmci"` (optional) | Runge et al. (2019) | many autocorrelated variables |
+
+# Granger causality and its Bayesian variants
+
+<div class="paper">
+Granger, C. W. J. (1969). Investigating causal relations by econometric
+models and cross-spectral methods. *Econometrica*, 37(3), 424-438.
+<https://doi.org/10.2307/1912791><br>
+Geweke, J. (1982). Measurement of linear dependence and feedback between
+multiple time series. *JASA*, 77(378), 304-313.
+<https://doi.org/10.1080/01621459.1982.10477803><br>
+Kass, R. E. and Raftery, A. E. (1995). Bayes factors. *JASA*, 90(430),
+773-795. <https://doi.org/10.1080/01621459.1995.10476572><br>
+Liang, F., Paulo, R., Molina, G., Clyde, M. A. and Berger, J. O. (2008).
+Mixtures of g priors for Bayesian variable selection. *JASA*, 103(481),
+410-423. <https://doi.org/10.1198/016214507000001337>
+</div>
+
+**Idea.** $x$ Granger-causes $y$ if the lags of $x$ improve the linear
+prediction of $y_t$ beyond the lags of $y$ (and of the control series in
+the conditional version). The restricted model $y_t = a_0 + \sum_l a_l
+y_{t-l} + \varepsilon_t$ is compared with the unrestricted one that adds
+$\sum_l b_l x_{t-l}$ by an F-test; Geweke's measure $\log(RSS_r/RSS_u)$
+is the effect size.
+
+**Bayesian decision.** `bayes = TRUE` turns the regression into a
+Bayesian one (`bayes_control()`): stochastic-search variable selection
+over the cause's lags (`prior = "spike_slab"`, George and McCulloch 1993;
+posterior inclusion probability per lag, exact enumeration of the lag
+subsets), a block comparison with a normal slab (`"normal"`), or the
+closed-form factors: the Schwarz (BIC) approximation
+$\log BF_{10} \approx (BIC_r - BIC_u)/2$, the exact factor under Zellner's
+g-prior with $g = n$ (`"g"`) and under the hyper-g prior of Liang et al.
+(2008) (`"hyper_g"`). Posterior draws give credible intervals of Geweke's
+measure. Evidence labels follow Kass and Raftery. Every other method has a
+Bayesian variant as well (a Bayesian surrogate test with an effect-size
+prior, a prior over the causal cases, a Bayesian Markov decision table);
+see `vignette("rcausality")`.
+
+```{r granger}
+d <- sim_var(400, "x_to_y", seed = 1)
+bf <- sapply(c("spike_slab", "normal", "bic", "g", "hyper_g"), function(pr)
+  rcausality(d, bayes = TRUE, control = bayes_control(prior = pr, n_iter = 200, chains = 1))$pairs$bf10)
+rownames(bf) <- c("y -> x", "x -> y"); signif(bf, 3)
+```
+
+The five factors agree: overwhelming evidence for `x -> y`, evidence
+against `y -> x` (the hyper-g factor is the least extreme, as expected
+from its heavier-tailed prior).
+
+```{r granger-lags, fig.height = 4, fig.cap = "The lag scan of the Granger statistic on the VAR(1) pair: the evidence for x -> y is strongest at lag 1 and decays, y -> x stays at the noise level."}
+plot(rcausality(d), "lags")
+```
+
+# Zlatniczki et al. (2021): lag-shifted conditional mutual information
+
+<div class="paper">
+Zlatniczki, A., Stippinger, M., Benko, Z., Somogyvari, Z. and Telcs, A.
+(2021). Relaxation of some confusions about confounders. *Entropy*,
+23(11), 1450. <https://doi.org/10.3390/e23111450><br>
+Frenzel, S. and Pompe, B. (2007). Partial mutual information for
+coupling analysis of multivariate time series. *Physical Review
+Letters*, 99, 204101. <https://doi.org/10.1103/PhysRevLett.99.204101><br>
+Runge, J. (2018). Conditional independence testing based on a
+nearest-neighbor estimator of conditional mutual information. *AISTATS
+2018*, PMLR 84, 938-947.
+</div>
+
+**Idea.** *Relation 1* (Sect. 2.1) decides between $A \to B$, $B \to A$,
+no coupling and a common driver from three conditional mutual
+informations: the lagged ones $I_A = I(A_{t-\tau}; B_t \mid B\text{-past},
+A\text{-past})$ and $I_B$ (the reverse), and the contemporaneous one
+$I^{(k)} = I(A_t; B_t \mid \text{both pasts})$. A directed link shows up
+in one lagged quantity and leaves $I^{(k)} = 0$, whereas a common driver
+leaves both lagged quantities at zero but makes $I^{(k)} > 0$. Sect. 2.7
+and Appendix A discuss the convergence of these quantities in the history
+depth; Sects. 2.4-2.6 relate the delays of the three processes by a
+triangle inequality (`lag_triangle_check()`).
+
+**Implemented.** `method = "cmi_lag"`: the CMIs are estimated with the
+Frenzel-Pompe kNN estimator (`knn_cmi()`), tested with Runge's
+local-permutation scheme (`local_permutation_test()`); the
+contemporaneous test adds the `common_cause` class. The paper is
+theoretical (no numerical experiments), so the reproduction illustrates
+its propositions on systems with known truth.
+
+```{r zlatniczki}
+set.seed(5); n <- 400
+e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # shared innovation = hidden common driver
+common <- data.frame(x = as.numeric(stats::filter(e1, 0.5, "recursive")),
+                     y = as.numeric(stats::filter(e2, 0.5, "recursive")))
+r_dir <- rcausality(sim_var(n, "x_to_y", seed = 1), method = "cmi_lag", lag = 1, seed = 1)
+r_com <- rcausality(common, method = "cmi_lag", lag = 1, seed = 1)
+rbind(direct = c(class = r_dir$classes$class, instant_p = signif(r_dir$instant$p_value, 2)),
+      common = c(class = r_com$classes$class, instant_p = signif(r_com$instant$p_value, 2)))
+```
+
+Appendix A: the contemporaneous CMI of the common-driver pair stays
+positive as the conditioning history grows, that of the directly driven
+pair stays at zero.
+
+```{r zlatniczki-conv, fig.height = 3.8, fig.cap = "Convergence of the contemporaneous CMI in the history depth (Zlatniczki et al. 2021, Appendix A)."}
+dd <- sim_var(n, "x_to_y", seed = 1)
+cv <- cbind(common_driver = cmi_convergence(common$x, common$y, lag = 0, depths = 1:4)$cmi,
+            direct_link   = cmi_convergence(dd$x, dd$y, lag = 0, depths = 1:4)$cmi)
+matplot(1:4, cv, type = "b", pch = 16, lwd = 2, lty = 1, col = c("#B2403A", "#2B5C8A"), xlab = "history depth d",
+        ylab = "I(x[t]; y[t] | pasts of depth d)", xaxt = "n", main = "Contemporaneous CMI vs history depth", font.main = 2)
+axis(1, 1:4); abline(h = 0, lty = 3, col = "grey50")
+legend("topright", c("common driver", "direct link x -> y"), col = c("#B2403A", "#2B5C8A"), lwd = 2, pch = 16, bty = "n")
+```
+
+# Stippinger et al. (2023): the Markov-chain approach
+
+<div class="paper">
+Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A.
+(2023). Causal discovery of stochastic dynamical systems: a Markov chain
+approach. *Mathematics*, 11(4), 852.
+<https://doi.org/10.3390/math11040852>
+</div>
+
+**Idea.** An autonomous process is Markov in its own state; a *driven*
+process is not, because the driver acts as hidden memory; the lagged
+joint state $(x_t, y_{t+1})$ of a driver and its driven process is Markov
+again, while the joint of two processes with a hidden common cause is
+not. Testing the Markov property of $x$, $y$ and the joint therefore
+gives a causal verdict (decision tables (10)-(12), Sect. 4).
+
+**Implemented.** `markov_test()` for discrete states uses exact
+contingency tables conditional on the present state; for continuous
+states it follows Algorithms 1-2 of the paper (kNN conditions of size
+$\sqrt{n}$, local random projections, two bins, Yates-corrected modified
+log-likelihood test, local-permutation surrogates of the futures). The
+local p-values are aggregated by a clipped geometric mean (the paper uses
+the harmonic mean, `aggregate = "harmonic"`).
+
+**Reproduced.** Sect. 6.1, the "turn-wheel" example of Figure 2: Alice is
+a two-state Markov chain that drives Bob and Barry with one step delay.
+
+```{r markov}
+w <- sim_turnwheel(2000, seed = 1); N <- nrow(w)
+mp <- function(x) markov_test(x, m = 1, n_perm = 49, seed = 1)$p_value
+pv <- c(alice = mp(w$alice), bob = mp(w$bob), barry = mp(w$barry),
+        `alice[t] x bob[t+1]` = mp(cbind(w$alice[-N], w$bob[-1])), `bob x barry` = mp(cbind(w$bob, w$barry)))
+round(pv, 3)
+```
+
+```{r markov-plot, fig.height = 3.8, fig.cap = "Markov-property p-values of the turn-wheel series (Stippinger et al. 2023, Fig. 2): the driver and the lagged driver-driven joint are Markov, the driven series and the joint of the two driven series are not."}
+bp <- barplot(pv, col = ifelse(pv < 0.05, "#B2403A", "#1B7A43"), ylim = c(0, 1), ylab = "p-value of the Markov test",
+              names.arg = rep("", 5), border = "grey40", main = "Turn-wheel: who is Markov?", font.main = 2)
+mtext(names(pv), side = 1, at = bp, line = 1, cex = 0.75); abline(h = 0.05, lty = 3, col = "grey40")
+legend("topleft", c("Markov (p >= 0.05)", "not Markov"), fill = c("#1B7A43", "#B2403A"), bty = "n", cex = 0.8)
+```
+
+The decision table in `rcausality()`:
+
+```{r markov-rc}
+rcausality(w[1:800, c("alice", "bob")], method = "markov", memory = 1, n_perm = 49, n_markov = 49, seed = 1)$classes$relation
+```
+
+# Telcs, Kurbucz and Jakovac (2025): degrees of freedom
+
+<div class="paper">
+Telcs, A., Kurbucz, M. T. and Jakovac, A. (2025). Unified causality
+analysis based on the degrees of freedom. *Physical Review E*, 112(1),
+014204. <https://doi.org/10.1103/PhysRevE.112.014204>
+</div>
+
+**Idea.** The *order* (number of degrees of freedom) of a process is the
+number of past values that have to be fixed for the present value to be
+determined: constrain the past within windows of width $\sigma_W$ and
+watch the conditional spread $\sigma$ of the present (Definition 1,
+Sect. 6.1). With $N$ constraints the $\sigma(\sigma_W)$ curve is flat
+(saturated) while $N$ is below the order and proportional to the width
+once the past is fully constrained. Table 2 reads the orders of $x$, $y$
+and the joint process as a causal case ($d_{xy} = d_y > d_x$ means
+$x \to y$; $d_{xy} = d_x + d_y$ independence; $\max < d_{xy} < d_x +
+d_y$ a hidden common cause). Sect. 7 adds the directed test "constrain
+the cause's past and watch the effect's spread".
+
+**Implemented.** `df_variance()` with adaptive (kNN) windows and a
+local-permutation test of every added constraint, plus the
+$\sigma(\sigma_W, N)$ profile of the paper; `rcausality(method = "df")`
+estimates the three orders and applies Table 2 whenever it is
+determinate, otherwise the directed tests.
+
+**Reproduced.** The linear rotation system of Sect. 6.4 (Eqs. 25-30,
+Figs. 1-2): a two-dimensional rotation $z$ drives $x$ and $y$.
+
+```{r df, fig.height = 4.4, fig.cap = "sigma(sigma_W, N) profile of the z subsystem (Telcs et al. 2025, Figs. 1-2): the N = 0 line is flat, every N >= 1 line is proportional to the width, so one constraint determines z."}
+d <- sim_df_rotation(800, "deterministic", seed = 1)
+dz <- df_variance(d[, c("z1", "z2")], max_constr = 3, n_perm = 29, seed = 1)
+dz
+plot(dz)
+```
+
+The Table-2 reading on the pair $(z_1, x_1)$: $x$ has order 4 (its own
+two lags plus the two of $z$ that it carries), $z$ order 2, the joint
+order 4, hence $z \to x$. The directed tests alone would read the
+deterministic pair as bidirectional, because the driven series
+reconstructs its driver.
+
+```{r df2}
+d <- sim_df_rotation(1500, "deterministic", seed = 1)
+r <- rcausality(d[, c("z1", "x1")], method = "df", lag = 1, max_constr = 4, n_perm = 39, seed = 1)
+r$df[, c("df_x", "df_y", "df_joint", "table2", "decided_by")]
+r$classes$relation
+```
+
+# Benko et al. (2024): Bayesian dimensional causality
+
+<div class="paper">
+Benko, Z., Zlatniczki, A., Stippinger, M., Fabo, D., Solyom, A., Eross,
+L., Telcs, A. and Somogyvari, Z. (2024). Bayesian inference of causal
+relations between dynamical systems. *Chaos, Solitons & Fractals*, 185,
+115142. <https://doi.org/10.1016/j.chaos.2024.115142><br>
+Farahmand, A. M., Szepesvari, C. and Audibert, J.-Y. (2007).
+Manifold-adaptive dimension estimation. *ICML 2007*, 265-272.
+<https://doi.org/10.1145/1273496.1273530>
+</div>
+
+**Idea.** By Takens' theorem the delay embedding of a driven system
+contains the driver, so the intrinsic dimensions of the embedded $X$,
+$Y$, their joint $J$ and an "independent joint" $Z$ (the joint of $X$
+with a shuffled $Y$) obey different relations in the five causal cases
+(Eqs. 1-4): $D_X = D_J < D_Y$ ... for $X \to Y$ (the joint is no larger
+than the driven system), $D_J = D_X + D_Y = D_Z$ for independence,
+$\max(D_X, D_Y) < D_J < D_Z$ for a hidden common cause. Dimensions are
+estimated with the Farahmand kNN estimator at several $k$, and Appendix
+A.2 integrates the dimension likelihoods over nine events to a
+posterior probability of the cases.
+
+**Implemented.** `dimensional_causality()` (written from the paper; the
+authors' AGPL reference code was not used), rank normalisation,
+$J = $ embedding of $a x + y$ with $a = \sqrt{29/31}$, effective sample
+size $n/(2k)$, grid integration of the likelihoods.
+
+**Reproduced.** Appendix B.2 and Figure 1: three coupled logistic maps
+(`sim_logistic_bdc()`, $r = 3.99$, $\beta = 0.5$), all five patterns.
+
+```{r dc, fig.height = 4.2, fig.cap = "Dimensional causality on the hidden-common-cause pattern (Benko et al. 2024, Fig. 1): D_X = D_Y < D_J < D_Z and the posterior concentrates on the common cause."}
+db <- sim_logistic_bdc(2000, "common_cause", seed = 1)
+dc <- dimensional_causality(db$x, db$y, m = 4, k_range = seq(12, 36, by = 8), seed = 1)
+dc
+plot(dc)
+```
+
+```{r dc-all}
+sapply(c("x_to_y", "bidirectional", "common_cause", "independent"), function(sc) {
+  dd <- sim_logistic_bdc(1500, sc, seed = 2)
+  dimensional_causality(dd$x, dd$y, m = 4, k_range = seq(12, 36, by = 8), seed = 1)$best
+})
+```
+
+# Stippinger et al. (2023): CCDH, complexity-based discovery of a hidden common cause
+
+<div class="paper">
+Stippinger, M., Varga, B., Benko, Z., Fabo, D., Eross, L., Telcs, A. and
+Somogyvari, Z. (2023). CCDH: Complexity based causal discovery of hidden
+common cause in time series. *Chaos, Solitons & Fractals*, 176, 114054.
+<https://doi.org/10.1016/j.chaos.2023.114054><br>
+Nagaraj, N., Balasubramanian, K. and Dey, S. (2013). A new complexity
+measure for time series analysis and classification. *Eur. Phys. J.
+Special Topics*, 222, 847-860. <https://doi.org/10.1140/epjst/e2013-01888-9>
+</div>
+
+**Idea.** The rank-order patterns of an embedded series are compressed
+with NSRPS (non-sequential recursive pair substitution, Sect. 2); the
+compression-rate curve $cr_k$ measures complexity. If $y$ drives $x$, the
+lagged $y$ is a function of the embedding of $x$, so the *skewed joint*
+$(x_t, \dots, x_{t-m+2}, y_{t-m+1})$ is as compressible as $x$ alone;
+if $x$ drives $y$ the same holds for the other joint; both hold for
+mutual coupling; neither for a hidden common cause (Propositions 1-3,
+Sect. 3).
+
+**Implemented.** `ccdh()` with the NSRPS compressor in C++, circular-shift
+surrogates (the paper leaves the significance test open) and the
+reconstruction index $\Delta / \Delta_{\text{surrogate}}$ thresholded at
+`theta = 0.45`. The worked NSRPS example of Appendix 7.1 is reproduced
+exactly in the tests.
+
+**Reproduced.** Sect. 4, Figure 1: coupled logistic maps with a driver
+(`sim_logistic3()`).
+
+```{r ccdh, fig.height = 4.4, fig.cap = "CCDH compression curves (Stippinger et al., Fig. 1a): the joint of the driven x1 with the driver x0 is as compressible as x1 alone, the other joint is not."}
+d3 <- sim_logistic3(1000, "driver", b = 0.4, seed = 3)        # x0 drives x1 and x2
+cc <- ccdh(d3$x0, d3$x1, m = 3, n_surr = 30, seed = 1)
+cc
+plot(cc)
+```
+
+```{r ccdh2}
+ccdh(d3$x1, d3$x2, m = 3, n_surr = 30, seed = 1)$verdict        # both driven by the hidden x0
+dm <- sim_logistic3(1000, "mutual", c = 0.4, seed = 3)
+ccdh(dm$x1, dm$x2, m = 3, n_surr = 30, seed = 1)$verdict        # mutual coupling
+```
+
+# Jakovac et al.: the degrees-of-freedom method with conditional entropies
+
+<div class="paper">
+Jakovac, A., Fabo, D., Eross, L., Stippinger, M., Benko, Z., Somogyvari,
+Z. and Telcs, A. Causality beyond the Reichenbach principle: the
+degrees-of-freedom method (manuscript). Builds on Telcs, Kurbucz and
+Jakovac (2025), *Physical Review E*, 112(1), 014204.
+</div>
+
+**Idea.** The df relations of Table 1 are read from conditional
+entropies instead of conditional variances: the series are binarised,
+the surfaces $H(x_t \mid x\text{-past of length } L, y\text{-past of
+length } K)$ are computed with surrogate-corrected versions, and
+curvature and asymmetry features of the surfaces are classified by a
+random forest trained on coupled binary Markov chains (Sect. 2, Appendix
+F; Figs. 2-3 report 92 % accuracy at length 2000).
+
+**Implemented.** `dfe_classify()` with the feature set of Appendix F plus
+the surrogate-corrected surfaces, `dfe_train()` (a 200-per-class model is
+trained at first use), `sim_markov_pair()`. Needs the `ranger` package;
+a small model is trained here.
+
+```{r dfe, eval = has_ranger, fig.height = 4.2, fig.cap = "Conditional-entropy surfaces of a coupled binary pair and the class probabilities of the random forest (Jakovac et al.)."}
+m <- dfe_train(n_per_class = 30, lengths = c(500, 1000), seed = 1)
+dp <- sim_markov_pair(1500, "x_to_y", seed = 3)
+fe <- dfe_classify(dp$x, dp$y, model = m)
+fe
+plot(fe)
+```
+
+# Telcs (2026): finite-resolution MAR-PID
+
+<div class="paper">
+Telcs, A. (2026). Empirical nonnegative finite-resolution MAR-PID for
+continuous variables. *Entropy*, 28(6), 641.
+<https://doi.org/10.3390/e28060641><br>
+Mages, T., Anastasiadi, E. and Rohner, C. (2024). Non-negative
+decomposition of multivariate information: from minimum to blackwell
+specific information. *Entropy*, 26(5), 424.
+<https://doi.org/10.3390/e26050424>
+</div>
+
+**Idea.** The mutual information of two sources about a target is
+decomposed into *redundant*, *unique* and *synergistic* atoms. Continuous
+variables are binarised recursively by quantiles (Sect. 3), the atoms
+are computed bit by bit from the zonogons of the source channels in the
+Blackwell order (Sects. 4-5) and aggregated over the target bits. In
+`rcausality(method = "pid")` the sources are the cause's past and the
+effect's own past, the target the effect's future, and the directed
+statistic is the unique + synergistic ("novel") information of the
+cause's past, tested with surrogates.
+
+**Reproduced.** Sect. 6.2, Table 2: a mixed redundancy-synergy example
+in which $A = V_1 \oplus V_2$ with probability $q$ and $A = V_1 = V_2$
+otherwise ($q = 0$: pure redundancy, $q = 1$: pure synergy).
+
+```{r pid, fig.height = 4, fig.cap = "MAR-PID atoms of the mixed example (Telcs 2026, Table 2): redundancy at q = 0 turns into synergy at q = 1."}
+set.seed(1); n <- 2000; qs <- c(0, 0.25, 0.5, 0.75, 1)
+atoms <- sapply(qs, function(q) {
+  V1 <- rbinom(n, 1, 0.5); V2 <- ifelse(runif(n) < q, rbinom(n, 1, 0.5), V1)
+  A <- ifelse(runif(n) < q, as.integer(xor(V1, V2)), V1)
+  marpid(A, V1, V2, k_target = 1, k_source = 1)$atoms[c("redundant", "unique_1", "unique_2", "synergy")]
+})
+colnames(atoms) <- paste0("q = ", qs); round(atoms, 2)
+barplot(atoms, col = c("#1B7A43", "#2B5C8A", "#7FB3D5", "#B2403A"), border = "grey40", ylab = "bits",
+        main = "Information atoms of A about (V1, V2)", font.main = 2, legend.text = rownames(atoms),
+        args.legend = list(x = "top", horiz = TRUE, bty = "n", cex = 0.8, inset = -0.02), ylim = c(0, 1.25))
+```
+
+```{r pid-rc}
+rcausality(sim_var(600, "x_to_y", seed = 1), method = "pid", lag = 1, seed = 1)$pairs[, c("cause", "effect", "statistic", "p_adj", "significant")]
+```
+
+# Hirata and Aihara (2010): recurrence plots
+
+<div class="paper">
+Hirata, Y. and Aihara, K. (2010). Identifying hidden common causes from
+bivariate time series by using the recurrence plot. *Physical Review E*,
+81, 016203. <https://doi.org/10.1103/PhysRevE.81.016203><br>
+Marwan, N., Romano, M. C., Thiel, M. and Kurths, J. (2007). Recurrence
+plots for the analysis of complex systems. *Physics Reports*, 438(5-6),
+237-329. <https://doi.org/10.1016/j.physrep.2006.11.001>
+</div>
+
+**Idea.** A recurrence plot marks the pairs of times $(i, j)$ at which
+the embedded state returns to itself. Two criteria: (1) related series
+recur *simultaneously* far more often than independent ones (joint
+recurrence rate over the product of the rates); (2) if $x$ drives $y$,
+the state of $y$ determines that of $x$, so every recurrence of $y$ is
+also a recurrence of $x$: the *coverage* $P(R_X \mid R_Y)$ is close to
+one, and non-coverage denies the direction. Simultaneous recurrences
+without coverage in either direction indicate a hidden common cause.
+
+**Implemented.** `hirata_rp()` with tight (rate/5) recurrences
+conditioned on and loose (rate) ones covering, circular-shift surrogates,
+a coverage index threshold. The full text was not available to us; the
+implementation follows the abstract and the standard recurrence-plot
+definitions.
+
+```{r hirata, dev = "png", dpi = 110, fig.height = 3.6, fig.cap = "Recurrence plots of a driver x, a driven y, and the coverage picture: the tight recurrences of y that fall on recurrences of x (green) versus those that do not (red)."}
+dh <- sim_logistic_bdc(800, "x_to_y", seed = 1)
+h <- hirata_rp(dh$x, dh$y, E = 3, n_surr = 50, seed = 1)
+h
+plot(h)
+```
+
+# Krakovska (2019): correlation-dimension relations
+
+<div class="paper">
+Krakovska, A. (2019). Correlation dimension detects causal links in
+coupled dynamical systems. *Entropy*, 21(9), 818.
+<https://doi.org/10.3390/e21090818><br>
+Krakovska, A., Jakubik, J., Chvostekova, M., Coufal, D., Jajcay, N. and
+Palus, M. (2018). Comparison of six methods for the detection of
+causality in a bivariate time series. *Physical Review E*, 97, 042207.
+<https://doi.org/10.1103/PhysRevE.97.042207>
+</div>
+
+**Idea.** The Grassberger-Procaccia correlation dimensions of $X$, $Y$,
+their joint and an independent joint obey the same relations as the
+intrinsic dimensions of the dimensional method; the relations are tested
+with bootstrap standard errors (plus a 10 % relative tolerance here).
+
+```{r krakovska, fig.height = 3.8, fig.cap = "Correlation sums of X, Y and the joint of the driven pair: the slopes (dimensions) of X and the joint coincide when x drives y."}
+kc <- krakovska_cd(dh$x, dh$y, E = 3, n_boot = 10, seed = 1)
+kc
+ex <- embed_delay(dh$x, 3); ey <- embed_delay(dh$y, 3); ej <- embed_delay(sqrt(29 / 31) * dh$x + dh$y, 3)
+cs <- lapply(list(X = ex, Y = ey, joint = ej), corr_dim, n_boot = 0)
+plot(NA, xlim = range(sapply(cs, function(z) range(log(z$radii)))), ylim = range(sapply(cs, function(z) range(log(z$corr_sum)))),
+     xlab = "log r", ylab = "log C(r)", main = "Correlation sums (Grassberger-Procaccia)", font.main = 2)
+cols <- c("#B2403A", "#2B5C8A", "#1B7A43")
+for (i in 1:3) { z <- cs[[i]]; lines(log(z$radii), log(z$corr_sum), col = cols[i], lwd = 2); points(log(z$radii), log(z$corr_sum), col = cols[i], pch = 16) }
+legend("topleft", sprintf("%s: D2 = %.2f", names(cs), sapply(cs, `[[`, "d2")), col = cols, lwd = 2, pch = 16, bty = "n")
+```
+
+# Baselines: transfer entropy and convergent cross mapping
+
+<div class="paper">
+Schreiber, T. (2000). Measuring information transfer. *Physical Review
+Letters*, 85(2), 461-464. <https://doi.org/10.1103/PhysRevLett.85.461><br>
+Marschinski, R. and Kantz, H. (2002). Analysing the information flow
+between financial time series: an improved estimator for transfer
+entropy. *European Physical Journal B*, 30, 275-281.
+<https://doi.org/10.1140/epjb/e2002-00379-2><br>
+Sugihara, G., May, R., Ye, H., Hsieh, C., Deyle, E., Fogarty, M. and
+Munch, S. (2012). Detecting causality in complex ecosystems. *Science*,
+338(6106), 496-500. <https://doi.org/10.1126/science.1227079>
+</div>
+
+**Transfer entropy** $T_{x \to y} = I(y_t; x_{t-k} \mid y_{t-l})$ on
+binned series, with shuffle surrogates and the effective TE of
+Marschinski and Kantz (observed minus mean surrogate). **Convergent cross
+mapping** predicts $x$ from the delay embedding of $y$ by simplex
+projection; if $x$ drives $y$, the skill $\rho$ of "$y$ cross-maps $x$"
+rises and converges with the library size (Kendall test), and it is
+compared with time-shift surrogates.
+
+```{r baselines, fig.height = 4, fig.cap = "Convergent cross mapping on coupled logistic maps: the skill of y xmap x (x drives y) converges to a high value; the reverse stays low."}
+lg <- sim_logistic(500, "x_to_y", seed = 2)
+te <- transfer_entropy(lg$x, lg$y, n_surr = 100, seed = 1); c(TE = te$te, TE_eff = te$te_eff, p = te$p_value)
+r1 <- ccm(lg$x, lg$y, E = 3, n_surr = 50, seed = 1); r2 <- ccm(lg$y, lg$x, E = 3, n_surr = 50, seed = 1)
+plot(r1$rho$lib_size, r1$rho$rho, type = "b", pch = 16, lwd = 2, col = "#2B5C8A", log = "x", ylim = c(0, 1),
+     xlab = "library size", ylab = "cross-map skill rho", main = "CCM: convergence with the library size", font.main = 2)
+lines(r2$rho$lib_size, r2$rho$rho, type = "b", pch = 16, lwd = 2, col = "#B2403A")
+legend("right", c(sprintf("y xmap x (x -> y): rho = %.2f", r1$rho_max), sprintf("x xmap y (y -> x): rho = %.2f", r2$rho_max)),
+       col = c("#2B5C8A", "#B2403A"), lwd = 2, pch = 16, bty = "n", cex = 0.85)
+```
+
+# Runge et al. (2019): PCMCI through tigramite (optional)
+
+<div class="paper">
+Runge, J., Nowack, P., Kretschmer, M., Flaxman, S. and Sejdinovic, D.
+(2019). Detecting and quantifying causal associations in large nonlinear
+time series datasets. *Science Advances*, 5(11), eaau4996.
+<https://doi.org/10.1126/sciadv.aau4996><br>
+Runge, J. (2020). Discovering contemporaneous and lagged causal relations
+in autocorrelated nonlinear time series datasets. *UAI 2020*, PMLR 124,
+1388-1397.
+</div>
+
+**Idea.** PCMCI first selects the parents of every variable with the
+PC$_1$ algorithm, then tests every lagged link with the momentary
+conditional independence (MCI) test conditioned on the parents of both
+variables, which controls false positives under autocorrelation;
+PCMCI+ also orients contemporaneous links.
+
+**Implemented.** `pcmci()` wraps the authors' Python package tigramite
+through reticulate (nothing is ported) and maps the MCI statistics,
+adjusted p-values and contemporaneous links onto a `causres`. The chunk
+below runs only when tigramite is installed; the full reproduction
+(`inst/reproduce/runge2019_pcmci.R`) recovers the four links of the
+tigramite tutorial model exactly.
+
+```{r pcmci, eval = has_tigramite}
+net <- sim_var(500, n_series = 3, seed = 1)
+rp <- pcmci(net, tau_max = 2)
+rp$pairs[, c("cause", "effect", "lag", "statistic", "p_adj", "significant")]
+```
+
+# Comparing the methods
+
+## Linear versus non-linear coupling
+
+`compare_methods()` runs several methods on one data set. On a linear
+VAR link the stochastic methods agree. On the chaotic logistic maps of
+Benko et al. the picture splits: the regression- and binning-based tests
+(`granger`, `te`) and CCM read the strong unidirectional coupling as
+bidirectional (the driven system's past does carry information about
+the driver, and the driver's embedding some about the driven system),
+while the kNN-CMI test and the dimension-, recurrence- and
+correlation-dimension methods return the true direction; CCDH reads
+this particular realisation as a hidden common cause.
+
+```{r compare1, fig.height = 3.4, fig.cap = "Verdicts on a linear VAR(1) link."}
+cv <- compare_methods(sim_var(500, "x_to_y", seed = 1), methods = c("granger", "cmi", "te", "pid"), seed = 1, lag = 1)
+cv$table
+plot(cv)
+```
+
+```{r compare2, fig.height = 3.4, fig.cap = "Verdicts on the coupled logistic maps of Benko et al. (x drives y)."}
+cl <- compare_methods(sim_logistic_bdc(500, "x_to_y", seed = 2), methods = c("granger", "cmi", "te", "ccm", "dc", "hirata", "cd", "ccdh"),
+                      seed = 1, lag = 1)
+cl$table
+plot(cl)
+```
+
+## Benchmark on the five patterns of coupled logistic maps
+
+`benchmark_methods()` scores the methods on simulated scenarios with
+known truth. The five patterns of Benko et al. (2024) --
+`sim_logistic_bdc()` -- are the natural benchmark for the
+dynamical-systems methods; the stochastic ones are included for
+contrast. Two replications per scenario keep the vignette fast; use many
+more in practice.
+
+```{r bench, fig.height = 4.6, fig.cap = "Accuracy of the methods on the five coupled-logistic-map patterns (2 replications each, n = 500)."}
+bm <- benchmark_methods(methods = c("granger", "te", "ccm", "dc", "ccdh", "hirata", "cd"),
+                        scenarios = c("x_to_y", "bidirectional", "common_cause", "independent"),
+                        simulator = sim_logistic_bdc, n = 500, reps = 2, seed = 1, args = list(te = list(lag = 1)))
+bm
+plot(bm)
+```
+
+At this length the recurrence and correlation-dimension criteria are the
+most reliable; the dimensional method needs longer series (Benko et al.
+use $N = 10^4$; the README reproduction at that length recovers all
+four patterns), and the stochastic tests cannot tell a hidden common
+cause from a directed link on deterministic data. The confusion matrices
+show *how* a method fails, which matters more than the accuracy figure:
+e.g. whether a hidden common cause is read as a directed link (a false
+causal claim) or as independence (a missed relation).
+
+```{r bench-conf}
+bm$confusion$dc
+bm$confusion$granger
+```
+
+## The same on stochastic data
+
+```{r bench2, fig.height = 4.2, fig.cap = "Accuracy on linear VAR pairs."}
+bv <- benchmark_methods(methods = c("granger", "cmi", "te", "pid"),
+                        scenarios = c("x_to_y", "bidirectional", "independent"), simulator = sim_var,
+                        n = 400, reps = 2, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1)))
+bv
+plot(bv)
+```
+
+## Reading the comparisons
+
+* **Stochastic, linear**: Granger-type tests are the most powerful and
+  the cheapest; the information-theoretic tests agree but need more
+  data.
+* **Deterministic**: the embedding-based methods (`dc`, `ccdh`, `cd`,
+  `hirata`, `ccm`) see the structure the regression misses; `dc` and
+  `ccdh` can name a hidden common cause, `ccm` tends to call strong
+  coupling bidirectional.
+* **Hidden common drivers**: `cmi_lag` (stochastic), `dc`, `ccdh`,
+  `hirata` (deterministic) and the Table-2 reading of `df` are the
+  methods that can return `common_cause`; the others can only report the
+  absence of a directed link.
+* Run `benchmark_methods()` with the simulator closest to your data
+  before trusting one method on it; `compare_methods()` then shows where
+  the chosen methods agree on the real series.
+
+# References
+
+Benko, Z., Zlatniczki, A., Stippinger, M., Fabo, D., Solyom, A., Eross,
+L., Telcs, A. and Somogyvari, Z. (2024). Bayesian inference of causal
+relations between dynamical systems. *Chaos, Solitons & Fractals*, 185,
+115142. <https://doi.org/10.1016/j.chaos.2024.115142>
+
+Farahmand, A. M., Szepesvari, C. and Audibert, J.-Y. (2007).
+Manifold-adaptive dimension estimation. *Proceedings of the 24th
+International Conference on Machine Learning*, 265-272.
+<https://doi.org/10.1145/1273496.1273530>
+
+Frenzel, S. and Pompe, B. (2007). Partial mutual information for coupling
+analysis of multivariate time series. *Physical Review Letters*, 99,
+204101. <https://doi.org/10.1103/PhysRevLett.99.204101>
+
+Geweke, J. (1982). Measurement of linear dependence and feedback between
+multiple time series. *Journal of the American Statistical Association*,
+77(378), 304-313. <https://doi.org/10.1080/01621459.1982.10477803>
+
+Granger, C. W. J. (1969). Investigating causal relations by econometric
+models and cross-spectral methods. *Econometrica*, 37(3), 424-438.
+<https://doi.org/10.2307/1912791>
+
+Hirata, Y. and Aihara, K. (2010). Identifying hidden common causes from
+bivariate time series by using the recurrence plot. *Physical Review E*,
+81, 016203. <https://doi.org/10.1103/PhysRevE.81.016203>
+
+Jakovac, A., Fabo, D., Eross, L., Stippinger, M., Benko, Z., Somogyvari,
+Z. and Telcs, A. Causality beyond the Reichenbach principle: the
+degrees-of-freedom method. Manuscript.
+
+Kass, R. E. and Raftery, A. E. (1995). Bayes factors. *Journal of the
+American Statistical Association*, 90(430), 773-795.
+<https://doi.org/10.1080/01621459.1995.10476572>
+
+Krakovska, A. (2019). Correlation dimension detects causal links in
+coupled dynamical systems. *Entropy*, 21(9), 818.
+<https://doi.org/10.3390/e21090818>
+
+Krakovska, A., Jakubik, J., Chvostekova, M., Coufal, D., Jajcay, N. and
+Palus, M. (2018). Comparison of six methods for the detection of
+causality in a bivariate time series. *Physical Review E*, 97, 042207.
+<https://doi.org/10.1103/PhysRevE.97.042207>
+
+Liang, F., Paulo, R., Molina, G., Clyde, M. A. and Berger, J. O. (2008).
+Mixtures of g priors for Bayesian variable selection. *Journal of the
+American Statistical Association*, 103(481), 410-423.
+<https://doi.org/10.1198/016214507000001337>
+
+Mages, T., Anastasiadi, E. and Rohner, C. (2024). Non-negative
+decomposition of multivariate information: from minimum to blackwell
+specific information. *Entropy*, 26(5), 424.
+<https://doi.org/10.3390/e26050424>
+
+Marschinski, R. and Kantz, H. (2002). Analysing the information flow
+between financial time series. *European Physical Journal B*, 30,
+275-281. <https://doi.org/10.1140/epjb/e2002-00379-2>
+
+Marwan, N., Romano, M. C., Thiel, M. and Kurths, J. (2007). Recurrence
+plots for the analysis of complex systems. *Physics Reports*, 438(5-6),
+237-329. <https://doi.org/10.1016/j.physrep.2006.11.001>
+
+Nagaraj, N., Balasubramanian, K. and Dey, S. (2013). A new complexity
+measure for time series analysis and classification. *The European
+Physical Journal Special Topics*, 222, 847-860.
+<https://doi.org/10.1140/epjst/e2013-01888-9>
+
+Runge, J. (2018). Conditional independence testing based on a
+nearest-neighbor estimator of conditional mutual information.
+*Proceedings of the 21st International Conference on Artificial
+Intelligence and Statistics*, PMLR 84, 938-947.
+
+Runge, J., Nowack, P., Kretschmer, M., Flaxman, S. and Sejdinovic, D.
+(2019). Detecting and quantifying causal associations in large nonlinear
+time series datasets. *Science Advances*, 5(11), eaau4996.
+<https://doi.org/10.1126/sciadv.aau4996>
+
+Runge, J. (2020). Discovering contemporaneous and lagged causal relations
+in autocorrelated nonlinear time series datasets. *Proceedings of the
+36th Conference on Uncertainty in Artificial Intelligence*, PMLR 124,
+1388-1397.
+
+Schreiber, T. (2000). Measuring information transfer. *Physical Review
+Letters*, 85(2), 461-464. <https://doi.org/10.1103/PhysRevLett.85.461>
+
+Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A.
+(2023). Causal discovery of stochastic dynamical systems: a Markov chain
+approach. *Mathematics*, 11(4), 852.
+<https://doi.org/10.3390/math11040852>
+
+Stippinger, M., Varga, B., Benko, Z., Fabo, D., Eross, L., Telcs, A. and
+Somogyvari, Z. (2023). CCDH: Complexity based causal discovery of hidden
+common cause in time series. *Chaos, Solitons & Fractals*, 176, 114054.
+<https://doi.org/10.1016/j.chaos.2023.114054>
+
+Sugihara, G., May, R., Ye, H., Hsieh, C., Deyle, E., Fogarty, M. and
+Munch, S. (2012). Detecting causality in complex ecosystems. *Science*,
+338(6106), 496-500. <https://doi.org/10.1126/science.1227079>
+
+Takens, F. (1981). Detecting strange attractors in turbulence. In:
+*Dynamical Systems and Turbulence, Warwick 1980*, Lecture Notes in
+Mathematics 898, 366-381. Springer. <https://doi.org/10.1007/BFb0091924>
+
+Telcs, A. (2026). Empirical nonnegative finite-resolution MAR-PID for
+continuous variables. *Entropy*, 28(6), 641.
+<https://doi.org/10.3390/e28060641>
+
+Telcs, A., Kurbucz, M. T. and Jakovac, A. (2025). Unified causality
+analysis based on the degrees of freedom. *Physical Review E*, 112(1),
+014204. <https://doi.org/10.1103/PhysRevE.112.014204>
+
+Zlatniczki, A., Stippinger, M., Benko, Z., Somogyvari, Z. and Telcs, A.
+(2021). Relaxation of some confusions about confounders. *Entropy*,
+23(11), 1450. <https://doi.org/10.3390/e23111450>

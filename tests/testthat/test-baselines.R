@@ -1,0 +1,27 @@
+test_that("transfer entropy and CCM baselines work and integrate", {
+  d <- sim_var(400, "x_to_y", seed = 1)
+  te <- transfer_entropy(d$x, d$y, n_surr = 60, seed = 1)
+  expect_lt(te$p_value, 0.05); expect_gt(te$te, 0)
+  expect_gt(transfer_entropy(d$y, d$x, n_surr = 60, seed = 1)$p_value, 0.05)
+  r <- rcausality(d, method = "te", n_perm = 60, seed = 1)
+  expect_equal(r$classes$class, "x_to_y"); expect_output(print(r), "TE.bits")
+  lg <- sim_logistic(300, "x_to_y", coupling = 0.1, seed = 1)
+  c1 <- ccm(lg$x, lg$y, E = 2, n_surr = 30, seed = 1); c2 <- ccm(lg$y, lg$x, E = 2, n_surr = 30, seed = 1)
+  expect_gt(c1$rho_max, c2$rho_max); expect_true(c1$converging)
+  rc <- rcausality(lg, method = "ccm", m = 2, n_perm = 60, seed = 1)
+  expect_s3_class(rc, "causres"); expect_output(print(rc), "cross-map")
+  pdf(NULL); on.exit(dev.off()); expect_no_error(plot(rc, "all"))
+})
+
+test_that("compare_methods and benchmark_methods summarise verdicts", {
+  d <- sim_var(300, "x_to_y", seed = 1)
+  cmp <- compare_methods(d, methods = c("granger", "bayes_granger", "te"), seed = 1, n_perm = 60)
+  expect_s3_class(cmp, "causcomp"); expect_equal(cmp$table$consensus, "x_to_y")
+  expect_output(print(cmp), "consensus")
+  pdf(NULL); on.exit(dev.off()); expect_no_error(plot(cmp))
+  b <- benchmark_methods(c("granger", "te"), scenarios = c("x_to_y", "independent"), simulator = sim_var,
+                         n = 300, reps = 2, seed = 1, n_perm = 60)
+  expect_s3_class(b, "causbench"); expect_equal(dim(b$accuracy), c(2L, 2L))
+  expect_true(all(b$accuracy["granger", ] == 1))
+  expect_output(print(b), "accuracy"); expect_no_error(plot(b))
+})

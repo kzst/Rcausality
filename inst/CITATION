@@ -1,0 +1,14 @@
+citHeader("To cite Rcausality in publications use:")
+
+bibentry(
+  bibtype = "Manual",
+  title   = "Rcausality: Causality Analysis for Time Series",
+  author  = person("Zsolt T.", "Kosztyán"),
+  year    = "2026",
+  note    = "R package version 0.0.1",
+  url     = "https://github.com/kzst/rcausality",
+  textVersion = paste("Kosztyán, Z. T. (2026). Rcausality: Causality Analysis for Time Series.",
+                      "R package version 0.0.1. https://github.com/kzst/rcausality")
+)
+
+citFooter("Please also cite the papers whose methods you use; see ?rcausality and the vignette 'methods'.")
