@@ -15,6 +15,7 @@ test_that("CMI decisions do not depend on the units of one series", {
 })
 
 test_that("the conditioning history follows the effect's memory (no spurious reverse link)", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   set.seed(2); n <- 600
   y <- as.numeric(stats::arima.sim(list(ar = c(0.5, 0.3)), n)); x <- numeric(n)
   for (t in 2:n) x[t] <- 0.3 * x[t - 1] + 0.6 * y[t - 1] + rnorm(1)
@@ -83,6 +84,7 @@ test_that("directions = 'forward' is honoured by every method", {
 })
 
 test_that("max_lag is honoured by the model-free methods (lag-5 link)", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   set.seed(3); n <- 600; x <- rnorm(n); y <- numeric(n)
   for (t in 6:n) y[t] <- 0.4 * y[t - 1] + 0.8 * x[t - 5] + rnorm(1)
   r <- rcausality(data.frame(x, y), method = "cmi", max_lag = 6, seed = 1)

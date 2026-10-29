@@ -21,6 +21,18 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE, warning 
                       dev = if (requireNamespace("svglite", quietly = TRUE)) "svglite" else
                         if (isTRUE(capabilities("cairo"))) "svg" else "png")
 library(Rcausality)
+# Long-running results (benchmarks, method comparisons) are precomputed and
+# shipped in vignettes/precomputed/ so that the vignette builds in about a
+# minute; the code shown is exactly the code that produced them.
+# Sys.setenv(RCAUSALITY_RECOMPUTE = "true") recomputes everything.
+.pre <- function(name, expr) {
+  f <- file.path("precomputed", paste0(name, ".rds"))
+  if (file.exists(f) && !identical(Sys.getenv("RCAUSALITY_RECOMPUTE"), "true")) return(readRDS(f))
+  v <- expr
+  dir.create("precomputed", showWarnings = FALSE)
+  saveRDS(v, f, compress = "xz")
+  v
+}
 ```
 
 # What the package does
@@ -187,8 +199,14 @@ Schreiber (2000); `method = "ccm"` is Sugihara et al.'s (2012) convergent
 cross mapping. The verdicts of several methods can be compared in one
 call:
 
-```{r compare, fig.height = 3.2, fig.cap = "compare_methods(): verdict of every method per pair with the majority consensus."}
+```{r compare, eval = FALSE}
 cm <- compare_methods(lg, methods = c("granger", "cmi", "te", "ccm"), seed = 1)
+cm
+plot(cm)
+```
+
+```{r compare-run, echo = FALSE, fig.height = 3.2, fig.cap = "compare_methods(): verdict of every method per pair with the majority consensus."}
+cm <- .pre("compare", compare_methods(lg, methods = c("granger", "cmi", "te", "ccm"), seed = 1))
 cm
 plot(cm)
 ```
@@ -210,12 +228,21 @@ that the contemporaneous dependence of $x_t$ and $y_t$ *given both pasts*
 reveals such a common driver when no lagged dependence exists;
 `method = "cmi_lag"` implements this and returns the `common_cause` class.
 
-```{r common}
+```{r common, eval = FALSE}
 set.seed(5); n <- 400
 e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # shared innovation = hidden common driver
 cc <- data.frame(x = as.numeric(stats::filter(e1, 0.5, "recursive")),
                  y = as.numeric(stats::filter(e2, 0.5, "recursive")))
 rcc <- rcausality(cc, method = "cmi_lag", seed = 1)
+rcc
+```
+
+```{r common-run, echo = FALSE}
+set.seed(5); n <- 400
+e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)
+cc <- data.frame(x = as.numeric(stats::filter(e1, 0.5, "recursive")),
+                 y = as.numeric(stats::filter(e2, 0.5, "recursive")))
+rcc <- .pre("common", rcausality(cc, method = "cmi_lag", seed = 1))
 rcc
 ```
 
@@ -234,11 +261,21 @@ A quick way to see where methods agree is to run `compare_methods()` on
 data sets with different kinds of coupling. Here: a linear VAR link, a
 non-linear logistic link and the common-driver pair above.
 
-```{r compare-table}
+```{r compare-table, eval = FALSE}
 sets <- list(VAR = sim_var(400, "x_to_y", seed = 1), logistic = lg, common_driver = cc)
 meths <- c("granger", "cmi", "cmi_lag", "te")
 tab <- t(sapply(sets, function(s) compare_methods(s, methods = meths, seed = 1, lag = 1)$table[1, meths]))
 tab <- as.data.frame(tab); tab$truth <- c("x_to_y", "x_to_y", "common_cause"); tab
+```
+
+```{r compare-table-run, echo = FALSE}
+tab <- .pre("compare-table", {
+  sets <- list(VAR = sim_var(400, "x_to_y", seed = 1), logistic = lg, common_driver = cc)
+  meths <- c("granger", "cmi", "cmi_lag", "te")
+  tab <- t(sapply(sets, function(s) compare_methods(s, methods = meths, seed = 1, lag = 1)$table[1, meths]))
+  tab <- as.data.frame(tab); tab$truth <- c("x_to_y", "x_to_y", "common_cause"); tab
+})
+tab
 ```
 
 (`lag = 1` fixes the coupling lag, which is known here, and saves the lag
@@ -253,9 +290,17 @@ times, runs the methods and scores the class against the truth. Small
 sizes are used here to keep the vignette quick; in practice use more
 replications.
 
-```{r benchmark, fig.height = 4, fig.cap = "benchmark_methods(): accuracy per scenario on linear VAR data."}
+```{r benchmark, eval = FALSE}
 bm <- benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "bidirectional", "independent"),
                         simulator = sim_var, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+bm
+plot(bm)
+```
+
+```{r benchmark-run, echo = FALSE, fig.height = 4, fig.cap = "benchmark_methods(): accuracy per scenario on linear VAR data."}
+bm <- .pre("benchmark", benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "bidirectional", "independent"),
+                        simulator = sim_var, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1))))
+bm$simulator <- "sim_var"
 bm
 plot(bm)
 ```
@@ -263,9 +308,16 @@ plot(bm)
 The same on coupled logistic maps, where the linear test is at a
 disadvantage:
 
-```{r benchmark2, fig.height = 4, fig.cap = "Accuracy per scenario on coupled logistic maps."}
+```{r benchmark2, eval = FALSE}
 bm2 <- benchmark_methods(methods = c("granger", "cmi", "te", "ccm"), scenarios = c("x_to_y", "independent"),
                          simulator = sim_logistic, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+plot(bm2)
+```
+
+```{r benchmark2-run, echo = FALSE, fig.height = 4, fig.cap = "Accuracy per scenario on coupled logistic maps."}
+bm2 <- .pre("benchmark2", benchmark_methods(methods = c("granger", "cmi", "te", "ccm"), scenarios = c("x_to_y", "independent"),
+                         simulator = sim_logistic, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1))))
+bm2$simulator <- "sim_logistic"
 plot(bm2)
 ```
 
@@ -373,7 +425,7 @@ own L'Ecuyer-CMRG random stream, so **the results do not depend on the
 number of cores**: for a given `seed`, `cores = 1` and `cores = 8` give the
 same p-values, Bayes factors and verdicts to the last digit, and the
 session's generator is left where a serial call leaves it. Forked workers
-are used on Linux and macOS, a socket cluster (kept for the session) on
+are used on Linux and macOS, a socket cluster (started for the call and closed at its end) on
 Windows, where the package must be installed; a cluster object from
 `parallel::makeCluster()` is accepted too, and `options(Rcausality.cores =)`
 sets the default for the session (`?Rcausality-parallel`).

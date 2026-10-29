@@ -14,11 +14,9 @@ NULL
 # left exactly where a serial run would leave it.
 #
 # cores = 1 -> plain lapply; an integer > 1 -> forked workers on Unix-alikes
-# (parallel::mclapply) or a cached PSOCK cluster on Windows (the package must
-# be installed there); a cluster object from parallel::makeCluster() is used
-# as it is (and not stopped).
-
-.par_env <- new.env(parent = emptyenv())
+# (parallel::mclapply) or a PSOCK cluster on Windows, started for the call and
+# stopped at its end (the package must be installed there); a cluster object
+# from parallel::makeCluster() is used as it is (and not stopped).
 
 .plapply <- function(X, FUN, cores = 1L, ...) {
   n <- length(X)
@@ -30,8 +28,10 @@ NULL
   nw <- min(nc, n)
   out <- if (inherits(cores, "cluster")) {
     .cluster_run(cores, nw, seq_len(n), f)
-  } else if (.Platform$OS.type == "windows") {
-    .cluster_run(.psock_cluster(nw), nw, seq_len(n), f)
+  } else if (.Platform$OS.type == "windows" || isTRUE(getOption("Rcausality.psock"))) {   # the option: tests of the Windows path
+    cl <- .psock_cluster(nw)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    .cluster_run(cl, nw, seq_len(n), f)
   } else {
     parallel::mclapply(seq_len(n), f, mc.cores = nw, mc.set.seed = FALSE, mc.preschedule = TRUE)
   }
@@ -124,24 +124,9 @@ NULL
   seen
 }
 
-# PSOCK cluster kept for the session (starting one costs seconds on Windows);
-# re-created when more workers are asked for or when it has died
-.psock_cluster <- function(nw) {
-  cl <- .par_env$cluster
-  alive <- !is.null(cl) && length(cl) >= nw &&
-    isTRUE(tryCatch({ parallel::clusterEvalQ(cl, TRUE); TRUE }, error = function(e) FALSE))
-  if (alive) return(cl)
-  .stop_cluster()
-  cl <- parallel::makePSOCKcluster(nw)
-  .par_env$cluster <- cl
-  cl
-}
-
-.stop_cluster <- function() {
-  cl <- .par_env$cluster
-  if (!is.null(cl)) { try(parallel::stopCluster(cl), silent = TRUE); .par_env$cluster <- NULL }
-  invisible(NULL)
-}
+# a PSOCK cluster for one call (Windows): started here and stopped when the
+# calling .plapply() returns, so that no socket connection outlives the call
+.psock_cluster <- function(nw) parallel::makePSOCKcluster(nw)
 
 # where to parallelise: over the n_units outer units (pairs) when there are
 # at least as many of them as workers, otherwise inside each unit (over the

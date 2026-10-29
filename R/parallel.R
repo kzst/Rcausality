@@ -14,9 +14,10 @@
 #' * an integer `> 1`: that many workers. On Unix-alikes (Linux, macOS)
 #'   these are forked copies of the session (`parallel::mclapply()`), which
 #'   need no set-up. On Windows a socket cluster
-#'   (`parallel::makePSOCKcluster()`) is started on first use, kept for the
-#'   session and closed when R exits; the package must be *installed* on the
-#'   machine (the workers load it by name).
+#'   (`parallel::makePSOCKcluster()`) is started for the call and closed
+#'   when it returns (start-up costs a second or two, so on Windows pass
+#'   your own cluster, see below, when you make many calls); the package must
+#'   be *installed* on the machine (the workers load it by name).
 #' * `"auto"`: all physical cores but one (at most 2 under `R CMD check`).
 #' * a cluster object from `parallel::makeCluster()`: used as it is and never
 #'   stopped by the package. This is the way to parallelise over several

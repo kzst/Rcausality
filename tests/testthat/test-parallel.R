@@ -109,3 +109,15 @@ test_that("the Rcausality.cores option sets the default and bad values are rejec
   expect_equal(Rcausality:::.split_cores(1, 2), list(outer = 1L, inner = 2))
   expect_equal(Rcausality:::.split_cores(1, 1), list(outer = 1L, inner = 1L))
 })
+
+test_that("the socket-cluster path (used on Windows) leaves no connection open", {
+  skip_on_cran()
+  skip_if_not(parallel::detectCores() >= 2)
+  d <- sim_logistic(150, "x_to_y", seed = 1)
+  old <- options(Rcausality.psock = TRUE); on.exit(options(old), add = TRUE)
+  before <- nrow(showConnections())
+  a <- rcausality(d, method = "te", lag = 1, n_perm = 30, seed = 1, cores = 1)
+  b <- rcausality(d, method = "te", lag = 1, n_perm = 30, seed = 1, cores = 2)
+  expect_equal(a$pairs, b$pairs)
+  expect_equal(nrow(showConnections()), before)
+})

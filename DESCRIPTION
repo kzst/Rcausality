@@ -26,7 +26,8 @@ Description: A unified interface to causality detection methods for time
     correlation-dimension relations of Krakovska (2019)
     <doi:10.3390/e21090818>; transfer entropy and convergent cross mapping
     as baselines; an optional wrapper for PCMCI (Runge et al., 2019,
-    <doi:10.1126/sciadv.aau4996>); tools to compare and benchmark methods,
+    <doi:10.1126/sciadv.aau4996>) through the 'Python' package 'tigramite';
+    tools to compare and benchmark methods,
     causality-informed forecasting, multi-core execution, and a Bayesian
     variant of every method with explicit priors, posterior draws and
     Bayes-factor or posterior-probability decisions.

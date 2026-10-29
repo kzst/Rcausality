@@ -21,8 +21,21 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE, warning 
                       dev = if (requireNamespace("svglite", quietly = TRUE)) "svglite" else
                         if (isTRUE(capabilities("cairo"))) "svg" else "png")
 library(Rcausality)
+# Long-running results (benchmarks, method comparisons) are precomputed and
+# shipped in vignettes/precomputed/ so that the vignette builds in about a
+# minute; the code shown is exactly the code that produced them.
+# Sys.setenv(RCAUSALITY_RECOMPUTE = "true") recomputes everything.
+.pre <- function(name, expr) {
+  f <- file.path("precomputed", paste0(name, ".rds"))
+  if (file.exists(f) && !identical(Sys.getenv("RCAUSALITY_RECOMPUTE"), "true")) return(readRDS(f))
+  v <- expr
+  dir.create("precomputed", showWarnings = FALSE)
+  saveRDS(v, f, compress = "xz")
+  v
+}
 has_ranger <- requireNamespace("ranger", quietly = TRUE)
-has_tigramite <- pcmci_available()
+# (Python is not started during R CMD check)
+has_tigramite <- !nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_")) && pcmci_available()
 ```
 
 # Overview
@@ -252,9 +265,16 @@ order 4, hence $z \to x$. The directed tests alone would read the
 deterministic pair as bidirectional, because the driven series
 reconstructs its driver.
 
-```{r df2}
+```{r df2, eval = FALSE}
 d <- sim_df_rotation(1500, "deterministic", seed = 1)
 r <- rcausality(d[, c("z1", "x1")], method = "df", lag = 1, max_constr = 4, n_perm = 39, seed = 1)
+r$df[, c("df_x", "df_y", "df_joint", "table2", "decided_by")]
+r$classes$relation
+```
+
+```{r df2-run, echo = FALSE}
+d <- sim_df_rotation(1500, "deterministic", seed = 1)
+r <- .pre("df2", rcausality(d[, c("z1", "x1")], method = "df", lag = 1, max_constr = 4, n_perm = 39, seed = 1))
 r$df[, c("df_x", "df_y", "df_joint", "table2", "decided_by")]
 r$classes$relation
 ```
@@ -566,9 +586,16 @@ cv$table
 plot(cv)
 ```
 
-```{r compare2, fig.height = 3.4, fig.cap = "Verdicts on the coupled logistic maps of Benko et al. (x drives y)."}
+```{r compare2, eval = FALSE}
 cl <- compare_methods(sim_logistic_bdc(500, "x_to_y", seed = 2), methods = c("granger", "cmi", "te", "ccm", "dc", "hirata", "cd", "ccdh"),
                       seed = 1, lag = 1)
+cl$table
+plot(cl)
+```
+
+```{r compare2-run, echo = FALSE, fig.height = 3.4, fig.cap = "Verdicts on the coupled logistic maps of Benko et al. (x drives y)."}
+cl <- .pre("compare2", compare_methods(sim_logistic_bdc(500, "x_to_y", seed = 2), methods = c("granger", "cmi", "te", "ccm", "dc", "hirata", "cd", "ccdh"),
+                      seed = 1, lag = 1))
 cl$table
 plot(cl)
 ```
@@ -582,10 +609,19 @@ dynamical-systems methods; the stochastic ones are included for
 contrast. Two replications per scenario keep the vignette fast; use many
 more in practice.
 
-```{r bench, fig.height = 4.6, fig.cap = "Accuracy of the methods on the five coupled-logistic-map patterns (2 replications each, n = 500)."}
+```{r bench, eval = FALSE}
 bm <- benchmark_methods(methods = c("granger", "te", "ccm", "dc", "ccdh", "hirata", "cd"),
                         scenarios = c("x_to_y", "bidirectional", "common_cause", "independent"),
                         simulator = sim_logistic_bdc, n = 500, reps = 2, seed = 1, args = list(te = list(lag = 1)))
+bm
+plot(bm)
+```
+
+```{r bench-run, echo = FALSE, fig.height = 4.6, fig.cap = "Accuracy of the methods on the five coupled-logistic-map patterns (2 replications each, n = 500)."}
+bm <- .pre("bench", benchmark_methods(methods = c("granger", "te", "ccm", "dc", "ccdh", "hirata", "cd"),
+                        scenarios = c("x_to_y", "bidirectional", "common_cause", "independent"),
+                        simulator = sim_logistic_bdc, n = 500, reps = 2, seed = 1, args = list(te = list(lag = 1))))
+bm$simulator <- "sim_logistic_bdc"
 bm
 plot(bm)
 ```
@@ -606,10 +642,19 @@ bm$confusion$granger
 
 ## The same on stochastic data
 
-```{r bench2, fig.height = 4.2, fig.cap = "Accuracy on linear VAR pairs."}
+```{r bench2, eval = FALSE}
 bv <- benchmark_methods(methods = c("granger", "cmi", "te", "pid"),
                         scenarios = c("x_to_y", "bidirectional", "independent"), simulator = sim_var,
                         n = 400, reps = 2, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1)))
+bv
+plot(bv)
+```
+
+```{r bench2-run, echo = FALSE, fig.height = 4.2, fig.cap = "Accuracy on linear VAR pairs."}
+bv <- .pre("bench2", benchmark_methods(methods = c("granger", "cmi", "te", "pid"),
+                        scenarios = c("x_to_y", "bidirectional", "independent"), simulator = sim_var,
+                        n = 400, reps = 2, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1))))
+bv$simulator <- "sim_var"
 bv
 plot(bv)
 ```

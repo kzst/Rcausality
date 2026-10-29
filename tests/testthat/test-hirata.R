@@ -1,4 +1,5 @@
 test_that("recurrence-plot (Hirata) and correlation-dimension (Krakovska) methods recover logistic-map scenarios", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   for (sc in c("x_to_y", "common_cause", "independent")) {
     d <- sim_logistic_bdc(1200, sc, seed = 3)
     h <- hirata_rp(d$x, d$y, E = 3, n_surr = 40, seed = 1)

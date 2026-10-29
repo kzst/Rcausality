@@ -1,3 +1,4 @@
+skip_on_cran()      # starts Python (reticulate); run by devtools::test()
 skip_if_not(pcmci_available(), "tigramite (Python) not available")
 
 test_that("pcmci() recovers a simple VAR link and returns a causres", {

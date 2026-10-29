@@ -12,6 +12,7 @@ test_that("MAR-PID atoms: XOR is synergy, copies are redundancy, one informative
 })
 
 test_that("method = 'pid' finds the directed link of a VAR pair", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   d <- sim_var(800, "x_to_y", seed = 2)
   r <- rcausality(d, method = "pid", n_perm = 60, seed = 1)
   expect_s3_class(r, "causres"); expect_true(r$pairs$significant[r$pairs$cause == "x"])

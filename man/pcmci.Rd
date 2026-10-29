@@ -65,7 +65,7 @@ variable (parents are selected with significance \code{pc_alpha}), then the MCI
 PCMCI+ (\code{plus = TRUE}) additionally orients contemporaneous links.
 }
 \examples{
-\donttest{
+\dontrun{
 if (pcmci_available()) {           # needs reticulate + the Python package tigramite
   d <- sim_var(500, n_series = 3, seed = 1)
   r <- pcmci(d, tau_max = 3)

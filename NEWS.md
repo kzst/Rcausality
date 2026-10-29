@@ -235,8 +235,8 @@
   parallelises the surrogates of a single pair when there are fewer pairs
   than cores. `cores` accepts an integer, `"auto"` or a cluster object from
   `parallel::makeCluster()`; its default is `getOption("Rcausality.cores",
-  1L)`. On Windows the socket cluster is started once and kept for the
-  session.
+  1L)`. On Windows a socket cluster is started for the call and stopped when
+  it returns (no connection is left open).
 * `bayes_granger()` runs its chains independently and reports the
   Gelman-Rubin `rhat` of Geweke's measure (also in `$bayes` of a Bayesian
   Granger run, with the effective sample size); `thin` is honoured by the

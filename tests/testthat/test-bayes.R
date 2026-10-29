@@ -30,6 +30,7 @@ test_that("bf_from_p is the Sellke-Bayarri-Berger bound", {
 })
 
 test_that("bayes = TRUE calibrates the model-free methods and decides by BF", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   lg <- sim_logistic(500, "x_to_y", seed = 2)
   r <- rcausality(lg, method = "cmi", bayes = TRUE, seed = 1, n_perm = 100)
   P <- r$pairs
@@ -99,6 +100,7 @@ test_that("bayes_granger: spike-and-slab and normal-slab evidence, inclusion pro
 })
 
 test_that("rcausality(bayes = TRUE) runs every family and fills the Bayesian columns", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   d <- sim_var(400, "x_to_y", seed = 1)
   r <- rcausality(d, bayes = TRUE, control = bayes_control(n_iter = 200, chains = 1))
   expect_equal(r$settings$method, "bayes_granger"); expect_equal(r$settings$prior, "spike_slab")

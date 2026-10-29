@@ -21,6 +21,7 @@ test_that("method = 'cmi' detects non-linear coupling direction", {
 })
 
 test_that("cmi_lag finds a common (shared-noise) driver, not a directed link", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   set.seed(5); n <- 300
   e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)
   x <- stats::filter(e1, 0.5, "recursive"); y <- stats::filter(e2, 0.5, "recursive")
@@ -32,6 +33,7 @@ test_that("cmi_lag finds a common (shared-noise) driver, not a directed link", {
 })
 
 test_that("cmi_lag keeps direction for a driven pair and helpers work", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   d <- sim_logistic(300, scenario = "x_to_y", coupling = 0.25, seed = 1)
   r <- rcausality(d$x, d$y, method = "cmi_lag", seed = 1)
   expect_true(r$classes$class %in% c("x_to_y", "bidirectional"))

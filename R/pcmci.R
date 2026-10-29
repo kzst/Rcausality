@@ -8,7 +8,11 @@
 #' @return `TRUE` if reticulate can import `tigramite`, otherwise `FALSE`.
 #' @export
 #' @examples
+#' \dontrun{
+#' # TRUE when reticulate and the Python package tigramite are found
+#' # (starting Python takes a moment and several threads, hence not run by R CMD check)
 #' pcmci_available()
+#' }
 pcmci_available <- function(python = NULL) {
   if (!requireNamespace("reticulate", quietly = TRUE)) return(FALSE)
   if (!is.null(python)) try(reticulate::use_python(python, required = FALSE), silent = TRUE)
@@ -56,7 +60,7 @@ pcmci_available <- function(python = NULL) {
 #' Runge, J. (2020). Discovering contemporaneous and lagged causal relations in autocorrelated nonlinear time series datasets. *Proceedings of the 36th Conference on Uncertainty in Artificial Intelligence (UAI)*, PMLR 124, 1388-1397.
 #' @export
 #' @examples
-#' \donttest{
+#' \dontrun{
 #' if (pcmci_available()) {           # needs reticulate + the Python package tigramite
 #'   d <- sim_var(500, n_series = 3, seed = 1)
 #'   r <- pcmci(d, tau_max = 3)

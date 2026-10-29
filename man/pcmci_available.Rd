@@ -18,5 +18,9 @@ virtualenv/conda environment passed to \code{reticulate::use_python()} /
 Is the PCMCI back-end (Python tigramite) available?
 }
 \examples{
+\dontrun{
+# TRUE when reticulate and the Python package tigramite are found
+# (starting Python takes a moment and several threads, hence not run by R CMD check)
 pcmci_available()
+}
 }

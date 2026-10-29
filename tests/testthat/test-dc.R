@@ -1,4 +1,5 @@
 test_that("dimensional causality recovers the five logistic-map scenarios", {
+  skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
   truth <- c("x_to_y", "y_to_x", "bidirectional", "common_cause", "independent")
   for (sc in truth) {
     d <- sim_logistic_bdc(2000, sc, seed = 1)
