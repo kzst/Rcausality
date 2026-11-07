@@ -10,6 +10,7 @@ compare_methods(
   y = NULL,
   methods = c("granger", "bayes_granger", "cmi", "te"),
   args = list(),
+  cores = getOption("Rcausality.cores", 1L),
   ...
 )
 
@@ -23,8 +24,12 @@ compare_methods(
 \item{args}{optional named list of per-method argument lists, e.g.
 \code{list(dc = list(m = 4), ccm = list(m = 3))}.}
 
-\item{...}{arguments passed to every method (e.g. \code{seed}, \code{cores},
-\code{n_perm}, \code{alpha}).}
+\item{cores}{CPU cores: the methods run in parallel (each with the
+remaining cores when there are fewer methods than cores); the verdicts
+do not depend on it (see \link{Rcausality-parallel}).}
+
+\item{...}{arguments passed to every method (e.g. \code{seed}, \code{n_perm},
+\code{alpha}).}
 
 \item{main}{title.}
 }

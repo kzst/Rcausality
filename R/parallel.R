@@ -3,8 +3,13 @@
 #' Every function that repeats independent units of work -- the permutations
 #' and surrogates of the model-free tests, the series pairs of a multivariate
 #' analysis, the MCMC chains of [bayes_granger()], the bootstrap resamples of
-#' [corr_dim()], the replications of [benchmark_methods()] and the training
-#' systems of [dfe_train()] -- takes a `cores` argument. Its default is
+#' [corr_dim()], the replications of [benchmark_methods()], the training
+#' systems of [dfe_train()], the surrogate forests and forecast blocks of the
+#' random-forest test ([rf_granger()]), the placebo data sets of
+#' [placebo_test()], the alternative settings of [robustness()], the methods
+#' of [compare_methods()] and [forecast_compare()], and the series pairs,
+#' surrogates and placebo panels of [panel_granger()] -- takes a `cores`
+#' argument. Its default is
 #' `getOption("Rcausality.cores", 1L)`, so that
 #' `options(Rcausality.cores = 4)` switches the whole package to four
 #' workers for the session.
@@ -32,7 +37,12 @@
 #' tests (e.g. [local_permutation_test()], [transfer_entropy()], [ccm()],
 #' [hirata_rp()], [ccdh()], [marpid()]) parallelise their surrogate loop;
 #' [bayes_granger()] runs its chains in parallel; [benchmark_methods()]
-#' distributes the simulated data sets. Parallel execution pays off when a
+#' distributes the simulated data sets; [placebo_test()], [robustness()],
+#' [compare_methods()] and [forecast_compare()] distribute whole analyses
+#' (each run serially inside a worker, or with the remaining cores when there
+#' are fewer analyses than cores). Forests are always grown with one
+#' \pkg{ranger} thread per worker and seeded from the worker's stream, so the
+#' random-forest results are reproducible as well. Parallel execution pays off when a
 #' single unit of work takes more than a few milliseconds (kNN estimates,
 #' recurrence counts, cross-map predictions, MCMC chains); for the cheapest
 #' statistics the overhead of dispatching the work can exceed the gain.

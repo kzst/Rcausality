@@ -443,3 +443,42 @@ NumericVector recurrence_counts_cpp(NumericMatrix X, NumericMatrix Y, double ex_
   }
   return NumericVector::create(np, rxl, ryl, rxt, ryt, rj, cxy, cyx);
 }
+
+// Diks-Panchenko (2006) nonparametric Granger statistic: neighbour counts of
+// the vectors X (cause past), Y (effect past), Z (effect future) within eps in
+// the max norm, and the first-order projection of the U-statistic kernel.
+// Returns the normalised counts c_W(i) = #{j != i : |W_i - W_j| < eps} / (n-1)
+// for W = XYZ, XY, YZ, Y and the neighbour sums
+// s_i = sum_j [I^XYZ_ij c_Y(j) + I^Y_ij c_XYZ(j) - I^XY_ij c_YZ(j) - I^YZ_ij c_XY(j)] / (n-1).
+// O(n^2) time, O(n) memory; pairs are visited once (symmetry).
+// [[Rcpp::export]]
+List dp_counts_cpp(const NumericMatrix& X, const NumericMatrix& Y, const NumericVector& Z, double eps) {
+  RowMat mx(X), my(Y);
+  const int n = mx.n;
+  std::vector<double> cxyz(n, 0.0), cxy(n, 0.0), cyz(n, 0.0), cy(n, 0.0), s(n, 0.0);
+  for (int i = 0; i < n; ++i) {
+    for (int j = i + 1; j < n; ++j) {
+      if (my.dist(i, j) >= eps) continue;                 // every indicator contains Y
+      const bool ix = mx.dist(i, j) < eps, iz = std::fabs(Z[i] - Z[j]) < eps;
+      cy[i] += 1; cy[j] += 1;
+      if (ix) { cxy[i] += 1; cxy[j] += 1; }
+      if (iz) { cyz[i] += 1; cyz[j] += 1; }
+      if (ix && iz) { cxyz[i] += 1; cxyz[j] += 1; }
+    }
+  }
+  const double nm1 = (double)(n - 1);
+  for (int i = 0; i < n; ++i) { cxyz[i] /= nm1; cxy[i] /= nm1; cyz[i] /= nm1; cy[i] /= nm1; }
+  for (int i = 0; i < n; ++i) {
+    for (int j = i + 1; j < n; ++j) {
+      if (my.dist(i, j) >= eps) continue;
+      const bool ix = mx.dist(i, j) < eps, iz = std::fabs(Z[i] - Z[j]) < eps;
+      double si = cxyz[j], sj = cxyz[i];                  // I^Y_ij c_XYZ
+      if (ix && iz) { si += cy[j]; sj += cy[i]; }         // I^XYZ_ij c_Y
+      if (ix) { si -= cyz[j]; sj -= cyz[i]; }             // I^XY_ij c_YZ
+      if (iz) { si -= cxy[j]; sj -= cxy[i]; }             // I^YZ_ij c_XY
+      s[i] += si; s[j] += sj;
+    }
+  }
+  for (int i = 0; i < n; ++i) s[i] /= nm1;
+  return List::create(_["cxyz"] = cxyz, _["cxy"] = cxy, _["cyz"] = cyz, _["cy"] = cy, _["s"] = s);
+}

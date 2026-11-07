@@ -66,6 +66,19 @@
 #'   posterior of the effect).
 #' @param hyper_a parameter `a` of the hyper-g prior (2 < a <= 4).
 #' @param credible level of the credible intervals.
+#' @param lambda,decay,cross,own_mean,lambda_hyper settings of the
+#'   Minnesota prior (`prior = "minnesota"`) for short series: the prior
+#'   standard deviation of the coefficient of series `j` at lag `l` is
+#'   `lambda * cross_j / l^decay * sigma / s_j` (Litterman 1986; `s_j` = the
+#'   residual sd of an autoregression of series `j`, `cross_j = 1` for the
+#'   effect's own lags and `cross` for the other series), the prior mean of
+#'   the effect's first own lag is `own_mean` (0 for stationary,
+#'   standardised series; 1 = random-walk prior), and the overall tightness
+#'   `lambda` is either fixed (a number) or `"auto"`: integrated out under a
+#'   Gamma hyperprior with the mode and standard deviation `lambda_hyper`
+#'   (0.2 and 0.4, as in Giannone, Lenza and Primiceri 2015), on a grid, so
+#'   that the Bayes factor and the posterior draws average over the
+#'   tightness that the data support.
 #' @param decision how a link is declared: `"bf"` (Bayes factor above
 #'   `bf_threshold` of [rcausality()]) or `"posterior"` (posterior probability
 #'   above `prob_threshold`).
@@ -80,6 +93,10 @@
 #' Rouder, J. N., Speckman, P. L., Sun, D., Morey, R. D. and Iverson, G. (2009). Bayesian t tests for accepting and rejecting the null hypothesis. *Psychonomic Bulletin & Review*, 16, 225-237. \doi{10.3758/PBR.16.2.225}
 #'
 #' Kass, R. E. and Raftery, A. E. (1995). Bayes factors. *Journal of the American Statistical Association*, 90(430), 773-795. \doi{10.1080/01621459.1995.10476572}
+#'
+#' Litterman, R. B. (1986). Forecasting with Bayesian vector autoregressions: five years of experience. *Journal of Business & Economic Statistics*, 4(1), 25-38. \doi{10.1080/07350015.1986.10509491}
+#'
+#' Giannone, D., Lenza, M. and Primiceri, G. E. (2015). Prior selection for vector autoregressions. *The Review of Economics and Statistics*, 97(2), 436-451. \doi{10.1162/REST_a_00483}
 #' @export
 #' @examples
 #' # the defaults: spike-and-slab regression prior, half-Cauchy effect prior,
@@ -87,16 +104,28 @@
 #' bayes_control()
 #' # a wider slab, longer chains, decision by the posterior probability
 #' bayes_control(prior = "spike_slab", scale = 2, n_iter = 4000, chains = 4, decision = "posterior")
+#' # the hierarchical Minnesota prior for short series (tightness integrated out)
+#' bayes_control(prior = "minnesota")
 #' # a prior over the causal cases (for dc, dfe and the Bayesian Markov table)
 #' bayes_control(case_prior = c(x_to_y = 0.3, y_to_x = 0.3, bidirectional = 0.1,
 #'                              common_cause = 0.1, independent = 0.2))
-bayes_control <- function(prior = c("spike_slab", "normal", "g", "hyper_g", "bic"),
+bayes_control <- function(prior = c("spike_slab", "normal", "minnesota", "g", "hyper_g", "bic"),
                           effect_prior = c("half_cauchy", "half_normal", "normal", "cauchy"),
                           scale = 1, inclusion_prob = 0.5, null_model = c("kde", "normal"),
                           case_prior = NULL, n_iter = 2000L, burnin = 500L, thin = 1L, chains = 2L,
-                          n_draws = 4000L, hyper_a = 3, credible = 0.95, decision = c("bf", "posterior")) {
+                          n_draws = 4000L, hyper_a = 3, credible = 0.95,
+                          lambda = "auto", decay = 1, cross = 1, own_mean = 0, lambda_hyper = c(mode = 0.2, sd = 0.4),
+                          decision = c("bf", "posterior")) {
   prior <- match.arg(prior); effect_prior <- match.arg(effect_prior); null_model <- match.arg(null_model)
   decision <- match.arg(decision)
+  .check_number(scale, "scale", lower = 0, strict = TRUE)
+  .check_number(inclusion_prob, "inclusion_prob", lower = 0, upper = 1, strict = TRUE)
+  .check_number(credible, "credible", lower = 0, upper = 1, strict = TRUE)
+  if (!identical(lambda, "auto")) .check_number(lambda, "lambda", lower = 0, strict = TRUE)
+  .check_number(decay, "decay", lower = 0); .check_number(cross, "cross", lower = 0, strict = TRUE)
+  if (length(lambda_hyper) != 2L || any(!is.finite(lambda_hyper)) || any(lambda_hyper <= 0))
+    stop("`lambda_hyper` must hold the positive mode and standard deviation of the tightness hyperprior.", call. = FALSE)
+  if (hyper_a <= 2 || hyper_a > 4) stop("`hyper_a` must lie in (2, 4].", call. = FALSE)
   if (!is.null(case_prior)) {
     if (length(case_prior) != 5L || any(case_prior < 0) || sum(case_prior) <= 0)
       stop("case_prior must hold five nonnegative probabilities.", call. = FALSE)
@@ -106,7 +135,9 @@ bayes_control <- function(prior = c("spike_slab", "normal", "g", "hyper_g", "bic
   structure(list(prior = prior, effect_prior = effect_prior, scale = scale, inclusion_prob = inclusion_prob,
                  null_model = null_model, case_prior = case_prior, n_iter = as.integer(n_iter),
                  burnin = as.integer(burnin), thin = max(1L, as.integer(thin)), chains = max(1L, as.integer(chains)),
-                 n_draws = as.integer(n_draws), hyper_a = hyper_a, credible = credible, decision = decision),
+                 n_draws = as.integer(n_draws), hyper_a = hyper_a, credible = credible,
+                 lambda = lambda, decay = decay, cross = cross, own_mean = own_mean,
+                 lambda_hyper = stats::setNames(as.numeric(lambda_hyper), c("mode", "sd")), decision = decision),
             class = "bayes_control")
 }
 
@@ -114,6 +145,10 @@ bayes_control <- function(prior = c("spike_slab", "normal", "g", "hyper_g", "bic
 print.bayes_control <- function(x, ...) {
   cat("Bayesian settings of rcausality():\n")
   cat(sprintf("  regression family: prior = %s, scale = %g, inclusion_prob = %g, hyper_a = %g\n", x$prior, x$scale, x$inclusion_prob, x$hyper_a))
+  if (identical(x$prior, "minnesota"))
+    cat(sprintf("  Minnesota prior: lambda = %s, decay = %g, cross = %g, own_mean = %g\n",
+                if (identical(x$lambda, "auto")) sprintf("auto (Gamma hyperprior, mode %g, sd %g)", x$lambda_hyper[["mode"]], x$lambda_hyper[["sd"]])
+                else format(x$lambda), x$decay, x$cross, x$own_mean))
   cat(sprintf("  surrogate family:  effect_prior = %s (scale %g x surrogate sd), null_model = %s, n_draws = %d\n",
               x$effect_prior, x$scale, x$null_model, x$n_draws))
   cat(sprintf("  case prior (dc, dfe, markov): %s\n", if (is.null(x$case_prior)) "uniform" else paste(round(x$case_prior, 3), collapse = " ")))
@@ -270,6 +305,12 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'   and the Bayes factor compares "at least one lag" with "no lag";
 #' * `prior = "normal"`: the block of all cause lags with the normal slab
 #'   against none;
+#' * `prior = "minnesota"`: the hierarchical Minnesota prior for short
+#'   series (lag-decaying shrinkage of all coefficients, the overall
+#'   tightness integrated out under a Gamma hyperprior; see [bayes_control()]);
+#'   closed-form Bayes factor and exact independent posterior draws. The
+#'   posterior is proper even when the regression has more coefficients than
+#'   observations;
 #' * `prior = "g"`, `"hyper_g"`, `"bic"`: the closed-form Bayes factors of
 #'   [rcausality()].
 #' Posterior draws of the coefficients, of `sigma` and of Geweke's measure
@@ -291,7 +332,8 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'   and slab only), `geweke` (posterior mean and credible interval of the
 #'   measure), `coefficients` (posterior mean and interval of the cause's
 #'   coefficients), `draws` (matrix of posterior draws, the chains stacked),
-#'   `ess` (effective sample size of the measure), `rhat` (Gelman-Rubin
+#'   `ess` (effective sample size of the measure), `lambda` (posterior mean
+#'   and mode of the tightness, Minnesota prior only), `rhat` (Gelman-Rubin
 #'   potential scale reduction factor of the measure over the chains; values
 #'   close to 1 indicate that the chains agree), `n`, `settings`. Method:
 #'   `print`.
@@ -323,6 +365,8 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
                           seed = NULL, cores = getOption("Rcausality.cores", 1L)) {
   .local_seed(seed)
   lag <- max(1L, as.integer(lag)); n <- length(effect)
+  if (is.null(control$prior)) control <- bayes_control()
+  if (identical(control$prior, "minnesota")) return(.bayes_granger_minnesota(effect, cause, controls, lag, control, prior_prob, cores))
   if (control$prior %in% c("g", "hyper_g", "bic")) {
     g <- .granger_pair(effect, cause, controls, lag, prior = control$prior)
     bf <- g$bf10
@@ -542,6 +586,7 @@ print.bayes_granger <- function(x, digits = 3, ...) {
     gate <- conv %in% TRUE
     if (s$method == "hirata" && !is.null(s$theta)) gate <- gate & P$statistic >= s$theta
     if (s$method == "ccdh" && !is.null(s$prob_threshold)) gate <- gate & (1 - P$statistic) <= s$prob_threshold
+    if (s$method == "rf_granger") gate <- gate & P$statistic > 0          # an improvement of the prediction
     P$significant <- sig %in% TRUE & gate
     if (!is.null(r$instant) && !is.null(r$null_instant)) {
       for (i in seq_len(nrow(r$instant))) {
@@ -552,6 +597,13 @@ print.bayes_granger <- function(x, digits = 3, ...) {
         r$instant$significant[i] <- if (control$decision == "bf") b$bf10 > bf_threshold else b$post_prob > prob_threshold
       }
     }
+  } else if (s$method == "toda_yamamoto") {
+    # closed-form Bayes factor of the lag-augmented regressions (BIC, g or hyper-g)
+    for (j in seq_along(key)) rows[[length(rows) + 1L]] <- bf_row(key[j], P$bf10[j], P$post_prob[j],
+                                                                  c(mean = P$effect_size[j], lower = NA, upper = NA),
+                                                                  "lag-augmented regression")
+    P$significant <- if (control$decision == "bf") P$bf10 > bf_threshold else P$post_prob > prob_threshold
+    P$significant[is.na(P$significant)] <- FALSE
   } else if (s$method == "pcmci") {
     # partial correlations: Fisher z against its sampling sd, Savage-Dickey with the effect prior
     for (j in seq_along(key)) {
@@ -575,8 +627,12 @@ print.bayes_granger <- function(x, digits = 3, ...) {
 
 # Bayesian Granger regression for every directed pair of a Granger run: the
 # F-test run supplies the selected lags; the sampler supplies the evidence
-.bayes_granger_pairs <- function(r, control, prior_prob, bf_threshold, prob_threshold, conditional, cores = 1L) {
+.bayes_granger_pairs <- function(r, control, prior_prob, bf_threshold, prob_threshold, conditional, cores = 1L,
+                                 lag = "auto") {
   P <- r$pairs; D <- r$data; rows <- list()
+  # the Minnesota posterior is proper for any lag order: a requested lag is
+  # used as it is, even where the F-test run had to shorten it
+  if (identical(control$prior, "minnesota") && !identical(lag, "auto")) P$lag <- rep(max(1L, as.integer(lag)), nrow(P))
   sc <- .split_cores(nrow(P), cores)                 # pairs in parallel, or the chains of each pair
   res <- .plapply(seq_len(nrow(P)), function(j) {
     cs <- P$cause[j]; ef <- P$effect[j]

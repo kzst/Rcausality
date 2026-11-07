@@ -38,7 +38,8 @@ An object of class \code{bayes_granger}: \code{bf10}, \code{post_prob},
 and slab only), \code{geweke} (posterior mean and credible interval of the
 measure), \code{coefficients} (posterior mean and interval of the cause's
 coefficients), \code{draws} (matrix of posterior draws, the chains stacked),
-\code{ess} (effective sample size of the measure), \code{rhat} (Gelman-Rubin
+\code{ess} (effective sample size of the measure), \code{lambda} (posterior mean
+and mode of the tightness, Minnesota prior only), \code{rhat} (Gelman-Rubin
 potential scale reduction factor of the measure over the chains; values
 close to 1 indicate that the chains agree), \code{n}, \code{settings}. Method:
 \code{print}.
@@ -55,6 +56,12 @@ subsets are enumerated exactly when \code{q <= 12} (Gibbs sampling otherwise)
 and the Bayes factor compares "at least one lag" with "no lag";
 \item \code{prior = "normal"}: the block of all cause lags with the normal slab
 against none;
+\item \code{prior = "minnesota"}: the hierarchical Minnesota prior for short
+series (lag-decaying shrinkage of all coefficients, the overall
+tightness integrated out under a Gamma hyperprior; see \code{\link[=bayes_control]{bayes_control()}});
+closed-form Bayes factor and exact independent posterior draws. The
+posterior is proper even when the regression has more coefficients than
+observations;
 \item \code{prior = "g"}, \code{"hyper_g"}, \code{"bic"}: the closed-form Bayes factors of
 \code{\link[=rcausality]{rcausality()}}.
 Posterior draws of the coefficients, of \code{sigma} and of Geweke's measure

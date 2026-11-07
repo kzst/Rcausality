@@ -21,7 +21,11 @@
 #'   lag-shifted CMI scheme of Zlatniczki et al. (2021): like `"cmi"` but
 #'   also conditioning on the cause's own past, plus a contemporaneous
 #'   test `I(x[t]; y[t] | pasts)` whose significance, without lagged links,
-#'   indicates a *common driver*; `common_cause` class available).
+#'   indicates a *common driver*; `common_cause` class available), or
+#'   `"toda_yamamoto"` (lag-augmented Granger test for integrated series),
+#'   `"diks_panchenko"` (nonparametric, nonlinear Granger test) or
+#'   `"rf_granger"` (random-forest Granger-like test); see `method_args`.
+#'   The other methods are described below.
 #' @param lag integer lag order or `"auto"` (selected by `lag_criterion` on
 #'   the VAR of the involved series).
 #' @param max_lag largest lag order considered when `lag = "auto"`.
@@ -137,6 +141,25 @@
 #'   regression comparison; see [bayes_control()]); `NULL` = the control's.
 #' @param control a [bayes_control()] list with the priors, the Monte Carlo
 #'   and MCMC sizes and the decision rule of the Bayesian variants.
+#' @param method_args named list of the settings of the methods added in
+#'   version 0.0.2 (unknown names are an error):
+#'   * `"toda_yamamoto"` (Toda and Yamamoto, 1995): `d_max` (default 1), the
+#'     number of extra lags of the lag-augmented VAR (the maximal order of
+#'     integration of the series); the Wald (F) test concerns the first
+#'     `lag` lags of the cause, so integrated and cointegrated series need
+#'     no pre-testing;
+#'   * `"diks_panchenko"` (nonparametric test of Diks and Panchenko, 2006,
+#'     see [diks_panchenko()]): `eps` (bandwidth in standard deviations,
+#'     `NULL` = `min(1.5, C n^(-2/7))`), `C` (default 8), `filter` (`"none"`
+#'     or `"var"`: test the residuals of the VAR of the involved series, i.e.
+#'     the nonlinear part only); a numeric `lag` is the length of the pasts,
+#'     `"auto"` uses 1 (the setting of the theory) and scans 1-3 in
+#'     `$by_lag`;
+#'   * `"rf_granger"` (random-forest Granger-like test, see [rf_granger()]):
+#'     `num_trees`, `mtry`, `min_node_size` (forest), `folds` (rolling-origin
+#'     forecast blocks of the out-of-sample gain), `shadow` (shadow-feature
+#'     rule), `importance` (permutation importance); `n_perm` is the number
+#'     of circular-shift surrogates. Needs \pkg{ranger}.
 #' @param impute logical; interpolate missing values?
 #' @return An object of class [`causres`][causres-class].
 #' @references
@@ -161,6 +184,10 @@
 #' Zlatniczki, A., Stippinger, M., Benko, Z., Somogyvari, Z. and Telcs, A. (2021). Relaxation of some confusions about confounders. *Entropy*, 23(11), 1450. \doi{10.3390/e23111450}
 #'
 #' Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A. (2023). Causal discovery of stochastic dynamical systems: a Markov chain approach. *Mathematics*, 11(4), 852. \doi{10.3390/math11040852}
+#'
+#' Toda, H. Y. and Yamamoto, T. (1995). Statistical inference in vector autoregressions with possibly integrated processes. *Journal of Econometrics*, 66(1-2), 225-250. \doi{10.1016/0304-4076(94)01616-8}
+#'
+#' Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. *Journal of Economic Dynamics and Control*, 30(9-10), 1647-1669. \doi{10.1016/j.jedc.2005.08.008}
 #' @export
 #' @examples
 #' # --- two series, Granger causality --------------------------------------
@@ -197,8 +224,16 @@
 #'
 #' # --- the Bayesian variant of a surrogate method ---------------------------
 #' rcausality(lg, method = "te", bayes = TRUE, n_perm = 100, seed = 1)$bayes
+#'
+#' # --- generalisations of the Granger test (version 0.0.2) ------------------
+#' rcausality(d, method = "toda_yamamoto", method_args = list(d_max = 1))$classes  # integrated series
+#' rcausality(lg, method = "diks_panchenko")$classes                             # nonlinear
+#' # short series: the hierarchical Minnesota prior (tightness integrated out)
+#' rcausality(sim_var(30, seed = 3), method = "bayes_granger", prior = "minnesota",
+#'            control = bayes_control(n_iter = 200), seed = 1)$pairs[, c("cause", "effect", "bf10")]
 #' }
-rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi", "cmi_lag", "markov", "df", "dc", "ccdh", "dfe",
+rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "toda_yamamoto", "diks_panchenko", "rf_granger",
+                                  "cmi", "cmi_lag", "markov", "df", "dc", "ccdh", "dfe",
                                   "te", "ccm", "pid", "hirata", "cd", "pcmci"),
                        lag = "auto", max_lag = 8L,
                        lag_criterion = c("BIC", "AIC", "HQ"),
@@ -213,14 +248,14 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
                        prep = c("rank", "scale", "none"), prob_threshold = 0.5,
                        K = 10L, n_surr = 50L, theta = NULL, model = NULL, bins = 4L,
                        k_target = 2L, k_source = 2L, rate = 0.05,
-                       bayes = FALSE, prior = NULL, control = bayes_control()) {
+                       bayes = FALSE, prior = NULL, control = bayes_control(), method_args = list()) {
   cl <- match.call()
   method <- match.arg(method)
   if (!inherits(control, "bayes_control")) control <- do.call(bayes_control, as.list(control))
-  if (!is.null(prior)) control$prior <- match.arg(prior, c("bic", "g", "hyper_g", "spike_slab", "normal"))
+  if (!is.null(prior)) control$prior <- match.arg(prior, c("bic", "g", "hyper_g", "spike_slab", "normal", "minnesota"))
   prior <- control$prior
   if (method == "bayes_granger") bayes <- TRUE
-  sampler <- bayes && method %in% c("granger", "bayes_granger") && prior %in% c("spike_slab", "normal")
+  sampler <- bayes && method %in% c("granger", "bayes_granger") && prior %in% c("spike_slab", "normal", "minnesota")
   if (bayes && method == "granger" && !sampler) method <- "bayes_granger"
   if (sampler) method <- "granger"                      # the F-test run supplies the lags; the sampler adds the evidence
   old_rng <- .rng_setup(seed); on.exit(.rng_restore(old_rng), add = TRUE)   # the seed also covers the Bayesian stage
@@ -231,9 +266,10 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
                        k_nn = k_nn, n_bins = n_bins, n_markov = n_markov, cores = cores, max_constr = max_constr,
                        m = m, tau = tau, k_range = k_range, prep = prep, prob_threshold = prob_threshold, K = K,
                        n_surr = n_surr, theta = theta, model = model, bins = bins, k_target = k_target,
-                       k_source = k_source, rate = rate, prior = if (prior %in% c("bic", "g", "hyper_g")) prior else "bic", cl = cl)
+                       k_source = k_source, rate = rate, prior = if (prior %in% c("bic", "g", "hyper_g")) prior else "bic",
+                       method_args = method_args, cl = cl)
   r <- .restrict_to_grid(r)
-  if (sampler) r <- .bayes_granger_pairs(r, control, prior_prob, bf_threshold, prob_threshold, conditional, cores)
+  if (sampler) r <- .bayes_granger_pairs(r, control, prior_prob, bf_threshold, prob_threshold, conditional, cores, lag = lag)
   else if (bayes && method != "bayes_granger") r <- .bayes_postprocess(r, control, prior_prob, bf_threshold, prob_threshold)
   r$settings$bayes <- bayes
   if (bayes) { r$settings$prior <- prior; r$settings$bayes_control <- control; r$settings$decision <- control$decision }
@@ -247,9 +283,18 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
 .rcausality_run <- function(x, y = NULL, method, lag, max_lag, lag_criterion, alpha, bf_threshold, adjust,
                             conditional, prior_prob, impute, directions, k, k_perm, n_perm, history, seed, memory,
                             iid_injection, k_nn, n_bins, n_markov, cores, max_constr, m, tau, k_range, prep,
-                            prob_threshold, K, n_surr, theta, model, bins, k_target, k_source, rate, prior, cl) {
+                            prob_threshold, K, n_surr, theta, model, bins, k_target, k_source, rate, prior,
+                            method_args = list(), cl) {
   lag_criterion <- match.arg(lag_criterion, c("BIC", "AIC", "HQ"))
   directions <- match.arg(directions, c("both", "forward"))
+  .check_number(alpha, "alpha", lower = 0, upper = 1, strict = TRUE)
+  .check_number(max_lag, "max_lag", lower = 1, integer = TRUE)
+  .check_number(n_perm, "n_perm", lower = 1, integer = TRUE)
+  .check_number(prior_prob, "prior_prob", lower = 0, upper = 1, strict = TRUE)
+  .check_number(bf_threshold, "bf_threshold", lower = 0, strict = TRUE)
+  if (!identical(lag, "auto")) .check_number(lag, "lag", lower = 0, integer = TRUE)
+  if (!identical(history, "auto")) .check_number(history, "history", lower = 1, integer = TRUE)
+  if (!adjust %in% c(stats::p.adjust.methods)) stop("`adjust` must be one of ", paste(stats::p.adjust.methods, collapse = ", "), ".", call. = FALSE)
   iid_injection <- match.arg(iid_injection, c("allowed", "forbidden"))
   fr <- .as_series_frame(x, y, xname = if (is.null(y)) "x" else "x", yname = "y")
   if (is.null(fr$Y) && ncol(fr$X) < 2L) {
@@ -281,7 +326,7 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
   .n_cores(cores)                                        # validates the argument
   old_rng <- .rng_setup(seed); on.exit(.rng_restore(old_rng), add = TRUE)
   sc <- .split_cores(nrow(grid), cores); pair_cores <- sc$outer; inner_cores <- sc$inner
-  if (method %in% c("cmi", "cmi_lag", "markov", "df", "ccdh", "te", "ccm", "pid")) {
+  if (method %in% c("cmi", "cmi_lag", "markov", "df", "ccdh", "te", "ccm", "pid", "rf_granger")) {
     need <- min(999L, ceiling(nrow(grid) / alpha))
     if (method == "ccdh") {
       if (n_surr < need) {
@@ -305,6 +350,22 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
   } else rep(max(1L, as.integer(history)), nrow(grid))
   if (is.null(k)) k <- if (method == "df") 10L else 5L
   if (is.null(theta)) theta <- if (method == "hirata") 0.4 else 0.45
+  if (length(method_args) && !method %in% names(.method_arg_defaults))
+    warning(sprintf("`method_args` is not used by method \"%s\".", method), call. = FALSE)
+  if (method %in% c("toda_yamamoto", "diks_panchenko", "rf_granger")) {
+    ma <- .method_args(method, method_args)
+    if (!.method_info(method)$conditional && conditional)
+      stop(sprintf("method = \"%s\" supports pairwise analysis only.", method), call. = FALSE)
+    pair_fun <- switch(method,
+      toda_yamamoto = .ty_pair_fun(fixed_lag, max_lag, lag_criterion, d_max = as.integer(ma$d_max), prior = prior),
+      diks_panchenko = .dp_pair_fun(fixed_lag, max_lag, lag_criterion, eps = ma$eps, C = ma$C,
+                                    filter = match.arg(ma$filter, c("none", "var"))),
+      rf_granger = .rf_pair_fun(fixed_lag, max_lag, lag_criterion, n_perm = n_perm, settings = ma))
+    out <- .rcausality_directed(all, grid, causes, effects, method, pair_fun, alpha, adjust, prior_prob, bf_threshold,
+                                conditional, cl, cores, rule = "p")
+    out$settings$method_args <- ma
+    return(out)
+  }
   if (method == "pcmci") {
     r <- pcmci(all, tau_max = if (is.null(fixed_lag)) as.integer(max_lag) else fixed_lag,
                tau_min = if (is.null(fixed_lag)) 1L else fixed_lag, alpha = alpha,
@@ -453,20 +514,8 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
       stats::p.adjust(instant$p_value, method = adjust)
     instant$significant <- instant$p_adj < alpha
   }
-  pairs$p_adj <- if (adjust == "none") pairs$p_value else
-    stats::p.adjust(pairs$p_value, method = adjust)
-  pairs$post_prob <- (pairs$bf10 * prior_prob) /
-    (pairs$bf10 * prior_prob + (1 - prior_prob))
-  pairs$evidence <- as.character(bf_evidence(pairs$bf10))
-  pairs$significant <- if (method %in% c("granger", "cmi", "cmi_lag")) {
-    !is.na(pairs$p_adj) & pairs$p_adj < alpha
-  } else {
-    !is.na(pairs$bf10) & pairs$bf10 > bf_threshold
-  }
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
-  rownames(pairs) <- NULL
+  pairs <- .finish_pairs(pairs, adjust, alpha, prior_prob, bf_threshold,
+                         rule = if (method %in% c("granger", "cmi", "cmi_lag")) "p" else "bf")
   out <- .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                       method = method, conditional = conditional, alpha = alpha,
                       bf_threshold = bf_threshold, adjust = adjust, n = nrow(all),
@@ -521,9 +570,7 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
                           case = dec$case, inj_x_to_y = dec$ab, inj_y_to_x = dec$ba,
                           hidden = dec$hidden, consistent = dec$consistent, stringsAsFactors = FALSE)
   }
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
+  pairs <- pairs[, .pairs_cols]
   rownames(pairs) <- NULL
   out <- .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                       method = "markov", conditional = FALSE, alpha = alpha, bf_threshold = NA_real_,
@@ -594,9 +641,7 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "cmi"
     pairs$significant[ab] <- dfo$table2[i] %in% c("x_to_y", "bidirectional") & pairs$p_value[ab] < alpha
     pairs$significant[ba] <- dfo$table2[i] %in% c("y_to_x", "bidirectional") & pairs$p_value[ba] < alpha
   }
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
+  pairs <- pairs[, .pairs_cols]
   rownames(pairs) <- NULL
   out <- .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                       method = "df", conditional = conditional, alpha = alpha, bf_threshold = NA_real_,

@@ -1,7 +1,7 @@
 Package: Rcausality
 Type: Package
 Title: Causality Analysis for Time Series
-Version: 0.0.1
+Version: 0.0.2
 Authors@R: c(
     person("Zsolt T.", "Kosztyán", email = "kosztyan.zsolt@gtk.uni-pannon.hu",
            role = c("aut", "cre", "cph")))
@@ -9,8 +9,18 @@ Description: A unified interface to causality detection methods for time
     series, returning one result object ('causres') with 'print', 'summary'
     and 'plot' methods for two series, a data frame (all pairs) or two
     blocks of series. Implements Granger causality with classical and
-    Bayesian (spike-and-slab regression, BIC, g-prior and hyper-g Bayes
-    factor) decisions; conditional
+    Bayesian (spike-and-slab regression, hierarchical Minnesota prior for
+    short series after Giannone, Lenza and Primiceri (2015)
+    <doi:10.1162/REST_a_00483>, BIC, g-prior and hyper-g Bayes factor)
+    decisions; its generalisations to integrated series (Toda and Yamamoto,
+    1995, <doi:10.1016/0304-4076(94)01616-8>), to nonlinear dependence (the
+    nonparametric test of Diks and Panchenko, 2006,
+    <doi:10.1016/j.jedc.2005.08.008>, and a random-forest Granger-like test
+    with surrogate, out-of-sample and shadow-feature evidence), to the
+    frequency domain (Breitung and Candelon, 2006,
+    <doi:10.1016/j.jeconom.2005.02.004>) and to panels of short series
+    (Dumitrescu and Hurlin, 2012, <doi:10.1016/j.econmod.2012.02.014>);
+    conditional
     mutual information with local-permutation tests and the lag-shifted
     scheme of Zlatniczki et al. (2021) <doi:10.3390/e23111450>; the
     Markov-chain approach of Stippinger et al. (2023)
@@ -27,16 +37,18 @@ Description: A unified interface to causality detection methods for time
     <doi:10.3390/e21090818>; transfer entropy and convergent cross mapping
     as baselines; an optional wrapper for PCMCI (Runge et al., 2019,
     <doi:10.1126/sciadv.aau4996>) through the 'Python' package 'tigramite';
-    tools to compare and benchmark methods,
-    causality-informed forecasting, multi-core execution, and a Bayesian
-    variant of every method with explicit priors, posterior draws and
-    Bayes-factor or posterior-probability decisions.
+    tools to compare and benchmark methods, placebo, time-reversal and
+    robustness analyses, causality-informed forecasting with linear,
+    Bayesian and random-forest models, multi-core execution with results
+    independent of the number of cores, and a Bayesian variant of every
+    method with explicit priors, posterior draws and Bayes-factor or
+    posterior-probability decisions.
 License: GPL-3
 URL: https://github.com/kzst/rcausality
 BugReports: https://github.com/kzst/rcausality/issues
 Encoding: UTF-8
 Depends: R (>= 4.0.0)
-Imports: stats, graphics, grDevices, parallel, Rcpp
+Imports: stats, graphics, grDevices, parallel, utils, Rcpp
 LinkingTo: Rcpp
 Suggests: testthat (>= 3.0.0), lmtest, ranger, reticulate, knitr, rmarkdown, FNN, svglite
 VignetteBuilder: knitr

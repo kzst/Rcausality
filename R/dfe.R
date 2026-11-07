@@ -302,9 +302,7 @@ plot.dfe <- function(x, main = NULL, ...) {
   pairs <- do.call(rbind, rows)
   pairs$p_adj <- NA_real_; pairs$evidence <- bf_evidence(pairs$bf10)
   pairs$significant <- pairs$post_prob > prob_threshold
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
+  pairs <- pairs[, .pairs_cols]
   rownames(pairs) <- NULL
   .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                method = "dfe", conditional = FALSE, alpha = alpha, bf_threshold = NA_real_,

@@ -12,8 +12,11 @@
 #' @param methods character vector of methods (see [rcausality()]).
 #' @param args optional named list of per-method argument lists, e.g.
 #'   `list(dc = list(m = 4), ccm = list(m = 3))`.
-#' @param ... arguments passed to every method (e.g. `seed`, `cores`,
-#'   `n_perm`, `alpha`).
+#' @param cores CPU cores: the methods run in parallel (each with the
+#'   remaining cores when there are fewer methods than cores); the verdicts
+#'   do not depend on it (see [Rcausality-parallel]).
+#' @param ... arguments passed to every method (e.g. `seed`, `n_perm`,
+#'   `alpha`).
 #' @return An object of class `causcomp`: `table` (one row per pair, one
 #'   column per method, plus `consensus` and `agreement`), `results` (the
 #'   `causres` objects), `methods`. Methods: `print`, `plot` (tile plot of
@@ -34,13 +37,15 @@
 #'                 n_perm = 100, seed = 1)
 #' }
 compare_methods <- function(x, y = NULL, methods = c("granger", "bayes_granger", "cmi", "te"),
-                            args = list(), ...) {
+                            args = list(), cores = getOption("Rcausality.cores", 1L), ...) {
+  methods <- match.arg(methods, .method_names, several.ok = TRUE)
   dots <- list(...)
-  results <- lapply(methods, function(m) {
-    a <- c(list(x = x, y = y, method = m), dots, if (!is.null(args[[m]])) args[[m]])
+  sc <- .split_cores(length(methods), cores)
+  results <- .plapply(methods, function(m) {
+    a <- c(list(x = x, y = y, method = m, cores = sc$inner), dots, if (!is.null(args[[m]])) args[[m]])
     a <- a[!duplicated(names(a), fromLast = TRUE)]
-    do.call(rcausality, a)
-  })
+    suppressMessages(do.call(rcausality, a))
+  }, cores = sc$outer)
   names(results) <- methods
   cls <- results[[1]]$classes[, c("var1", "var2")]
   for (m in methods) {

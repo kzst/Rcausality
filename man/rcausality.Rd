@@ -7,8 +7,9 @@
 rcausality(
   x,
   y = NULL,
-  method = c("granger", "bayes_granger", "cmi", "cmi_lag", "markov", "df", "dc", "ccdh",
-    "dfe", "te", "ccm", "pid", "hirata", "cd", "pcmci"),
+  method = c("granger", "bayes_granger", "toda_yamamoto", "diks_panchenko", "rf_granger",
+    "cmi", "cmi_lag", "markov", "df", "dc", "ccdh", "dfe", "te", "ccm", "pid", "hirata",
+    "cd", "pcmci"),
   lag = "auto",
   max_lag = 8L,
   lag_criterion = c("BIC", "AIC", "HQ"),
@@ -46,7 +47,8 @@ rcausality(
   rate = 0.05,
   bayes = FALSE,
   prior = NULL,
-  control = bayes_control()
+  control = bayes_control(),
+  method_args = list()
 )
 }
 \arguments{
@@ -67,7 +69,11 @@ p-value; detects non-linear dependence) or \code{"cmi_lag"} (the
 lag-shifted CMI scheme of Zlatniczki et al. (2021): like \code{"cmi"} but
 also conditioning on the cause's own past, plus a contemporaneous
 test \verb{I(x[t]; y[t] | pasts)} whose significance, without lagged links,
-indicates a \emph{common driver}; \code{common_cause} class available).}
+indicates a \emph{common driver}; \code{common_cause} class available), or
+\code{"toda_yamamoto"} (lag-augmented Granger test for integrated series),
+\code{"diks_panchenko"} (nonparametric, nonlinear Granger test) or
+\code{"rf_granger"} (random-forest Granger-like test); see \code{method_args}.
+The other methods are described below.}
 
 \item{lag}{integer lag order or \code{"auto"} (selected by \code{lag_criterion} on
 the VAR of the involved series).}
@@ -207,6 +213,28 @@ regression comparison; see \code{\link[=bayes_control]{bayes_control()}}); \code
 
 \item{control}{a \code{\link[=bayes_control]{bayes_control()}} list with the priors, the Monte Carlo
 and MCMC sizes and the decision rule of the Bayesian variants.}
+
+\item{method_args}{named list of the settings of the methods added in
+version 0.0.2 (unknown names are an error):
+\itemize{
+\item \code{"toda_yamamoto"} (Toda and Yamamoto, 1995): \code{d_max} (default 1), the
+number of extra lags of the lag-augmented VAR (the maximal order of
+integration of the series); the Wald (F) test concerns the first
+\code{lag} lags of the cause, so integrated and cointegrated series need
+no pre-testing;
+\item \code{"diks_panchenko"} (nonparametric test of Diks and Panchenko, 2006,
+see \code{\link[=diks_panchenko]{diks_panchenko()}}): \code{eps} (bandwidth in standard deviations,
+\code{NULL} = \verb{min(1.5, C n^(-2/7))}), \code{C} (default 8), \code{filter} (\code{"none"}
+or \code{"var"}: test the residuals of the VAR of the involved series, i.e.
+the nonlinear part only); a numeric \code{lag} is the length of the pasts,
+\code{"auto"} uses 1 (the setting of the theory) and scans 1-3 in
+\verb{$by_lag};
+\item \code{"rf_granger"} (random-forest Granger-like test, see \code{\link[=rf_granger]{rf_granger()}}):
+\code{num_trees}, \code{mtry}, \code{min_node_size} (forest), \code{folds} (rolling-origin
+forecast blocks of the out-of-sample gain), \code{shadow} (shadow-feature
+rule), \code{importance} (permutation importance); \code{n_perm} is the number
+of circular-shift surrogates. Needs \pkg{ranger}.
+}}
 }
 \value{
 An object of class \code{\link[=causres-class]{causres}}.
@@ -255,6 +283,13 @@ rcausality(d3[, 1:2], d3[, 3, drop = FALSE], directions = "forward")
 
 # --- the Bayesian variant of a surrogate method ---------------------------
 rcausality(lg, method = "te", bayes = TRUE, n_perm = 100, seed = 1)$bayes
+
+# --- generalisations of the Granger test (version 0.0.2) ------------------
+rcausality(d, method = "toda_yamamoto", method_args = list(d_max = 1))$classes  # integrated series
+rcausality(lg, method = "diks_panchenko")$classes                             # nonlinear
+# short series: the hierarchical Minnesota prior (tightness integrated out)
+rcausality(sim_var(30, seed = 3), method = "bayes_granger", prior = "minnesota",
+           control = bayes_control(n_iter = 200), seed = 1)$pairs[, c("cause", "effect", "bf10")]
 }
 }
 \references{
@@ -279,4 +314,8 @@ Runge, J. (2018). Conditional independence testing based on a nearest-neighbor e
 Zlatniczki, A., Stippinger, M., Benko, Z., Somogyvari, Z. and Telcs, A. (2021). Relaxation of some confusions about confounders. \emph{Entropy}, 23(11), 1450. \doi{10.3390/e23111450}
 
 Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A. (2023). Causal discovery of stochastic dynamical systems: a Markov chain approach. \emph{Mathematics}, 11(4), 852. \doi{10.3390/math11040852}
+
+Toda, H. Y. and Yamamoto, T. (1995). Statistical inference in vector autoregressions with possibly integrated processes. \emph{Journal of Econometrics}, 66(1-2), 225-250. \doi{10.1016/0304-4076(94)01616-8}
+
+Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. \emph{Journal of Economic Dynamics and Control}, 30(9-10), 1647-1669. \doi{10.1016/j.jedc.2005.08.008}
 }

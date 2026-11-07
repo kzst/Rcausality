@@ -211,6 +211,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// dp_counts_cpp
+List dp_counts_cpp(const NumericMatrix& X, const NumericMatrix& Y, const NumericVector& Z, double eps);
+RcppExport SEXP _Rcausality_dp_counts_cpp(SEXP XSEXP, SEXP YSEXP, SEXP ZSEXP, SEXP epsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const NumericMatrix& >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< const NumericVector& >::type Z(ZSEXP);
+    Rcpp::traits::input_parameter< double >::type eps(epsSEXP);
+    rcpp_result_gen = Rcpp::wrap(dp_counts_cpp(X, Y, Z, eps));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_Rcausality_cmi_knn_cpp", (DL_FUNC) &_Rcausality_cmi_knn_cpp, 4},
@@ -227,6 +241,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_Rcausality_simplex_predict_cpp", (DL_FUNC) &_Rcausality_simplex_predict_cpp, 5},
     {"_Rcausality_pair_dist_cpp", (DL_FUNC) &_Rcausality_pair_dist_cpp, 1},
     {"_Rcausality_recurrence_counts_cpp", (DL_FUNC) &_Rcausality_recurrence_counts_cpp, 8},
+    {"_Rcausality_dp_counts_cpp", (DL_FUNC) &_Rcausality_dp_counts_cpp, 4},
     {NULL, NULL, 0}
 };
 

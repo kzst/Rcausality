@@ -178,9 +178,7 @@ ccm <- function(x, y, E = 3L, tau = 1L, lib_sizes = NULL, n_samples = 20L, n_sur
   pairs$p_adj <- if (adjust == "none") pairs$p_value else stats::p.adjust(pairs$p_value, method = adjust)
   pairs$post_prob <- NA_real_; pairs$evidence <- NA_character_
   pairs$significant <- pairs$p_adj < alpha
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
+  pairs <- pairs[, .pairs_cols]
   rownames(pairs) <- NULL
   out <- .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                       method = "te", conditional = FALSE, alpha = alpha, bf_threshold = NA_real_,
@@ -208,9 +206,7 @@ ccm <- function(x, y, E = 3L, tau = 1L, lib_sizes = NULL, n_samples = 20L, n_sur
   pairs$post_prob <- NA_real_; pairs$evidence <- NA_character_
   pairs$significant <- pairs$p_adj < alpha & pairs$converging
   conv <- pairs[, c("cause", "effect", "converging", "p_convergence")]
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
+  pairs <- pairs[, .pairs_cols]
   rownames(pairs) <- NULL
   out <- .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                       method = "ccm", conditional = FALSE, alpha = alpha, bf_threshold = NA_real_,

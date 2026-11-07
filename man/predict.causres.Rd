@@ -12,6 +12,10 @@
   holdout = 0.2,
   level = 0.95,
   refit = TRUE,
+  model = c("var", "bvar", "rf"),
+  control = bayes_control(prior = "minnesota"),
+  rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+  n_sim = 500L,
   ...
 )
 
@@ -39,6 +43,17 @@ data when the links are chosen; \code{FALSE} evaluates the links of
 comparison optimistic. The final forecasts always use the links of
 \code{object}.}
 
+\item{model}{forecast model: \code{"var"}, \code{"bvar"} or \code{"rf"} (see Details).}
+
+\item{control}{a \code{\link[=bayes_control]{bayes_control()}} list for \code{model = "bvar"} (its Minnesota
+settings are used).}
+
+\item{rf_settings}{forest settings for \code{model = "rf"} (\code{num_trees}, \code{mtry},
+\code{min_node_size}).}
+
+\item{n_sim}{number of simulated paths for the intervals of \code{"bvar"} and
+\code{"rf"}.}
+
 \item{...}{unused.}
 
 \item{x}{a \code{causfc} object.}
@@ -49,22 +64,35 @@ comparison optimistic. The final forecasts always use the links of
 }
 \value{
 An object of class \code{causfc}: \code{forecasts} (series, horizon, point,
-lower, upper, se, for the causal model; the intervals follow the
-multi-step MSE recursion of the restricted VAR, Luetkepohl 2005, Sect.
-2.2.2), \code{evaluation} (per series: RMSE and MAE of the baseline and of
-the causal model on the hold-out, the relative RMSE improvement, the
-causes used), \code{holdout_fit} (observed and one-step predicted values of
-both models on the hold-out), \code{fitted_causes}, \code{coefficients} (the
-restricted VAR coefficient array, series x series x lag), \code{sigma}
-(residual covariance), \code{p}, \code{data}. Methods: \code{print}, \code{summary}, \code{plot}.
+lower, upper, se), \code{evaluation} (per series: RMSE and MAE of the baseline
+and of the causal model on the hold-out, the relative RMSE improvement,
+the causes used), \code{holdout_fit} (observed and one-step predicted values
+of both models on the hold-out), \code{fitted_causes}, \code{coefficients} (the
+restricted VAR coefficient array, series x series x lag; \code{"var"} and
+\code{"bvar"}), \code{sigma} (residual covariance), \code{model}, \code{p}, \code{data}. Methods:
+\code{print}, \code{summary}, \code{plot}.
 }
 \description{
-Fits, for every series, a linear model on its own \code{p} lags (baseline) and
-a model that adds the \code{p} lags of the series' significant causes (the
-restricted VAR implied by the detected links), evaluates both by rolling
-one-step forecasts on the last \code{holdout} fraction of the sample, and
-produces \code{h}-step-ahead forecasts (recursive, all series jointly) with
-normal prediction intervals from the residual standard deviation.
+Predicts every series from its own \code{p} lags and the \code{p} lags of its
+significant causes (the restricted model implied by the detected links),
+compares this model with the own-lags-only model by rolling one-step
+forecasts on the last \code{holdout} fraction of the sample, and produces
+\code{h}-step-ahead forecasts with prediction intervals. The links may come
+from any method of \code{\link[=rcausality]{rcausality()}}; the forecast model is chosen by
+\code{model}:
+\itemize{
+\item \code{"var"}: the restricted VAR estimated by least squares; recursive point
+forecasts and normal intervals from the multi-step MSE recursion of the
+VAR (Luetkepohl 2005, Sect. 2.2.2);
+\item \code{"bvar"}: the same equations with the hierarchical Minnesota prior of
+\code{\link[=bayes_control]{bayes_control()}} (\code{prior = "minnesota"}; tightness integrated out),
+which stabilises the coefficients of short series; intervals from
+\code{n_sim} posterior-predictive paths (coefficients, error scale and
+correlated shocks simulated);
+\item \code{"rf"}: random forests (package \pkg{ranger}) on the same lags, for
+nonlinear dynamics; intervals from \code{n_sim} recursive paths with
+bootstrapped out-of-bag residuals (resampled jointly across the series).
+}
 }
 \examples{
 # Granger analysis of a VAR where x drives y, then a 5-step forecast from
@@ -76,12 +104,15 @@ fc <- predict(r, h = 5)
 fc              # point forecasts with interval, and the hold-out evaluation
 \donttest{
 plot(fc)        # the last observations, the hold-out fit and the forecast fan
-# a longer hold-out, 80\% intervals
-predict(r, h = 10, holdout = 0.3, level = 0.8)
+# a short series: the Minnesota-prior model (simulated intervals)
+ds <- sim_var(60, "x_to_y", seed = 2)
+predict(rcausality(ds), h = 5, model = "bvar", n_sim = 200)
 }
 }
 \references{
 Granger, C. W. J. (1969). Investigating causal relations by econometric models and cross-spectral methods. \emph{Econometrica}, 37(3), 424-438. \doi{10.2307/1912791}
 
 Luetkepohl, H. (2005). \emph{New Introduction to Multiple Time Series Analysis}. Springer, Berlin. \doi{10.1007/978-3-540-27752-1}
+
+Giannone, D., Lenza, M. and Primiceri, G. E. (2015). Prior selection for vector autoregressions. \emph{The Review of Economics and Statistics}, 97(2), 436-451. \doi{10.1162/REST_a_00483}
 }

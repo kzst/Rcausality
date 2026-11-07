@@ -5,7 +5,7 @@
 \title{Settings of the Bayesian variants of the causality methods}
 \usage{
 bayes_control(
-  prior = c("spike_slab", "normal", "g", "hyper_g", "bic"),
+  prior = c("spike_slab", "normal", "minnesota", "g", "hyper_g", "bic"),
   effect_prior = c("half_cauchy", "half_normal", "normal", "cauchy"),
   scale = 1,
   inclusion_prob = 0.5,
@@ -18,6 +18,11 @@ bayes_control(
   n_draws = 4000L,
   hyper_a = 3,
   credible = 0.95,
+  lambda = "auto",
+  decay = 1,
+  cross = 1,
+  own_mean = 0,
+  lambda_hyper = c(mode = 0.2, sd = 0.4),
   decision = c("bf", "posterior")
 )
 }
@@ -73,6 +78,20 @@ posterior of the effect).}
 
 \item{credible}{level of the credible intervals.}
 
+\item{lambda, decay, cross, own_mean, lambda_hyper}{settings of the
+Minnesota prior (\code{prior = "minnesota"}) for short series: the prior
+standard deviation of the coefficient of series \code{j} at lag \code{l} is
+\code{lambda * cross_j / l^decay * sigma / s_j} (Litterman 1986; \code{s_j} = the
+residual sd of an autoregression of series \code{j}, \code{cross_j = 1} for the
+effect's own lags and \code{cross} for the other series), the prior mean of
+the effect's first own lag is \code{own_mean} (0 for stationary,
+standardised series; 1 = random-walk prior), and the overall tightness
+\code{lambda} is either fixed (a number) or \code{"auto"}: integrated out under a
+Gamma hyperprior with the mode and standard deviation \code{lambda_hyper}
+(0.2 and 0.4, as in Giannone, Lenza and Primiceri 2015), on a grid, so
+that the Bayes factor and the posterior draws average over the
+tightness that the data support.}
+
 \item{decision}{how a link is declared: \code{"bf"} (Bayes factor above
 \code{bf_threshold} of \code{\link[=rcausality]{rcausality()}}) or \code{"posterior"} (posterior probability
 above \code{prob_threshold}).}
@@ -92,6 +111,8 @@ methods, and the Monte Carlo / MCMC sizes.
 bayes_control()
 # a wider slab, longer chains, decision by the posterior probability
 bayes_control(prior = "spike_slab", scale = 2, n_iter = 4000, chains = 4, decision = "posterior")
+# the hierarchical Minnesota prior for short series (tightness integrated out)
+bayes_control(prior = "minnesota")
 # a prior over the causal cases (for dc, dfe and the Bayesian Markov table)
 bayes_control(case_prior = c(x_to_y = 0.3, y_to_x = 0.3, bidirectional = 0.1,
                              common_cause = 0.1, independent = 0.2))
@@ -106,4 +127,8 @@ Liang, F., Paulo, R., Molina, G., Clyde, M. A. and Berger, J. O. (2008). Mixture
 Rouder, J. N., Speckman, P. L., Sun, D., Morey, R. D. and Iverson, G. (2009). Bayesian t tests for accepting and rejecting the null hypothesis. \emph{Psychonomic Bulletin & Review}, 16, 225-237. \doi{10.3758/PBR.16.2.225}
 
 Kass, R. E. and Raftery, A. E. (1995). Bayes factors. \emph{Journal of the American Statistical Association}, 90(430), 773-795. \doi{10.1080/01621459.1995.10476572}
+
+Litterman, R. B. (1986). Forecasting with Bayesian vector autoregressions: five years of experience. \emph{Journal of Business & Economic Statistics}, 4(1), 25-38. \doi{10.1080/07350015.1986.10509491}
+
+Giannone, D., Lenza, M. and Primiceri, G. E. (2015). Prior selection for vector autoregressions. \emph{The Review of Economics and Statistics}, 97(2), 436-451. \doi{10.1162/REST_a_00483}
 }

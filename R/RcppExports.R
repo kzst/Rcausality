@@ -57,3 +57,7 @@ recurrence_counts_cpp <- function(X, Y, ex_loose, ex_tight, ey_loose, ey_tight, 
     .Call(`_Rcausality_recurrence_counts_cpp`, X, Y, ex_loose, ex_tight, ey_loose, ey_tight, w, s)
 }
 
+dp_counts_cpp <- function(X, Y, Z, eps) {
+    .Call(`_Rcausality_dp_counts_cpp`, X, Y, Z, eps)
+}
+

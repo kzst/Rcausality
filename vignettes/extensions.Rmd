@@ -1,0 +1,331 @@
+---
+title: "Beyond linear Granger causality: generalised, nonlinear, Bayesian and panel tests, robustness and forecasting"
+author: "Zsolt T. Kosztyán (University of Pannonia)"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    css: rcausality.css
+vignette: >
+  %\VignetteIndexEntry{Beyond linear Granger causality: generalised, nonlinear, Bayesian and panel tests, robustness and forecasting}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE, warning = FALSE,
+                      fig.width = 7.5, fig.height = 4.6, fig.align = "center", out.width = "100%",
+                      dev = if (requireNamespace("svglite", quietly = TRUE)) "svglite" else
+                        if (isTRUE(capabilities("cairo"))) "svg" else "png")
+library(Rcausality)
+# Long-running results are precomputed and shipped in vignettes/precomputed/;
+# the code shown is exactly the code that produced them.
+# Sys.setenv(RCAUSALITY_RECOMPUTE = "true") recomputes everything.
+.pre <- function(name, expr) {
+  f <- file.path("precomputed", paste0(name, ".rds"))
+  if (file.exists(f) && !identical(Sys.getenv("RCAUSALITY_RECOMPUTE"), "true")) return(readRDS(f))
+  v <- expr
+  dir.create("precomputed", showWarnings = FALSE)
+  saveRDS(v, f, compress = "xz")
+  v
+}
+has_ranger <- requireNamespace("ranger", quietly = TRUE)
+```
+
+# Overview
+
+The classical Granger test regresses the effect on its own past and on the
+past of the cause in a stationary linear autoregression, with enough
+observations for the F-test. This vignette shows the tools of
+**Rcausality** for the situations where one of these assumptions fails, and
+for checking and using the detected links.
+
+| Situation | Tool | Reference |
+|---|---|---|
+| integrated or cointegrated series | `rcausality(method = "toda_yamamoto")` | Toda & Yamamoto (1995) |
+| causality at some frequencies only | `granger_spectral()` | Geweke (1982); Breitung & Candelon (2006) |
+| nonlinear dependence | `rcausality(method = "diks_panchenko")`, `diks_panchenko()` | Diks & Panchenko (2006) |
+| nonlinear, machine learning | `rcausality(method = "rf_granger")`, `rf_granger()` | Kosztyán, Mátrai & Kiss (2026) |
+| short series | `bayes_control(prior = "minnesota")` | Litterman (1986); Giannone, Lenza & Primiceri (2015) |
+| many short series (panels) | `panel_granger()` | Dumitrescu & Hurlin (2012) |
+| are the links artefacts? | `placebo_test()`, `robustness()`, `compare_methods()` | Theiler et al. (1992); Haufe et al. (2013) |
+| do the links help forecasting? | `predict()`, `forecast_causal()`, `forecast_compare()` | Diebold & Mariano (1995) |
+
+All of these run in parallel (`cores`), with results that do not depend on
+the number of cores (see `?Rcausality-parallel` and the last section).
+
+# Integrated series: the Toda-Yamamoto test
+
+For integrated series the Wald statistic of the levels VAR has a
+nonstandard distribution. Toda and Yamamoto (1995) add `d_max` extra lags
+(the maximal order of integration) that are estimated but not tested; the
+Wald test of the first `p` lags is then asymptotically chi-squared whatever
+the integration and cointegration properties, so no unit-root pre-test is
+needed.
+
+```{r ty}
+set.seed(1); n <- 300
+x <- cumsum(rnorm(n))                                 # a random walk
+y <- numeric(n); for (t in 3:n) y[t] <- y[t - 1] + 0.6 * (x[t - 1] - x[t - 2]) + rnorm(1)
+r_ty <- rcausality(x, y, method = "toda_yamamoto", method_args = list(d_max = 1))
+r_ty$pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value", "significant")]
+```
+
+# Causality in the frequency domain
+
+Geweke (1982) decomposed the predictive gain over the frequencies; the
+average of the spectral measure equals the time-domain measure
+`log(RSS_restricted / RSS_full)`. Breitung and Candelon (2006) test the
+absence of causality at a frequency `w` by two linear restrictions on the
+cause's coefficients. When `x` enters as the sum of its last two values,
+`0.4 (x[t-1] + x[t-2])`, the transfer of `x` to `y` has the gain
+`0.8 |cos(w / 2)|`: it is largest in the long run (low frequencies) and
+vanishes at the period of two time units:
+
+```{r spectral, fig.height = 6, fig.cap = "Spectral Granger causality. Top: Geweke's measure per frequency (dotted: the time-domain measure). Bottom: pointwise Breitung-Candelon tests; shaded: frequency bands with causality at the 5 % level."}
+set.seed(2); n <- 600; x <- rnorm(n); y <- numeric(n)
+for (t in 3:n) y[t] <- 0.3 * y[t - 1] + 0.4 * (x[t - 1] + x[t - 2]) + rnorm(1)
+gs <- granger_spectral(x, y, lag = 3)
+gs
+plot(gs)
+```
+
+The tests are pointwise: with 256 frequencies an isolated rejection (such
+as the single frequency of `y -> x` above) is expected by chance; bands of
+consecutive rejections carry the evidence.
+
+# Nonlinear causality
+
+## The Diks-Panchenko test
+
+The nonparametric test of Diks and Panchenko (2006) compares the joint
+density of (cause's past, effect's past, effect's present) with the
+product implied by conditional independence, with box kernels of bandwidth
+`eps` (default `min(1.5, 8 n^(-2/7))` standard deviations). Two logistic
+maps coupled through the map function are a textbook case where linear
+correlations are weak:
+
+```{r dp}
+lg <- sim_logistic(500, "x_to_y", seed = 1)
+rcausality(lg, method = "granger")$classes[, c("var1", "var2", "class")]
+r_dp <- rcausality(lg, method = "diks_panchenko")
+r_dp$pairs[, c("cause", "effect", "statistic", "effect_size", "p_value", "significant")]
+```
+
+`effect_size` is the standardised statistic `sqrt(n) T_n / S_n`. With
+`method_args = list(filter = "var")` the test is applied to the residuals
+of a VAR, so that only the nonlinear part of the dependence is tested.
+
+## Random-forest Granger-like causality
+
+The approach of Kosztyán, Mátrai and Kiss (2026) keeps Granger's
+predictive definition but replaces the linear regression by a random
+forest. The out-of-bag gain `1 - MSE(own + cause) / MSE(own)` is tested
+against circular-shift surrogates of the cause; the honest rolling-origin
+out-of-sample gain, the permutation importance of the cause's lags and a
+shadow-feature rule (the cause must beat a shifted copy of itself) are
+reported with it.
+
+```{r rf, eval = has_ranger}
+r_rf <- .pre("ext-rf", rcausality(lg, method = "rf_granger", lag = 1, n_perm = 99, seed = 1,
+                                  method_args = list(num_trees = 200, folds = 5)))
+r_rf$pairs[, c("cause", "effect", "statistic", "p_value", "significant")]
+r_rf$extra[, c("cause", "effect", "oob_gain", "oos_gain", "vi_cause", "shadow_hit")]
+```
+
+A non-positive gain gives `p = 1`: in coupled deterministic systems the
+driven series carries information about its driver, and a test of
+*dependence* would also flag the reverse direction; Granger's definition
+asks for an *improvement* of the prediction.
+
+# Short series: the hierarchical Minnesota prior
+
+With `K` series and lag `p` the unrestricted regression has `1 + K p`
+coefficients. For short series the F-test has few residual degrees of
+freedom, loses power, or cannot be computed at all, and the BIC
+approximation of the Bayes factor is unreliable. The Minnesota prior
+(Litterman 1986) shrinks every coefficient towards zero, more strongly for
+distant lags; its overall tightness `lambda` is integrated out under the
+Gamma hyperprior of Giannone, Lenza and Primiceri (2015). The Bayes factor
+
+$$\mathrm{BF}_{10} = \frac{\int p(y \mid \text{cause lags in}, \lambda)\, p(\lambda)\, d\lambda}{\int p(y \mid \text{cause lags out}, \lambda)\, p(\lambda)\, d\lambda}$$
+
+is a ratio of closed-form normal-inverse-gamma marginal likelihoods
+averaged over a grid of `lambda`, and exact posterior draws follow from the
+same grid.
+
+```{r minn}
+d14 <- sim_var(14, n_series = 3, seed = 6)       # 14 observations, 3 series
+r_m <- rcausality(d14, conditional = TRUE, lag = 3, method = "bayes_granger", prior = "minnesota",
+                  control = bayes_control(n_iter = 500), seed = 1)
+r_m$pairs[, c("cause", "effect", "lag", "bf10", "post_prob", "evidence")]
+```
+
+The F-test of the conditional lag-3 model is not available (13
+coefficients for 11 observations; the frequentist run behind the table had
+to shorten the lag to 2), while the Bayesian comparison uses the requested
+order and grades the evidence, for and against.
+
+The simulation below repeats, for every sample size, 300 conditional tests
+of `x -> y` in a four-series VAR(1) (coupling 0.4 for the power, 0 for the
+false-positive rate; lag 2, so the unrestricted model has 9 coefficients).
+
+```{r minn-sim}
+sim_short <- function(n, coupling) {
+  B <- diag(0.5, 4); B[2, 1] <- coupling; B[3, 4] <- 0.3
+  X <- matrix(0, n + 100, 4); E <- matrix(rnorm((n + 100) * 4), n + 100)
+  for (t in 2:(n + 100)) X[t, ] <- B %*% X[t - 1, ] + E[t, ]
+  X <- X[-(1:100), ]; colnames(X) <- c("x", "y", "z1", "z2")
+  g <- rcausality(X[, 1], X[, 2:4], directions = "forward", conditional = TRUE, lag = 2)$pairs[1, ]
+  bic <- rcausality(X[, 1], X[, 2:4], directions = "forward", conditional = TRUE, lag = 2,
+                    method = "bayes_granger", prior = "bic")$pairs$bf10[1]
+  m <- bayes_granger(X[, 2], X[, 1], X[, 3:4], lag = 2,
+                     control = bayes_control(prior = "minnesota", n_iter = 4, chains = 1))
+  c(`F-test (p < 0.05)` = isTRUE(g$p_value < 0.05), `BIC Bayes factor > 3` = isTRUE(bic > 3),
+    `Minnesota Bayes factor > 3` = m$bf10 > 3)
+}
+short <- .pre("ext-short", {
+  set.seed(1)
+  do.call(rbind, lapply(c(15, 20, 30, 50, 100), function(n) {
+    pw <- rowMeans(replicate(300, sim_short(n, 0.4))); fp <- rowMeans(replicate(300, sim_short(n, 0)))
+    data.frame(n = n, rule = names(pw), power = pw, false_positive = fp, row.names = NULL)
+  }))
+})
+```
+
+```{r minn-plot, fig.height = 4, fig.cap = "Short series, conditional test in a four-series VAR: power (left) and false-positive rate (right) of the F-test, the BIC Bayes factor and the hierarchical Minnesota Bayes factor."}
+op <- par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.5, 1))
+cols <- c("#555555", "#B2403A", "#2B5C8A"); rules <- unique(short$rule)
+for (what in c("power", "false_positive")) {
+  plot(NA, xlim = range(short$n), ylim = if (what == "power") c(0, 1) else c(0, 0.4), log = "x",
+       xlab = "series length n", ylab = if (what == "power") "power" else "false-positive rate",
+       main = if (what == "power") "Power (coupling 0.4)" else "False positives (no coupling)", font.main = 2, cex.main = 0.9)
+  if (what != "power") abline(h = 0.05, lty = 3, col = "grey50")
+  for (i in seq_along(rules)) { s <- short[short$rule == rules[i], ]; lines(s$n, s[[what]], col = cols[i], lwd = 2, type = "b", pch = 16) }
+  if (what == "power") legend("bottomright", rules, col = cols, lwd = 2, pch = 16, bty = "n", cex = 0.75)
+}
+par(op)
+```
+
+The Minnesota Bayes factor keeps the false-positive rate near the nominal
+level of the F-test while its power for the shortest series is about twice
+that of the F-test; the BIC approximation, by contrast, declares spurious
+links in short samples.
+
+# Panels of short series
+
+`panel_granger()` triangulates the evidence of many short series:
+unit-level tests with false-discovery-rate control, the Dumitrescu-Hurlin
+test for heterogeneous panels (exact finite-T moments), the pooled
+fixed-effects test, the pooled Bayes factor (Minnesota prior by default),
+and the pooled random-forest test; `n_placebo` adds the placebo
+distribution of every pooled statistic (within-unit circular shifts).
+
+```{r panel, fig.height = 3.6, fig.cap = "Unit-level evidence: every point is one unit; the labels give the decisions of the panel procedures (+ = link)."}
+pd <- sim_panel(n_units = 30, n_time = 15, scenario = "x_to_y", seed = 1)
+pg <- .pre("ext-panel", panel_granger(pd, id = "unit", time = "time", methods = c("units", "dh", "pooled", "bayes"),
+                                      n_placebo = 199, seed = 1))
+pg
+plot(pg)
+```
+
+No unit shows the link on its own after the false-discovery-rate
+correction (15 observations each), while the Dumitrescu-Hurlin test and the
+pooled procedures find it, and the placebo p-values confirm that the
+pooled statistics are far outside what shifted causes produce. In the
+reverse direction the pooled Bayes factor is evidence *against* a link.
+
+# Are the links artefacts? Placebo, time reversal, robustness, triangulation
+
+```{r placebo, fig.height = 4, fig.cap = "Left: number of links in placebo data (independent circular shifts of every series; red: the data). Right: evidence and placebo p-value of every link."}
+d3 <- sim_var(300, n_series = 3, seed = 2)
+attr(d3, "adjacency")                               # the true links
+r3 <- rcausality(d3)
+pl <- .pre("ext-placebo", placebo_test(r3, n_placebo = 199, reverse = TRUE, seed = 1))
+pl
+plot(pl)
+```
+
+The placebo runs find on average far fewer links than the data. The
+time-reversed scores (TRGC) support the true links `v1 -> v2` and
+`v3 -> v1` (and the indirect `v3 -> v2`), but not `v2 -> v1`, which the
+pairwise analysis picks up from the feedback structure.
+
+`robustness()` repeats the analysis with other lag orders, other
+multiplicity corrections, contiguous subsamples and other methods:
+
+```{r robust, fig.height = 3.6, fig.cap = "Robustness grid: green = the link is declared under the setting."}
+rb <- .pre("ext-robust", robustness(r3, lags = 1:3, adjust = c("holm", "BH", "none"), n_sub = 20,
+                                    methods = c("toda_yamamoto", "diks_panchenko", "te"), seed = 1))
+rb
+plot(rb)
+```
+
+# Forecasting with the detected links
+
+The links of any method define a forecast model: every series is predicted
+from its own lags and the lags of its causes, by the restricted VAR
+(`model = "var"`), the Minnesota-prior VAR (`"bvar"`, for short series) or
+random forests (`"rf"`, nonlinear). `forecast_compare()` selects the links
+of every method on the training part only and compares the hold-out
+one-step forecasts with those of the own-lags model (Diebold-Mariano
+tests).
+
+```{r fcmp, fig.height = 4, fig.cap = "Out-of-sample RMSE gain of the forecast models built from the links of each method, relative to the own-lags model."}
+fcmp <- .pre("ext-fcmp", forecast_compare(d3, methods = c("granger", "bayes_granger", "toda_yamamoto", "te"),
+                                          n_perm = 200, seed = 1))
+fcmp
+plot(fcmp)
+```
+
+```{r fc-bvar, fig.height = 4.5, fig.cap = "Forecasts of a short series from the Minnesota-prior model (posterior-predictive intervals)."}
+ds <- sim_var(60, "x_to_y", seed = 2)
+fb <- predict(rcausality(ds), h = 6, model = "bvar", n_sim = 500, holdout = 0.25)
+fb
+plot(fb, n_last = 30)
+```
+
+# Parallel computing
+
+Every unit of work (a surrogate forest, a placebo data set, a panel unit,
+an MCMC chain, a method of a comparison) receives its own L'Ecuyer-CMRG
+random stream derived from the seed, so the results are identical for any
+number of cores:
+
+```{r par}
+same <- .pre("ext-par", {
+  if (.Platform$OS.type != "windows" && parallel::detectCores() >= 2) {
+    t1 <- system.time(a <- placebo_test(r3, n_placebo = 200, seed = 7, cores = 1))[["elapsed"]]
+    t2 <- system.time(b <- placebo_test(r3, n_placebo = 200, seed = 7, cores = 2))[["elapsed"]]
+    list(identical = identical(a$links, b$links), seconds = c(`1 core` = t1, `2 cores` = t2))
+  } else NULL
+})
+same
+```
+
+# References
+
+Breitung, J. and Candelon, B. (2006). Testing for short- and long-run causality: a frequency-domain approach. *Journal of Econometrics*, 132(2), 363-378.
+
+Diebold, F. X. and Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business & Economic Statistics*, 13(3), 253-263.
+
+Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. *Journal of Economic Dynamics and Control*, 30(9-10), 1647-1669.
+
+Dumitrescu, E.-I. and Hurlin, C. (2012). Testing for Granger non-causality in heterogeneous panels. *Economic Modelling*, 29(4), 1450-1460.
+
+Geweke, J. (1982). Measurement of linear dependence and feedback between multiple time series. *Journal of the American Statistical Association*, 77(378), 304-313.
+
+Giannone, D., Lenza, M. and Primiceri, G. E. (2015). Prior selection for vector autoregressions. *The Review of Economics and Statistics*, 97(2), 436-451.
+
+Haufe, S., Nikulin, V. V., Müller, K.-R. and Nolte, G. (2013). A critical assessment of connectivity measures for EEG data: a simulation study. *NeuroImage*, 64, 120-133.
+
+Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. doi:10.1111/twec.70148
+
+Litterman, R. B. (1986). Forecasting with Bayesian vector autoregressions: five years of experience. *Journal of Business & Economic Statistics*, 4(1), 25-38.
+
+Theiler, J., Eubank, S., Longtin, A., Galdrikian, B. and Farmer, J. D. (1992). Testing for nonlinearity in time series: the method of surrogate data. *Physica D*, 58, 77-94.
+
+Toda, H. Y. and Yamamoto, T. (1995). Statistical inference in vector autoregressions with possibly integrated processes. *Journal of Econometrics*, 66(1-2), 225-250.

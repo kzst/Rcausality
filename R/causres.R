@@ -140,21 +140,7 @@ as.matrix.causres <- function(x, what = "p_adj", ...) {
 #' @export
 print.causres <- function(x, digits = 3, ...) {
   s <- x$settings
-  mname <- c(granger = "Granger causality (F-test)",
-             bayes_granger = "Bayesian Granger causality",
-             cmi = "Conditional mutual information (kNN, local permutation)",
-             cmi_lag = "Lag-shifted conditional mutual information (Zlatniczki et al., 2021)",
-             markov = "Markov-chain approach (Stippinger et al., 2023)",
-             df = "Degrees-of-freedom / conditional-variance method (Telcs, Kurbucz & Jakovac, 2025)",
-             dc = "Bayesian dimensional causality (Benko et al., 2024)",
-             ccdh = "CCDH: complexity-based causal discovery (Stippinger et al., 2023)",
-             dfe = "df-entropy method with random-forest classification (Jakovac et al.)",
-             te = "Transfer entropy, binned (Schreiber, 2000) with surrogate test",
-             ccm = "Convergent cross mapping (Sugihara et al., 2012)",
-             pid = "MAR-PID: unique + synergistic information of the cause's past about the effect's future (Telcs, 2026)",
-             hirata = "Recurrence-plot criteria: coverage and simultaneous recurrences (Hirata & Aihara, 2010)",
-             cd = "Correlation-dimension relations (Krakovska, 2019)",
-             pcmci = "PCMCI / PCMCI+ via tigramite (Runge et al., 2019)")[[s$method]]
+  info <- .method_info(s$method); mname <- info$label
   cat("\n  Rcausality: ", mname, "\n", sep = "")
   cat("  ", length(x$series), " series, n = ", s$n, ", ",
       nrow(x$pairs), " directed tests",
@@ -167,7 +153,12 @@ print.causres <- function(x, digits = 3, ...) {
     how <- if (s$method %in% c("granger", "bayes_granger"))
       switch(if (is.null(s$prior)) "bic" else s$prior, bic = "BIC approximation", g = "Zellner g-prior", hyper_g = "hyper-g prior",
              spike_slab = sprintf("spike-and-slab regression, slab scale %g, inclusion prior %g", bc$scale, bc$inclusion_prob),
-             normal = sprintf("Bayesian regression, normal slab of scale %g", bc$scale))
+             normal = sprintf("Bayesian regression, normal slab of scale %g", bc$scale),
+             minnesota = sprintf("hierarchical Minnesota prior, tightness %s, lag decay %g",
+                                 if (identical(bc$lambda, "auto")) "integrated out" else format(bc$lambda), bc$decay))
+      else if (s$method == "toda_yamamoto")
+        sprintf("lag-augmented regressions, %s", switch(if (is.null(s$prior)) "bic" else s$prior, g = "Zellner g-prior",
+                                                       hyper_g = "hyper-g prior", "BIC approximation"))
       else if (s$method %in% c("dc", "dfe")) "posterior of the causal cases"
       else if (s$method == "markov") "Bayesian decision table from the surrogate Bayes factors"
       else if (s$method == "pcmci") "Savage-Dickey Bayes factor of the partial correlation"
@@ -198,10 +189,8 @@ print.causres <- function(x, digits = 3, ...) {
     P.post = formatC(P$post_prob, digits = digits, format = "f"),
     sig = ifelse(P$significant, paste0("yes ", .stars(P$p_adj)), "no"),
     check.names = FALSE, stringsAsFactors = FALSE)
-  cmi_like <- s$method %in% c("cmi", "cmi_lag", "markov", "df", "ccdh", "te", "ccm", "pid", "hirata", "cd", "pcmci")
-  names(tab)[names(tab) == "F"] <- switch(s$method, df = "sd.red", dc = , dfe = "P.direct", ccdh = "recon",
-                                          te = "TE.bits", ccm = "rho", pid = "U+S.bits", hirata = "cover.idx",
-                                          cd = "D2.diff", pcmci = "MCI.stat", if (cmi_like) "CMI" else "F")
+  cmi_like <- info$family != "regression" && !s$method %in% c("dc", "dfe")
+  names(tab)[names(tab) == "F"] <- info$stat
   if (cmi_like) tab <- tab[, !names(tab) %in% c("df", if (!isTRUE(s$bayes)) c("BF10", "P.post"))]
   if (s$method %in% c("dc", "dfe")) {
     tab <- tab[, !names(tab) %in% c("df", "p", "p.adj", if (s$method == "dc") "lag")]
@@ -237,6 +226,24 @@ print.causres <- function(x, digits = 3, ...) {
                      synergy = round(Pd$synergy, 3), total = round(Pd$total, 3)), row.names = FALSE, right = FALSE)
   }
   if (s$method == "te") cat("  TE.bits = transfer entropy at the selected lag (bits); effect_size column of $pairs = effective TE\n")
+  if (s$method == "toda_yamamoto")
+    cat(sprintf("  F = Wald test of the first 'lag' cause lags in a VAR augmented by d_max = %d extra lags (not tested)\n",
+                as.integer(s$method_args$d_max)))
+  if (s$method == "diks_panchenko") {
+    E <- x$extra
+    cat(sprintf("  T.n = Diks-Panchenko statistic (bandwidth %.3g sd%s); p = one-sided asymptotic normal test of z = sqrt(n) T.n / S.n\n",
+                E$eps[1], if (identical(E$filter[1], "var")) ", VAR residuals" else ""))
+  }
+  if (s$method == "rf_granger") {
+    E <- x$extra
+    cat("  OOB.gain = 1 - MSE(own + cause) / MSE(own) out of bag, p = against circular-shift surrogates of the cause\n")
+    cat("\n  Out-of-sample gain (rolling origin), permutation importance and shadow-feature rule:\n")
+    print(data.frame(link = paste(E$cause, "->", E$effect), OOB.gain = sprintf("%+.3f", E$oob_gain),
+                     OOS.gain = ifelse(is.na(E$oos_gain), "-", sprintf("%+.3f", E$oos_gain)),
+                     VI.best = ifelse(is.na(E$vi_cause), "-", sprintf("%.3g (lag %d)", E$vi_cause, as.integer(E$vi_lag))),
+                     shadow = ifelse(is.na(E$shadow_hit), "-", ifelse(E$shadow_hit, "beats shadow", "not above shadow"))),
+          row.names = FALSE, right = FALSE)
+  }
   if (s$method %in% c("hirata", "cd")) {
     if (s$method == "hirata") cat("  cover.idx = normalised coverage P(R_cause | R_effect); p = surrogate test of the coverage\n")
     else cat("  D2.diff = D2(effect) - D2(cause); no p-values, the verdict comes from the z-tests of the dimension relations\n")

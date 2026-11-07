@@ -4,7 +4,14 @@
 \alias{forecast_causal}
 \title{Causality-informed forecasts (convenience wrapper)}
 \usage{
-forecast_causal(x, y = NULL, method = "granger", h = 10L, ...)
+forecast_causal(
+  x,
+  y = NULL,
+  method = "granger",
+  h = 10L,
+  model = c("var", "bvar", "rf"),
+  ...
+)
 }
 \arguments{
 \item{x, y}{data as for \code{\link[=rcausality]{rcausality()}}.}
@@ -13,17 +20,28 @@ forecast_causal(x, y = NULL, method = "granger", h = 10L, ...)
 
 \item{h}{forecast horizon.}
 
+\item{model}{forecast model: \code{"var"}, \code{"bvar"} or \code{"rf"} (see
+\code{\link[=predict.causres]{predict.causres()}}).}
+
 \item{...}{further arguments to \code{\link[=rcausality]{rcausality()}} (e.g. \code{seed}) and to
-\code{\link[=predict.causres]{predict.causres()}} (\code{p}, \code{holdout}, \code{level}).}
+\code{\link[=predict.causres]{predict.causres()}} (\code{p}, \code{holdout}, \code{level}, \code{refit}, \code{control},
+\code{rf_settings}, \code{n_sim}).}
 }
 \value{
 A \code{causfc} object.
 }
 \description{
-Runs \code{\link[=rcausality]{rcausality()}} with the given method and then \code{\link[=predict.causres]{predict.causres()}}.
+Runs \code{\link[=rcausality]{rcausality()}} with the given method and then \code{\link[=predict.causres]{predict.causres()}}
+with the given forecast model: the causality method decides which series
+enter the forecast equation of which, the forecast model how they are
+combined.
 }
 \examples{
 # one call: causal analysis + restricted-VAR forecast of every series
 d <- sim_var(400, "x_to_y", seed = 1)
 forecast_causal(d, h = 5)
+\donttest{
+# the links from the transfer entropy, a Minnesota-prior forecast model
+forecast_causal(d, method = "te", model = "bvar", h = 5, n_perm = 100, seed = 1, n_sim = 200)
+}
 }

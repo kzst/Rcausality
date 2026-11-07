@@ -177,16 +177,7 @@ plot.causres <- function(x, type = c("network", "matrix", "heatmap", "bars", "la
                   side = 1, line = 0.2, cex = 0.62, col = "grey40")
 }
 
-.method_label <- function(s) {
-  switch(s$method, granger = "Granger causality (F-test)", bayes_granger = "Bayesian Granger causality (Bayes factor)",
-         cmi = "kNN conditional mutual information", cmi_lag = "lag-shifted CMI (Zlatniczki et al. 2021)",
-         markov = "Markov-chain approach (Stippinger et al. 2023)", df = "degrees of freedom (Telcs et al. 2025)",
-         dc = "dimensional causality (Benko et al. 2024)", ccdh = "CCDH (Stippinger et al. 2023)",
-         dfe = "df-entropy + random forest (Jakovac et al.)", te = "transfer entropy (Schreiber 2000)",
-         ccm = "convergent cross mapping (Sugihara et al. 2012)", pid = "MAR-PID (Telcs 2026)",
-         hirata = "recurrence plots (Hirata & Aihara 2010)", cd = "correlation dimension (Krakovska 2019)",
-         pcmci = "PCMCI (Runge et al. 2019)", s$method)
-}
+.method_label <- function(s) .method_info(s$method)$short
 .rule_label <- function(s) {
   if (s$method == "bayes_granger") sprintf("BF10 > %g", s$bf_threshold)
   else if (isTRUE(s$bayes)) {

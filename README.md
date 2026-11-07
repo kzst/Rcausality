@@ -10,6 +10,13 @@ criteria, transfer entropy and convergent cross mapping, an optional PCMCI
 wrapper, causality-informed forecasting, tools to compare and benchmark the
 methods -- and a **Bayesian variant of every method** (`bayes = TRUE`, with
 the priors, iterations and decision rules set in `bayes_control()`).
+Version 0.0.2 adds the generalisations of the Granger test to integrated
+series (Toda-Yamamoto), to the frequency domain (Geweke; Breitung-Candelon),
+to nonlinear dependence (the Diks-Panchenko test and a random-forest
+Granger-like test), to **short series** (a hierarchical Minnesota prior) and
+to **panels** (Dumitrescu-Hurlin, pooled and Bayesian panel tests), together
+with placebo, time-reversal and robustness analyses and forecasting with the
+links of any method (linear, Bayesian or random-forest forecast models).
 Every method from the group's papers has a reproduction of a published
 result in `inst/reproduce/` and a section below ("Reproductions of
 published results") stating what was and what was not reproduced.
@@ -470,6 +477,50 @@ forecast_causal(net, method = "granger", h = 8)
 model with that of the own-lags model for every series: a driven series
 gains, an undriven one does not (the gain is about 0).
 
+## Beyond linear Granger causality (version 0.0.2)
+
+See `vignette("extensions")` for the full walkthrough with figures.
+
+```r
+# integrated series: lag-augmented Wald test (Toda & Yamamoto 1995)
+rcausality(my_levels, method = "toda_yamamoto", method_args = list(d_max = 1))
+# at which frequencies? Geweke's spectral measure + Breitung-Candelon tests
+plot(granger_spectral(net$v1, net$v2, lag = 3))
+# nonlinear: nonparametric test (Diks & Panchenko 2006) and random forests
+rcausality(lg, method = "diks_panchenko")
+rcausality(lg, method = "rf_granger", lag = 1, n_perm = 99, seed = 1)   # needs ranger
+# short series: hierarchical Minnesota prior, tightness integrated out
+rcausality(short, method = "bayes_granger", prior = "minnesota", lag = 3, conditional = TRUE)
+# panels of short series (units x time, long format)
+panel_granger(sim_panel(30, 15, seed = 1), id = "unit", time = "time", n_placebo = 199, seed = 1)
+```
+
+**Are the links real?** `placebo_test()` repeats the analysis on data in
+which every series is shifted circularly by an independent offset (its own
+dynamics kept, the lead-lag structure destroyed) and reports the placebo
+distribution of the number of links, a placebo p-value per link and, with
+`reverse = TRUE`, the time-reversed Granger score (a genuine `x -> y` turns
+around when time is reversed). `robustness()` repeats the analysis with
+other lags, corrections (Holm / Benjamini-Hochberg), subsamples and methods.
+
+```r
+r <- rcausality(net)
+plot(placebo_test(r, n_placebo = 199, reverse = TRUE, seed = 1))
+plot(robustness(r, lags = 1:3, n_sub = 20, methods = c("toda_yamamoto", "te"), seed = 1))
+```
+
+**Do the links help forecasting?** The links of any method define the
+forecast equations; the forecast model is the restricted VAR (`"var"`), the
+Minnesota-prior VAR (`"bvar"`, short series) or random forests (`"rf"`).
+`forecast_compare()` chooses the links of every method on the training part
+only and compares the hold-out forecasts with the own-lags model
+(Diebold-Mariano tests).
+
+```r
+forecast_causal(net, method = "te", model = "bvar", h = 8, seed = 1)
+plot(forecast_compare(net, methods = c("granger", "bayes_granger", "te"), seed = 1))
+```
+
 ## Plots
 
 ```r
@@ -909,7 +960,14 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
 | `"cd"` | Krakovska (2019), *Entropy* 21(9), 818, doi:10.3390/e21090818 |
 | `"pcmci"` (optional) | Runge et al. (2019), *Science Advances* 5(11), eaau4996, doi:10.1126/sciadv.aau4996; Runge (2020), UAI, PMLR 124; wrapper around the Python package tigramite |
 | `bayes = TRUE`, `bayes_control()` | George & McCulloch (1993), *JASA* 88(423), 881-889; Liang et al. (2008), *JASA* 103(481), 410-423; Rouder et al. (2009), *Psychon. Bull. Rev.* 16, 225-237; Kass & Raftery (1995), *JASA* 90(430), 773-795 |
-| `predict()` / `forecast_causal()` | restricted VAR forecasts from the detected links; Luetkepohl (2005), Springer, doi:10.1007/978-3-540-27752-1 |
+| `"toda_yamamoto"` | Toda & Yamamoto (1995), *Journal of Econometrics* 66(1-2), 225-250, doi:10.1016/0304-4076(94)01616-8 |
+| `"diks_panchenko"`, `diks_panchenko()` | Diks & Panchenko (2006), *Journal of Economic Dynamics and Control* 30(9-10), 1647-1669, doi:10.1016/j.jedc.2005.08.008 |
+| `"rf_granger"`, `rf_granger()` | Kosztyan, Matrai & Kiss (2026), *The World Economy*, doi:10.1111/twec.70148; Breiman (2001); Wright & Ziegler (2017), *JSS* 77(1); needs `ranger` |
+| `granger_spectral()` | Geweke (1982), *JASA* 77(378), 304-313; Breitung & Candelon (2006), *Journal of Econometrics* 132(2), 363-378, doi:10.1016/j.jeconom.2005.02.004 |
+| `prior = "minnesota"` | Litterman (1986), *JBES* 4(1), 25-38; Giannone, Lenza & Primiceri (2015), *REStat* 97(2), 436-451, doi:10.1162/REST_a_00483 |
+| `panel_granger()` | Dumitrescu & Hurlin (2012), *Economic Modelling* 29(4), 1450-1460, doi:10.1016/j.econmod.2012.02.014; Benjamini & Hochberg (1995) |
+| `placebo_test()`, `robustness()` | Theiler et al. (1992), *Physica D* 58, 77-94; Haufe et al. (2013), *NeuroImage* 64, 120-133; Winkler et al. (2016), *IEEE TSP* 64(11), 2746-2760; Meinshausen & Buehlmann (2010), *JRSS B* 72(4) |
+| `predict()` / `forecast_causal()` / `forecast_compare()` | restricted VAR forecasts from the detected links; Luetkepohl (2005), Springer, doi:10.1007/978-3-540-27752-1; Minnesota-prior and random-forest forecast models; Diebold & Mariano (1995), *JBES* 13(3), 253-263 |
 
 ## Open items
 The Markov test for near-deterministic series with observational noise

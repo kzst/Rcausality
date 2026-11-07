@@ -1,0 +1,177 @@
+# Methods and tools added in version 0.0.2
+
+test_that("Toda-Yamamoto detects the link, also between integrated series", {
+  d <- sim_var(300, "x_to_y", seed = 1)
+  r <- rcausality(d, method = "toda_yamamoto")
+  expect_equal(r$classes$class, "x_to_y")
+  expect_true(all(c("lag", "statistic", "p") %in% names(r$by_lag)))
+  expect_output(print(r), "Toda-Yamamoto")
+  set.seed(2); n <- 300; x <- cumsum(rnorm(n)); y <- numeric(n)
+  for (t in 3:n) y[t] <- y[t - 1] + 0.6 * (x[t - 1] - x[t - 2]) + rnorm(1)
+  r2 <- rcausality(x, y, method = "toda_yamamoto", method_args = list(d_max = 1L))
+  expect_true(r2$pairs$significant[r2$pairs$cause == "x"])
+  expect_false(r2$pairs$significant[r2$pairs$cause == "y"])
+  # the Bayesian variant decides by the Bayes factor of the augmented regressions
+  rb <- rcausality(d, method = "toda_yamamoto", bayes = TRUE, prior = "g")
+  expect_true(rb$settings$bayes)
+  expect_equal(rb$pairs$significant, rb$pairs$bf10 > 3)
+  expect_error(rcausality(d, method = "toda_yamamoto", method_args = list(dmax = 2)), "Unknown setting")
+})
+
+test_that("the Diks-Panchenko statistic matches a direct triple-sum computation", {
+  set.seed(3); n <- 60; x <- rnorm(n); y <- c(0, 0.5 * x[-n]^2) + rnorm(n, sd = 0.5)
+  eps <- 1.2
+  s <- Rcausality:::.dp_stat(y, x, lag = 1, eps = eps)
+  e <- Rcausality:::.std(y); xx <- Rcausality:::.std(x)
+  X <- xx[-n]; Y <- e[-n]; Z <- e[-1]; N <- n - 1
+  I <- function(v) { m <- abs(outer(v, v, "-")) < eps; diag(m) <- FALSE; m }
+  IX <- I(X); IY <- I(Y); IZ <- I(Z)
+  IXYZ <- IX & IY & IZ; IXY <- IX & IY; IYZ <- IY & IZ
+  ref <- sum(rowSums(IXYZ) * rowSums(IY) - rowSums(IXY) * rowSums(IYZ)) / (N * (N - 1) * (N - 2))
+  expect_equal(s$statistic, ref, tolerance = 1e-12)
+  dp <- diks_panchenko(x, y)
+  expect_s3_class(dp, "diks_panchenko")
+  expect_lt(dp$tests$p_value[1], 0.05)
+  expect_output(print(dp), "Diks-Panchenko")
+  r <- rcausality(sim_logistic(300, "x_to_y", seed = 1), method = "diks_panchenko")
+  expect_equal(r$classes$class, "x_to_y")
+  expect_equal(r$extra$eps[1], min(1.5, 8 * 299^(-2 / 7)))
+})
+
+test_that("the spectral decomposition averages to the time-domain measure", {
+  d <- sim_var(600, "x_to_y", seed = 4)
+  gs <- granger_spectral(d$x, d$y, lag = 3, n_freq = 512)
+  m <- tapply(gs$spectrum$geweke, gs$spectrum$direction, mean)
+  expect_equal(unname(m["x -> y"]), gs$time_domain$geweke[1], tolerance = 0.1)
+  expect_lt(gs$time_domain$p_value[1], 1e-4)
+  expect_true(all(gs$spectrum$geweke >= -1e-10))
+  expect_output(print(gs), "frequency domain")
+  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
+  expect_silent(plot(gs))
+})
+
+test_that("the hierarchical Minnesota prior works where the F-test cannot", {
+  d <- sim_var(200, "x_to_y", seed = 5)
+  ctl <- bayes_control(prior = "minnesota", n_iter = 100, chains = 2)
+  a <- bayes_granger(d$y, d$x, lag = 2, control = ctl, seed = 1)
+  b <- bayes_granger(d$x, d$y, lag = 2, control = ctl, seed = 1)
+  expect_gt(a$bf10, 10); expect_lt(b$bf10, 1)
+  expect_equal(nrow(a$draws), 200L)
+  expect_true(all(c("posterior_mean", "posterior_mode") %in% names(a$lambda)))
+  fx <- bayes_granger(d$y, d$x, lag = 2, control = bayes_control(prior = "minnesota", lambda = 0.3, n_iter = 50), seed = 1)
+  expect_true(is.finite(fx$bf10))
+  # 14 observations, three series, conditional lag 3: 13 coefficients for 11 observations
+  d3 <- sim_var(14, n_series = 3, seed = 6)
+  r <- rcausality(d3, conditional = TRUE, lag = 3, method = "bayes_granger", prior = "minnesota",
+                  control = bayes_control(n_iter = 50, chains = 1), seed = 1)
+  expect_true(all(r$pairs$lag == 3L))
+  expect_true(all(is.finite(r$pairs$bf10)))
+  expect_output(print(r), "Minnesota")
+  expect_error(bayes_control(lambda = -1), "lambda")
+  expect_output(print(bayes_control(prior = "minnesota")), "Minnesota prior")
+})
+
+test_that("random-forest Granger-like test", {
+  skip_if_not_installed("ranger")
+  d <- sim_logistic(250, "x_to_y", seed = 1)
+  r <- rcausality(d, method = "rf_granger", lag = 1, n_perm = 40, seed = 1, method_args = list(num_trees = 60, folds = 3))
+  expect_equal(r$classes$class, "x_to_y")
+  expect_true(all(c("oob_gain", "oos_gain", "shadow_hit") %in% names(r$extra)))
+  expect_output(print(r), "Out-of-sample gain")
+  rf <- rf_granger(d$x, d$y, lag = 1, n_surr = 19, num_trees = 50, folds = 2, seed = 1)
+  expect_s3_class(rf, "rf_granger")
+  expect_equal(rf$tests$p_value[2], 1)                      # no improvement -> p = 1
+  expect_output(print(rf), "Random-forest")
+})
+
+test_that("random-forest results do not depend on the number of cores", {
+  skip_on_cran(); skip_if_not_installed("ranger")
+  skip_if_not(.Platform$OS.type != "windows" && parallel::detectCores() >= 2)
+  d <- sim_logistic(200, "x_to_y", seed = 2)
+  a <- rcausality(d, method = "rf_granger", lag = 1, n_perm = 40, seed = 1, method_args = list(num_trees = 40), cores = 1)
+  b <- rcausality(d, method = "rf_granger", lag = 1, n_perm = 40, seed = 1, method_args = list(num_trees = 40), cores = 2)
+  expect_equal(a$pairs, b$pairs)
+  expect_equal(a$extra, b$extra)
+})
+
+test_that("panel Granger causality: units, Dumitrescu-Hurlin, pooled, Bayesian", {
+  pd <- sim_panel(n_units = 25, n_time = 15, scenario = "x_to_y", seed = 1)
+  expect_equal(dim(pd), c(375L, 4L))
+  pg <- panel_granger(pd, id = "unit", time = "time")
+  T <- pg$tests
+  expect_true(all(T$significant[T$cause == "x" & T$method %in% c("dh", "pooled", "bayes")]))
+  expect_false(any(T$significant[T$cause == "y" & T$method %in% c("dh", "pooled", "bayes")]))
+  expect_equal(nrow(pg$units), 50L)
+  expect_output(print(pg), "Dumitrescu-Hurlin")
+  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
+  expect_silent(plot(pg))
+  # the finite-T moments of K F(K, d2)
+  dh <- Rcausality:::.dh_test(W = rep(1, 10), K = 1, d2 = rep(20, 10))
+  expect_equal(unname(dh["W_bar"]), 1)
+  expect_lt(unname(dh["Z_tilde"]), 0)
+  p0 <- sim_panel(n_units = 25, n_time = 15, scenario = "independent", seed = 2)
+  pl <- panel_granger(p0, id = "unit", time = "time", methods = c("dh", "pooled"), n_placebo = 19, seed = 1)
+  expect_true(all(pl$tests$p_placebo > 0 & pl$tests$p_placebo <= 1))
+})
+
+test_that("placebo test and time reversal", {
+  d <- sim_var(300, "x_to_y", seed = 1)
+  r <- rcausality(d)
+  pl <- placebo_test(r, n_placebo = 19, reverse = TRUE, seed = 1)
+  expect_s3_class(pl, "causplacebo")
+  expect_equal(pl$observed, 1L)
+  expect_length(pl$counts, 19L)
+  expect_lt(mean(pl$counts), pl$observed)
+  expect_lte(pl$p_global, 0.2)
+  expect_gt(pl$links$trgc[pl$links$link == "x -> y"], 0)
+  expect_output(print(pl), "Placebo test")
+  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
+  expect_silent(plot(pl))
+})
+
+test_that("robustness grid", {
+  d <- sim_var(300, n_series = 3, seed = 2)
+  r <- rcausality(d)
+  rb <- robustness(r, lags = 1:2, adjust = c("holm", "BH"), n_sub = 4, methods = "toda_yamamoto", seed = 1)
+  expect_s3_class(rb, "causrob")
+  expect_equal(nrow(rb$grid), 6L * (1 + 2 + 2 + 4 + 1))
+  expect_true(all(rb$summary$share >= 0 & rb$summary$share <= 1))
+  expect_output(print(rb), "Robustness")
+  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
+  expect_silent(plot(rb))
+})
+
+test_that("forecast models and the forecast comparison", {
+  d <- sim_var(250, "x_to_y", seed = 1)
+  r <- rcausality(d)
+  fb <- predict(r, h = 3, model = "bvar", n_sim = 100)
+  expect_equal(fb$model, "bvar")
+  expect_true(all(fb$forecasts$lower < fb$forecasts$point & fb$forecasts$point < fb$forecasts$upper))
+  expect_gt(fb$evaluation$improvement[fb$evaluation$series == "y"], 0)
+  fcmp <- forecast_compare(d, methods = c("granger", "toda_yamamoto"))
+  expect_equal(nrow(fcmp$table), 3L * 2L)
+  expect_gt(fcmp$table$gain[fcmp$table$method == "granger" & fcmp$table$series == "y"], 0)
+  expect_output(print(fcmp), "Forecast comparison")
+  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
+  expect_silent(plot(fcmp))
+  set.seed(1); e2 <- rnorm(100); dm <- Rcausality:::.dm_test(2 * e2 + rnorm(100, sd = 0.1), e2)
+  expect_gt(dm[["statistic"]], 0)
+})
+
+test_that("random-forest forecasts", {
+  skip_on_cran(); skip_if_not_installed("ranger")
+  d <- sim_var(200, "x_to_y", seed = 1)
+  fr <- predict(rcausality(d), h = 3, model = "rf", n_sim = 50, rf_settings = list(num_trees = 50))
+  expect_equal(fr$model, "rf")
+  expect_null(fr$coefficients)
+  expect_equal(fr$evaluation$improvement[fr$evaluation$series == "x"], 0)
+})
+
+test_that("method comparison runs in parallel with identical verdicts", {
+  skip_on_cran()
+  skip_if_not(.Platform$OS.type != "windows" && parallel::detectCores() >= 2)
+  d <- sim_var(200, "x_to_y", seed = 1)
+  a <- compare_methods(d, methods = c("granger", "toda_yamamoto", "te"), n_perm = 60, seed = 1, cores = 1)
+  b <- compare_methods(d, methods = c("granger", "toda_yamamoto", "te"), n_perm = 60, seed = 1, cores = 2)
+  expect_equal(a$table, b$table)
+})

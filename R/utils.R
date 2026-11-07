@@ -229,3 +229,17 @@ NULL
   do.call(on.exit, list(bquote(.rng_put(.(old))), add = TRUE), envir = parent.frame())
   invisible(NULL)
 }
+
+# ---- argument checks ------------------------------------------------------------
+# a single finite number within [lower, upper] (strict = open interval)
+.check_number <- function(x, name, lower = -Inf, upper = Inf, strict = FALSE, integer = FALSE) {
+  ok <- is.numeric(x) && length(x) == 1L && is.finite(x) &&
+    (if (strict) x > lower && x < upper else x >= lower && x <= upper) && (!integer || x == round(x))
+  if (!ok) {
+    rng <- if (is.finite(lower) && is.finite(upper)) sprintf(" in %s%g, %g%s", if (strict) "(" else "[", lower, upper, if (strict) ")" else "]")
+           else if (is.finite(lower)) sprintf(" %s %g", if (strict) ">" else ">=", lower)
+           else if (is.finite(upper)) sprintf(" %s %g", if (strict) "<" else "<=", upper) else ""
+    stop(sprintf("`%s` must be a single %s%s.", name, if (integer) "integer" else "number", rng), call. = FALSE)
+  }
+  invisible(x)
+}

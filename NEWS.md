@@ -1,3 +1,79 @@
+# Rcausality 0.0.2
+
+## Generalisations of the Granger test
+
+* `rcausality(method = "toda_yamamoto")`: lag-augmented Granger test of
+  Toda and Yamamoto (1995) for integrated or cointegrated series (`d_max`
+  extra lags, not tested; BIC / g / hyper-g Bayes factors with
+  `bayes = TRUE`).
+* `rcausality(method = "diks_panchenko")` and `diks_panchenko()`: the
+  nonparametric (nonlinear) Granger test of Diks and Panchenko (2006), with
+  the bandwidth rule of the paper, a C++ kernel (O(n^2) time, O(n) memory),
+  optional VAR prefiltering (only the nonlinear part tested) and a Bayesian
+  variant through `surrogate_bf()`.
+* `granger_spectral()`: Granger causality in the frequency domain -- Geweke's
+  (1982) spectral measure and the Breitung-Candelon (2006) pointwise tests,
+  with the frequency bands of significant causality and a `plot()` method.
+
+## Machine-learning Granger-like causality
+
+* `rcausality(method = "rf_granger")` and `rf_granger()`: random-forest
+  Granger-like test after Kosztyan, Matrai and Kiss (2026): out-of-bag gain
+  against circular-shift surrogates of the cause, rolling-origin
+  out-of-sample gain, permutation importance of the cause's lags and the
+  shadow-feature rule; reproducible in parallel (forests seeded from the
+  worker's random stream).
+
+## Bayesian analysis of short series
+
+* `bayes_control(prior = "minnesota")`: hierarchical Minnesota prior for the
+  Bayesian Granger regression (Litterman 1986), the overall tightness
+  integrated out under the hyperprior of Giannone, Lenza and Primiceri
+  (2015); closed-form Bayes factor, exact independent posterior draws of the
+  coefficients, the error scale, the tightness and Geweke's measure. Works
+  when the F-test has no residual degrees of freedom; a requested lag order
+  is used as it is.
+
+## Panels
+
+* `panel_granger()`: Granger causality in panels of short series --
+  unit-level tests with Benjamini-Hochberg control, the Dumitrescu-Hurlin
+  (2012) test with exact finite-T moments, the pooled fixed-effects test, the
+  pooled Bayes factor (Minnesota prior), the pooled random-forest test, and
+  placebo distributions from within-unit circular shifts; `sim_panel()`.
+
+## Robustness, placebo and triangulation
+
+* `placebo_test()`: placebo distribution of the number of links and of the
+  evidence of every link (independent circular shifts of the series), and
+  the time-reversed Granger score (Haufe et al. 2013; Winkler et al. 2016).
+* `robustness()`: the links under other lag orders, multiplicity
+  corrections (Holm, Benjamini-Hochberg, none), contiguous subsamples
+  (stability) and other methods; tile plot.
+* `compare_methods()` runs the methods in parallel (`cores`).
+
+## Forecasting with any causality method
+
+* `predict.causres(model = c("var", "bvar", "rf"))`: forecast models built
+  from the detected links -- the restricted VAR, the Minnesota-prior VAR
+  (posterior-predictive intervals) and random forests (recursive simulation
+  with bootstrapped out-of-bag residuals); `forecast_causal(method, model)`.
+* `forecast_compare()`: the out-of-sample value of the links of several
+  causality methods against the own-lags model (links chosen on the training
+  part only), with Diebold-Mariano tests (Harvey-Leybourne-Newbold
+  correction) and a `plot()` method.
+
+## Code quality
+
+* A method registry (labels, statistic names, families) replaces the label
+  tables repeated in `print()` and `plot()`; the new methods share one
+  pairwise driver and one `pairs` assembly (`.finish_pairs()`); settings of
+  the new methods go through `method_args`, whose names are checked; argument
+  checks of the numeric settings of `bayes_control()` and of the new
+  functions.
+* A new vignette, "Beyond linear Granger causality", with precomputed
+  long-running results; package-level help page `?Rcausality`.
+
 # Rcausality 0.0.1
 
 * Initial skeleton (M0): `causres` class with `print`/`summary`/`plot`,

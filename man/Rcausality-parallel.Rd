@@ -9,8 +9,13 @@
 Every function that repeats independent units of work -- the permutations
 and surrogates of the model-free tests, the series pairs of a multivariate
 analysis, the MCMC chains of \code{\link[=bayes_granger]{bayes_granger()}}, the bootstrap resamples of
-\code{\link[=corr_dim]{corr_dim()}}, the replications of \code{\link[=benchmark_methods]{benchmark_methods()}} and the training
-systems of \code{\link[=dfe_train]{dfe_train()}} -- takes a \code{cores} argument. Its default is
+\code{\link[=corr_dim]{corr_dim()}}, the replications of \code{\link[=benchmark_methods]{benchmark_methods()}}, the training
+systems of \code{\link[=dfe_train]{dfe_train()}}, the surrogate forests and forecast blocks of the
+random-forest test (\code{\link[=rf_granger]{rf_granger()}}), the placebo data sets of
+\code{\link[=placebo_test]{placebo_test()}}, the alternative settings of \code{\link[=robustness]{robustness()}}, the methods
+of \code{\link[=compare_methods]{compare_methods()}} and \code{\link[=forecast_compare]{forecast_compare()}}, and the series pairs,
+surrogates and placebo panels of \code{\link[=panel_granger]{panel_granger()}} -- takes a \code{cores}
+argument. Its default is
 \code{getOption("Rcausality.cores", 1L)}, so that
 \code{options(Rcausality.cores = 4)} switches the whole package to four
 workers for the session.
@@ -43,7 +48,12 @@ still uses all eight). The two levels are never nested. The standalone
 tests (e.g. \code{\link[=local_permutation_test]{local_permutation_test()}}, \code{\link[=transfer_entropy]{transfer_entropy()}}, \code{\link[=ccm]{ccm()}},
 \code{\link[=hirata_rp]{hirata_rp()}}, \code{\link[=ccdh]{ccdh()}}, \code{\link[=marpid]{marpid()}}) parallelise their surrogate loop;
 \code{\link[=bayes_granger]{bayes_granger()}} runs its chains in parallel; \code{\link[=benchmark_methods]{benchmark_methods()}}
-distributes the simulated data sets. Parallel execution pays off when a
+distributes the simulated data sets; \code{\link[=placebo_test]{placebo_test()}}, \code{\link[=robustness]{robustness()}},
+\code{\link[=compare_methods]{compare_methods()}} and \code{\link[=forecast_compare]{forecast_compare()}} distribute whole analyses
+(each run serially inside a worker, or with the remaining cores when there
+are fewer analyses than cores). Forests are always grown with one
+\pkg{ranger} thread per worker and seeded from the worker's stream, so the
+random-forest results are reproducible as well. Parallel execution pays off when a
 single unit of work takes more than a few milliseconds (kNN estimates,
 recurrence counts, cross-map predictions, MCMC chains); for the cheapest
 statistics the overhead of dispatching the work can exceed the gain.

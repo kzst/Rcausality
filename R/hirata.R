@@ -289,9 +289,7 @@ print.krakovska <- function(x, digits = 2, ...) {
   }
   pairs <- do.call(rbind, rows)
   pairs$p_adj <- pairs$p_value; pairs$post_prob <- NA_real_; pairs$evidence <- NA_character_
-  pairs <- pairs[, c("cause", "effect", "lag", "statistic", "df1", "df2", "p_value",
-                     "p_adj", "bf10", "post_prob", "evidence", "effect_size",
-                     "r2_gain", "sign", "n_eff", "significant")]
+  pairs <- pairs[, .pairs_cols]
   rownames(pairs) <- NULL
   out <- .new_causres(pairs, series = names(all), causes = causes, effects = effects,
                       method = method, conditional = FALSE, alpha = alpha, bf_threshold = NA_real_,
