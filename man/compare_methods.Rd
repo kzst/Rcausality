@@ -29,7 +29,10 @@ remaining cores when there are fewer methods than cores); the verdicts
 do not depend on it (see \link{Rcausality-parallel}).}
 
 \item{...}{arguments passed to every method (e.g. \code{seed}, \code{n_perm},
-\code{alpha}).}
+\code{alpha}, \code{bayes = TRUE}); with \code{id} (and \code{time}) the methods are
+compared on panel data (see \code{\link[=panel_causality]{panel_causality()}}), with \code{target} on the
+drivers of one variable. A method that cannot be run on the data is
+left out with a warning.}
 
 \item{main}{title.}
 }
@@ -56,5 +59,9 @@ cmp$results$te       # the complete causres object of one of the methods
 # method-specific arguments go in `args`; the dots reach every method
 compare_methods(d, methods = c("granger", "cmi"), args = list(cmi = list(max_lag = 2)),
                 n_perm = 100, seed = 1)
+# panel data: three members of the Granger family side by side
+pd <- sim_panel(n_units = 20, n_time = 25, seed = 1)
+compare_methods(pd, methods = c("granger", "bayes_granger", "toda_yamamoto"), id = "unit",
+                time = "time", prior = "bic", seed = 1)
 }
 }

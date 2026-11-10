@@ -2,13 +2,26 @@ citHeader("To cite Rcausality in publications use:")
 
 bibentry(
   bibtype = "Manual",
-  title   = "Rcausality: Causality Analysis for Time Series",
+  title   = "Rcausality: Causality Analysis for Time Series and Panel Data",
   author  = person("Zsolt T.", "Kosztyán"),
   year    = "2026",
   note    = sprintf("R package version %s", meta$Version),
   url     = "https://github.com/kzst/rcausality",
-  textVersion = paste0("Kosztyán, Z. T. (2026). Rcausality: Causality Analysis for Time Series. ",
+  textVersion = paste0("Kosztyán, Z. T. (2026). Rcausality: Causality Analysis for Time Series and Panel Data. ",
                        "R package version ", meta$Version, ". https://github.com/kzst/rcausality")
+)
+
+bibentry(
+  bibtype = "Article",
+  header  = "The panel analysis and the explanatory analysis of one target follow:",
+  title   = "Is the World Getting Smaller? Network-Driven Heterogeneity in Gravity-Model Elasticities",
+  author  = c(person("Zsolt T.", "Kosztyán"), person("R.", "Mátrai"), person("D.", "Kiss")),
+  journal = "The World Economy",
+  year    = "2026",
+  doi     = "10.1111/twec.70148",
+  textVersion = paste0("Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the World Getting Smaller? ",
+                       "Network-Driven Heterogeneity in Gravity-Model Elasticities. The World Economy. ",
+                       "https://doi.org/10.1111/twec.70148")
 )
 
 citFooter("Please also cite the papers whose methods you use; see ?rcausality and the vignettes.")

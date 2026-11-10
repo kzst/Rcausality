@@ -10,7 +10,7 @@
 #    (Boruta-type) rule: a lag of the cause must be more important than every
 #    lag of a circularly shifted copy of the cause.
 # This is the approach of Kosztyan, Matrai and Kiss (2026) for gravity-model
-# panels, implemented here for time series (and for panels in panel_granger()).
+# panels, implemented here for time series (and for panels in panel_causality()).
 
 .need_ranger <- function(what = "method = \"rf_granger\"") {
   if (!requireNamespace("ranger", quietly = TRUE))

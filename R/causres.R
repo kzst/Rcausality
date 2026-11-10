@@ -17,6 +17,12 @@
 #' Methods: `print`, `summary`, `plot`, `as.data.frame`, `as.matrix`,
 #' `coef`-style accessors via [as.matrix.causres()].
 #'
+#' Two subclasses add slots and methods: `causpanel` (panel data, see
+#' [panel_causality()]: `units`, `panel`, `prevalence`) and `causdrivers`
+#' (the drivers of one explained variable, see [causal_drivers()]: `drivers`,
+#' `graph`, `target`). Both keep the slots above, so that every function
+#' that takes a `causres` works with them.
+#'
 #' @name causres-class
 #' @aliases causres
 NULL

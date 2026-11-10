@@ -50,7 +50,7 @@ for checking and using the detected links.
 | nonlinear dependence | `rcausality(method = "diks_panchenko")`, `diks_panchenko()` | Diks & Panchenko (2006) |
 | nonlinear, machine learning | `rcausality(method = "rf_granger")`, `rf_granger()` | Kosztyán, Mátrai & Kiss (2026) |
 | short series | `bayes_control(prior = "minnesota")` | Litterman (1986); Giannone, Lenza & Primiceri (2015) |
-| many short series (panels) | `panel_granger()` | Dumitrescu & Hurlin (2012) |
+| many short series (panels) | `rcausality(id = )`, `panel_causality()`; see `vignette("panel")` | Dumitrescu & Hurlin (2012); Juodis, Karavias & Sarafidis (2021) |
 | are the links artefacts? | `placebo_test()`, `robustness()`, `compare_methods()` | Theiler et al. (1992); Haufe et al. (2013) |
 | do the links help forecasting? | `predict()`, `forecast_causal()`, `forecast_compare()` | Diebold & Mariano (1995) |
 
@@ -217,26 +217,22 @@ links in short samples.
 
 # Panels of short series
 
-`panel_granger()` triangulates the evidence of many short series:
-unit-level tests with false-discovery-rate control, the Dumitrescu-Hurlin
-test for heterogeneous panels (exact finite-T moments), the pooled
-fixed-effects test, the pooled Bayes factor (Minnesota prior by default),
-and the pooled random-forest test; `n_placebo` adds the placebo
-distribution of every pooled statistic (within-unit circular shifts).
+With a unit column (`id`), every method of `rcausality()` analyses a panel
+at three levels: the units one by one with false-discovery-rate control, a
+group-level test of "no unit has the link", and a pooled estimate from all
+units. `vignette("panel")` explains the tests, the Bayesian variants, the
+plots and the analysis of the causal drivers of one variable.
 
-```{r panel, fig.height = 3.6, fig.cap = "Unit-level evidence: every point is one unit; the labels give the decisions of the panel procedures (+ = link)."}
+```{r panel, fig.height = 2.6, fig.cap = "Links by unit (stars: after the false-discovery-rate correction) and at the two panel levels."}
 pd <- sim_panel(n_units = 30, n_time = 15, scenario = "x_to_y", seed = 1)
-pg <- .pre("ext-panel", panel_granger(pd, id = "unit", time = "time", methods = c("units", "dh", "pooled", "bayes"),
-                                      n_placebo = 199, seed = 1))
+pg <- rcausality(pd, id = "unit", time = "time", seed = 1)
 pg
 plot(pg)
 ```
 
-No unit shows the link on its own after the false-discovery-rate
-correction (15 observations each), while the Dumitrescu-Hurlin test and the
-pooled procedures find it, and the placebo p-values confirm that the
-pooled statistics are far outside what shifted causes produce. In the
-reverse direction the pooled Bayes factor is evidence *against* a link.
+Hardly any unit shows the link on its own after the false-discovery-rate
+correction (15 observations each), while both panel-level tests find it,
+and neither finds a link in the reverse direction.
 
 # Are the links artefacts? Placebo, time reversal, robustness, triangulation
 
@@ -315,6 +311,8 @@ Diebold, F. X. and Mariano, R. S. (1995). Comparing predictive accuracy. *Journa
 Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. *Journal of Economic Dynamics and Control*, 30(9-10), 1647-1669.
 
 Dumitrescu, E.-I. and Hurlin, C. (2012). Testing for Granger non-causality in heterogeneous panels. *Economic Modelling*, 29(4), 1450-1460.
+
+Juodis, A., Karavias, Y. and Sarafidis, V. (2021). A homogeneous approach to testing for Granger non-causality in heterogeneous panels. *Empirical Economics*, 60(1), 93-112.
 
 Geweke, J. (1982). Measurement of linear dependence and feedback between multiple time series. *Journal of the American Statistical Association*, 77(378), 304-313.
 

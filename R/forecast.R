@@ -20,15 +20,21 @@
 # ---- the three forecast models: fit on rows `idx` (times), predict rows ---------
 
 .fc_fit <- function(model, D, target, preds, idx, p, settings) {
-  t <- idx[idx > p]; X <- .fc_X(D, preds, t, p); y <- D[[target]][t]
+  t <- idx[idx > p]
+  .fc_fit_xy(model, .fc_X(D, preds, t, p), D[[target]][t], preds, p, settings)
+}
+
+# the same from a regressor matrix (first column: intercept) and the response;
+# used directly for the stacked units of a panel
+.fc_fit_xy <- function(model, X, y, preds, p, settings) {
   switch(model,
     var = {
       f <- stats::lm.fit(X, y); cf <- f$coefficients; cf[is.na(cf)] <- 0      # aliased (e.g. constant) columns drop out
       list(coef = cf, resid = as.numeric(y - X %*% cf), preds = preds)
     },
     bvar = {
-      # standardised series inside D (see predict.causres); Minnesota base
-      # variances: own lags 1 / l^(2 decay), the causes' lags cross^2 times that
+      # standardised series (see predict.causres); Minnesota base variances:
+      # own lags 1 / l^(2 decay), the causes' lags cross^2 times that
       ctl <- settings$control; l_dec <- seq_len(p)^(-2 * ctl$decay)
       dbase <- c(l_dec, rep(ctl$cross^2 * l_dec, length(preds) - 1L))
       b <- .minnesota_posterior(y, X[, 1, drop = FALSE], X[, -1, drop = FALSE], dbase, ctl)
@@ -370,10 +376,11 @@ plot.causfc <- function(x, n_last = 60L, main = NULL, ...) {
 #' @param h forecast horizon.
 #' @param model forecast model: `"var"`, `"bvar"` or `"rf"` (see
 #'   [predict.causres()]).
-#' @param ... further arguments to [rcausality()] (e.g. `seed`) and to
-#'   [predict.causres()] (`p`, `holdout`, `level`, `refit`, `control`,
+#' @param ... further arguments to [rcausality()] (e.g. `seed`; `id` and
+#'   `time` for panel data) and to [predict.causres()] /
+#'   [predict.causpanel()] (`p`, `holdout`, `level`, `refit`, `control`,
 #'   `rf_settings`, `n_sim`).
-#' @return A `causfc` object.
+#' @return A `causfc` object (`causfcpanel` for panel data).
 #' @export
 #' @examples
 #' # one call: causal analysis + restricted-VAR forecast of every series
@@ -390,7 +397,7 @@ forecast_causal <- function(x, y = NULL, method = "granger", h = 10L, model = c(
   ra <- dots[setdiff(names(dots), pa)]
   if ("control" %in% names(dots) && isTRUE(dots$bayes)) ra$control <- dots$control
   r <- do.call(rcausality, c(list(x = x, y = y, method = method), ra))
-  do.call(predict.causres, c(list(object = r, h = h, model = model), dots[pa]))
+  do.call(stats::predict, c(list(object = r, h = h, model = model), dots[pa]))
 }
 
 # Diebold-Mariano test of equal accuracy (squared-error loss) of two series
@@ -430,7 +437,12 @@ forecast_causal <- function(x, y = NULL, method = "granger", h = 10L, model = c(
 #' @param cores CPU cores: the methods run in parallel (see
 #'   [Rcausality-parallel]).
 #' @param ... arguments to every [rcausality()] call (e.g. `seed`, `n_perm`)
-#'   and to [predict.causres()] (`control`, `rf_settings`).
+#'   and to [predict.causres()] (`control`, `rf_settings`). With `id` (and
+#'   `time`) the comparison is made on panel data: the links are those of
+#'   the panel analysis of the training periods, the forecast equations are
+#'   pooled over the units (see [predict.causpanel()]), and the
+#'   Diebold-Mariano test is applied to the loss differentials averaged over
+#'   the units in every hold-out period.
 #' @return An object of class `causfcomp`: `table` (one row per method and
 #'   series: causes, RMSE, gain over the own-lags model, Diebold-Mariano
 #'   statistic and p-value), `summary` (mean gain per method), `holdout`,
@@ -457,6 +469,7 @@ forecast_compare <- function(x, y = NULL, methods = c("granger", "bayes_granger"
   dots <- list(...)
   pa <- intersect(names(dots), c("control", "rf_settings", "n_sim"))
   ra <- dots[setdiff(names(dots), pa)]
+  if (!is.null(dots$id)) return(.forecast_compare_panel(x, methods, model, holdout, p, args, cores, dots, ra))
   fr <- .as_series_frame(x, y); D <- if (is.null(fr$Y)) fr$X else cbind(fr$X, fr$Y)
   D[] <- lapply(D, .prep_na); n <- nrow(D); n_train <- floor(n * (1 - holdout)); tr <- seq_len(n_train); tt <- (n_train + 1):n
   vars <- names(D)
@@ -503,8 +516,8 @@ forecast_compare <- function(x, y = NULL, methods = c("granger", "bayes_granger"
 #' @export
 print.causfcomp <- function(x, ...) {
   mdl <- c(var = "restricted VAR", bvar = "Minnesota-prior VAR", rf = "random forests")[[x$model]]
-  cat(sprintf("Forecast comparison of causality methods (%s, p = %d; hold-out = last %.0f%% of n = %d, one-step forecasts)\n",
-              mdl, x$p, 100 * x$holdout, x$n))
+  cat(sprintf("Forecast comparison of causality methods (%s, p = %d; hold-out = last %.0f%% of %s, one-step forecasts)\n",
+              mdl, x$p, 100 * x$holdout, if (is.null(x$n_units)) sprintf("n = %d", x$n) else sprintf("the periods of %d units", x$n_units)))
   T <- x$table
   print(data.frame(method = T$method, series = T$series, causes = T$causes, RMSE = signif(T$rmse, 4),
                    gain = sprintf("%+.1f%%", 100 * T$gain), DM = ifelse(is.na(T$dm), "-", sprintf("%.2f", T$dm)),

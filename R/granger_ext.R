@@ -303,17 +303,43 @@ plot.granger_spectral <- function(x, main = NULL, ...) {
 # regression of the effect on `n_vars` lagged series (plus `extra` lags)
 .cap_lag <- function(n, n_vars, extra = 0L) max(1L, floor((n - 2 - extra) / (2 + 2 * n_vars)))
 
-.ty_pair_fun <- function(fixed_lag, max_lag, lag_criterion, d_max, prior) {
+# the "first significant order" rule of the Granger family: the smallest order
+# whose test is significant at level alpha / (number of orders scanned)
+# (Bonferroni over the scan); the reported p-value is the Bonferroni-corrected
+# minimum over the orders, a valid p-value of "no link at any order".  For
+# Bayes-factor decisions: the first order with BF10 above the threshold
+# (otherwise the order with the largest Bayes factor); the reported Bayes
+# factor is the average over the orders, i.e. the Bayes factor of "a link at
+# one of the scanned orders" with equal prior weights (the Bayesian
+# counterpart of the Bonferroni correction).
+.first_lag <- function(lags, p, bf, alpha, bf_threshold, by_bf = FALSE) {
+  ok <- is.finite(p); nl <- max(1L, sum(ok))
+  p_min <- if (any(ok)) min(1, min(p[ok]) * nl) else NA_real_
+  if (by_bf && any(is.finite(bf))) {
+    hit <- which(is.finite(bf) & bf > bf_threshold)
+    l <- if (length(hit)) lags[hit[1L]] else lags[which.max(ifelse(is.finite(bf), bf, -Inf))]
+  } else {
+    hit <- which(ok & p < alpha / nl)
+    l <- if (length(hit)) lags[hit[1L]] else if (any(ok)) lags[which.min(ifelse(ok, p, Inf))] else lags[1L]
+  }
+  list(lag = l, p_value = p_min, bf10 = if (any(is.finite(bf))) mean(bf[is.finite(bf)]) else NA_real_, n_orders = nl)
+}
+
+.ty_pair_fun <- function(fixed_lag, max_lag, lag_criterion, d_max, prior, first = FALSE, alpha = 0.05) {
   function(effect, cause, ctrl, cores = 1L) {
     inv <- cbind(effect, cause, ctrl); n <- nrow(inv)
     cap <- .cap_lag(n, ncol(inv), d_max)
-    p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
-    p <- max(1L, min(p, cap))
-    g <- .ty_pair(effect, cause, ctrl, p, d_max, prior)
-    bl <- do.call(rbind, lapply(seq_len(max(1L, min(as.integer(max_lag), cap))), function(l) {
-      gl <- .ty_pair(effect, cause, ctrl, l, d_max, "bic")
-      data.frame(lag = l, statistic = gl$statistic, p = gl$p_value)
-    }))
+    lags <- seq_len(max(1L, min(as.integer(max_lag), cap)))
+    scan <- lapply(lags, function(l) .ty_pair(effect, cause, ctrl, l, d_max, prior))
+    bl <- data.frame(lag = lags, statistic = vapply(scan, `[[`, 0, "statistic"), p = vapply(scan, `[[`, 0, "p_value"))
+    if (first) {
+      fs <- .first_lag(lags, bl$p, vapply(scan, `[[`, 0, "bf10"), alpha, 3)
+      p <- fs$lag; g <- scan[[match(p, lags)]]; g$p_value <- fs$p_value; g$bf10 <- fs$bf10
+    } else {
+      p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
+      p <- max(1L, min(p, cap))
+      g <- if (p %in% lags) scan[[match(p, lags)]] else .ty_pair(effect, cause, ctrl, p, d_max, prior)
+    }
     list(row = c(list(lag = p), g[c("statistic", "df1", "df2", "p_value", "bf10", "effect_size", "r2_gain", "sign", "n_eff")]),
          by_lag = bl)
   }

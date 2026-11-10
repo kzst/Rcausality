@@ -16,7 +16,7 @@ vector.}
 
 \item{main}{overall title.}
 
-\item{...}{further arguments to \code{\link[graphics:plot.default]{graphics::plot()}}.}
+\item{...}{further arguments to \code{\link[graphics:plot]{graphics::plot()}}.}
 }
 \value{
 \code{x}, invisibly.

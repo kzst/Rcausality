@@ -25,7 +25,9 @@ benchmark_methods(
 \item{scenarios}{scenarios of the simulator (the truth labels).}
 
 \item{simulator}{simulator function \verb{function(n, scenario, seed, ...)}
-returning a two-column data frame (further columns are ignored).}
+returning a two-column data frame (further columns are ignored). For
+panel data it returns a long data frame and \code{id} (and \code{time}) are given
+in \code{...}, e.g. \code{function(n, scenario, seed) sim_panel(20, n, scenario, seed = seed)} with \verb{id = "unit", time = "time"}.}
 
 \item{n}{series length.}
 

@@ -1,0 +1,420 @@
+---
+title: "Causality in panel data and the causal drivers of one variable"
+author: "Zsolt T. Kosztyán (University of Pannonia)"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    css: rcausality.css
+vignette: >
+  %\VignetteIndexEntry{Causality in panel data and the causal drivers of one variable}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", message = FALSE, warning = FALSE,
+                      fig.width = 7.5, fig.height = 4.6, fig.align = "center", out.width = "100%",
+                      dev = if (requireNamespace("svglite", quietly = TRUE)) "svglite" else
+                        if (isTRUE(capabilities("cairo"))) "svg" else "png")
+library(Rcausality)
+options(width = 110)
+# Long-running results are precomputed and shipped in vignettes/precomputed/;
+# the code shown is exactly the code that produced them.
+# Sys.setenv(RCAUSALITY_RECOMPUTE = "true") recomputes everything.
+.pre <- function(name, expr) {
+  f <- file.path("precomputed", paste0(name, ".rds"))
+  if (file.exists(f) && !identical(Sys.getenv("RCAUSALITY_RECOMPUTE"), "true")) return(readRDS(f))
+  v <- expr
+  dir.create("precomputed", showWarnings = FALSE)
+  saveRDS(v, f, compress = "xz")
+  v
+}
+has_ranger <- requireNamespace("ranger", quietly = TRUE)
+```
+
+# Overview
+
+Two questions go beyond the analysis of a handful of long time series.
+
+*Panel data.* The same variables are observed in many units -- countries,
+sectors, firms, subjects -- often for a few periods only. No unit is long
+enough for a reliable test, the units differ, and a link may exist in some
+of them only.
+
+*One explained variable.* The interest is in one target: which of the
+other variables drive it, at which lag, how strongly, directly or through
+another variable -- and how the explanatory variables drive each other.
+
+Both analyses use the methods of `rcausality()`, with the same three
+options in every call:
+
+| Option | Meaning |
+|---|---|
+| `method` | the causality method (`causal_methods()` lists them) |
+| `bayes` | `TRUE` for the Bayesian variant of the method |
+| `cores` | number of CPU cores; the results do not depend on it |
+
+and two arguments that set the task:
+
+| Task | Call | Result |
+|---|---|---|
+| time series | `rcausality(x)` | `causres` |
+| panel data | `rcausality(x, id = , time = )` or `panel_causality()` | `causpanel` |
+| drivers of a target | `rcausality(x, target = )` or `causal_drivers()` | `causdrivers` |
+| drivers of a target in a panel | `causal_drivers(x, target = , id = , time = )` | both |
+
+The panel and the target analysis generalise the Granger-based procedures
+of Kosztyán, Mátrai and Kiss (2026) -- unit-by-unit tests with
+false-discovery-rate control next to pooled tests, traditional, Bayesian and
+random-forest variants, placebo checks, and the explanatory analysis of one
+dependent variable -- to all methods of the package.
+
+# One interface for all methods
+
+```{r methods}
+causal_methods()[, c("method", "type", "conditional", "pooled", "min_length")]
+```
+
+`type` tells whether the method assumes a linear model, `conditional`
+whether it can condition on the other series, `pooled` whether it has a
+pooled estimator for short panels, and `min_length` the series length from
+which the method is advisable for a single series. The settings of a method
+are shown by `causal_methods("te")` and passed in `method_args`:
+
+```{r oneif, eval = FALSE}
+d <- sim_logistic(300, "x_to_y", seed = 1)
+rcausality(d, method = "te", method_args = list(bins = 6))     # a method setting
+rcausality(d, method = "te", bayes = TRUE)                     # the Bayesian variant
+rcausality(d, method = "te", bayes = TRUE, cores = 4)          # in parallel
+```
+
+# Panel data
+
+## The data
+
+Panel data are given in long format: one row per unit and period, a column
+with the unit and (optionally) a column with the period. `panel_long()`
+converts `time x unit` matrices and `variable x unit x time` arrays.
+
+```{r data}
+pd <- sim_panel(n_units = 30, n_time = 25, scenario = "x_to_y", prevalence = 0.6,
+                coupling = 0.5, seed = 1)
+head(pd, 3)
+```
+
+`sim_panel()` simulates 30 units observed for 25 periods. `x` drives `y`
+in 60% of the units only (`prevalence`), with a strength that differs from
+unit to unit; every unit has its own level (fixed effects).
+
+## Three levels of evidence
+
+```{r panel}
+pg <- rcausality(pd, id = "unit", time = "time", seed = 1)
+pg
+```
+
+Every directed link is analysed at three levels.
+
+* **Units.** The method is applied to every unit that is long enough for
+  it. `11/30 (9)` reads: the link is found in 11 of the 30 units at the 5%
+  level, in 9 of them after the Benjamini-Hochberg correction over all unit
+  x link cells.
+* **Group.** One test of "no unit has the link", built from the unit
+  results: the unit statistics are standardised with their own null
+  distributions and added up. It is sensitive to a link in *some* units, of
+  any sign.
+* **Pooled.** One estimate from all units together. It is sensitive to an
+  effect that has the same direction in most units, and it is available
+  also when the units are too short to be analysed one by one.
+
+By default the panel decision uses both levels (`panel_control(decision =
+)`): the smaller of the two p-values, doubled, and corrected over the links
+(`adjust`). The `prevalence` column estimates the share of the units with
+the link (posterior mean and credible interval of a model on the unit
+Bayes factors); the simulated share is 0.6.
+
+```{r heat, fig.height = 2.9, fig.cap = "Heat map of a panel analysis. Rows: links; columns: units and the two panel-level tests. A coloured cell is a link in that unit (the colour shows the strength of the evidence, or the lag when the lags differ), a star marks the cells that remain after the false-discovery-rate correction."}
+plot(pg)
+```
+
+```{r units, fig.height = 3.3, fig.cap = "The evidence of every unit for the two links, sorted. A panel-level link can be carried by many units or by a few."}
+plot(pg, "units")
+```
+
+`plot(pg, "prevalence")` shows the shares, `plot(pg, "network")` the
+causal graph of the panel; `summary(pg)` and `pg$panel$detail` give the
+details of the tests, `pg$units` the unit table.
+
+## Where the null distributions come from
+
+For the Granger family (`"granger"`, `"bayes_granger"`,
+`"toda_yamamoto"`) the panel tests are the following.
+
+* The pooled test is the test of Juodis, Karavias and Sarafidis (2021).
+  Under the null hypothesis the coefficients of the cause's lags are zero in
+  every unit, so they can be pooled although the units differ; the
+  intercept, the own lags of the effect and the lags of the controls keep
+  unit-specific coefficients. A pooled estimator of a dynamic model has a
+  bias of order `1/T` (Nickell 1981). In the test of the *reverse*
+  direction of a true link this bias is the same in all units and
+  accumulates: the test rejects a true null hypothesis more and more often
+  as the number of units grows. The half-panel jackknife of Dhaene and
+  Jochmans (2015) removes the bias.
+* In short series the F distribution is only an approximation, because the
+  regressors are lagged values of persistent series. The unit statistics and
+  the pooled statistic are therefore compared with a bootstrap under the
+  null hypothesis, as Dumitrescu and Hurlin (2012) recommend for their panel
+  test: in every unit the effect is regenerated from its own estimated
+  autoregression with resampled residuals, the cause is kept. The bootstrap
+  sample is the null sample of the group test, and it calibrates the unit
+  p-values and the pooled p-value (an *empirical null*, Efron 2004); the
+  calibration can only make a test more conservative.
+
+The following experiment shows why this matters. The null hypothesis is
+true in every case; a test at the 5% level should reject in 5% of the
+panels. The table gives the rejection rates of the classical tests -- the
+Dumitrescu-Hurlin statistic with its normal approximation and the
+fixed-effects F-test with common coefficients -- and of the tests of the
+package.
+
+```{r size, echo = FALSE}
+size_tab <- .pre("panel-size", {
+  ns <- asNamespace("Rcausality")
+  one <- function(s, N, T, sc, ar) {
+    p <- sim_panel(n_units = N, n_time = T, scenario = sc, ar = ar, seed = s)
+    a <- rcausality(p, id = "unit", time = "time", lag = 1, seed = s, adjust = "none")
+    P <- a$panel[a$panel$cause == "y", ]                          # y -> x: no such link in any scenario
+    dh <- rcausality(p, id = "unit", time = "time", lag = 1, seed = s, adjust = "none",
+                     panel = panel_control(levels = c("units", "group"), combine = "dh"))$panel
+    U <- ns$.panel_units(p, "unit", "time")$units
+    fe <- ns$.pooled_F(ns$.panel_design(U, "x", "y", character(0), 1L))$p_value
+    c(dh = dh$p_freq[dh$cause == "y"] < 0.05, fe = fe < 0.05, group = P$p_freq[P$level == "group"] < 0.05,
+      pooled = P$p_freq[P$level == "pooled"] < 0.05, both = a$pairs$p_value[a$pairs$cause == "y"] < 0.05)
+  }
+  cfg <- list(list("independent series, AR coefficient 0.5", 30, 20, "independent", 0.5),
+              list("independent series, AR coefficient 0.8", 30, 20, "independent", 0.8),
+              list("reverse direction of a true link, 30 units", 30, 20, "x_to_y", 0.5),
+              list("reverse direction of a true link, 100 units", 100, 20, "x_to_y", 0.5))
+  do.call(rbind, lapply(cfg, function(g) {
+    r <- rowMeans(vapply(seq_len(200), function(s) one(s, g[[2]], g[[3]], g[[4]], g[[5]]), numeric(5)))
+    data.frame(panel = g[[1]], units = g[[2]], periods = g[[3]], t(100 * r), check.names = FALSE)
+  }))
+})
+knitr::kable(size_tab, digits = 1, row.names = FALSE,
+             col.names = c("Panel (the null hypothesis is true)", "Units", "Periods", "Dumitrescu-Hurlin, asymptotic",
+                           "Fixed-effects F-test", "Group", "Pooled", "Group or pooled"),
+             caption = "Rejection rates (%) of tests at the 5% level when the null hypothesis is true; 200 simulated panels per row, lag order 1.")
+```
+
+The Dumitrescu-Hurlin test with its normal approximation is far from its
+nominal level in short panels, the more so the more persistent the series
+are, and the fixed-effects test of the reverse direction rejects a true
+null hypothesis in almost half of the wide panels. The tests of the package
+stay between 2.5% and 8%.
+
+For the model-free methods the pooled statistic is computed from the
+stacked delay vectors of all units, standardised within the units, and its
+null distribution from surrogate panels in which the cause is delayed
+circularly within every unit. In short units a shifted series is not
+independent of the original one, which makes these tests conservative.
+The units are treated as independent throughout; with common shocks,
+`panel_control(time_effects = TRUE)` centres every variable across the
+units within each period first.
+
+## Choosing the method
+
+The method is an option, as for time series. In the next panel `x` acts
+on `y` through its square, a dependence that leaves no linear trace; the
+units have 20 periods.
+
+```{r nonlinear}
+pn <- sim_panel(n_units = 40, n_time = 20, scenario = "x_to_y", nonlinear = TRUE,
+                coupling = 0.5, heterogeneity = 0.2, seed = 1)
+cmp <- .pre("panel-compare",
+            compare_methods(pn, methods = c("granger", "cmi", "rf_granger"),
+                            id = "unit", time = "time", n_perm = 200, seed = 1, cores = 2))
+cmp
+sapply(cmp$results, function(r) r$pairs$p_adj[r$pairs$cause == "x"])   # adjusted p-values of x -> y
+```
+
+The linear test finds nothing; the conditional mutual information and the
+random forest find `x -> y`. Units of 20 periods are too short for a kNN
+estimate of the conditional mutual information or for a random forest, so
+these two methods are run at the pooled level only, where the delay vectors
+of all 40 units are used together.
+
+## The Bayesian variants
+
+`bayes = TRUE` gives the Bayesian variant of the panel analysis of every
+method.
+
+```{r bayes}
+pb <- rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = "hyper_g", seed = 1)
+pb
+```
+
+* **Units**: the Bayes factors of the method (`prior`, see
+  `bayes_control()`). A prevalence model combines them: the share of the
+  units with the link has a Beta prior, which gives the posterior of the
+  share and, for every unit, a posterior probability of the link that
+  borrows strength from the panel (`pb$units$post_pooled`). The units are
+  selected by the Bayesian false discovery rate.
+* **Group**: the Bayes factor of the group statistic against its null
+  distribution.
+* **Pooled**: for the Granger family the Bayes factor of the pooled
+  estimate under the chosen prior (BIC, g, hyper-g, normal / spike-and-slab,
+  Minnesota); for the model-free methods the Bayes factor of the pooled
+  statistic against its surrogates (`surrogate_bf()`).
+
+The panel decision averages the two Bayes factors, which is the Bayes
+factor of "a link at one of the two levels".
+
+# The causal drivers of one variable
+
+## Time series
+
+`sim_drivers()` simulates five series: `x1` drives `y` at lag 1, `x3`
+drives `y` at lag 2, `x2` drives `x1` -- and therefore `y`, but only
+through `x1` -- and `x4` is unrelated noise.
+
+```{r drivers}
+d <- sim_drivers(300, seed = 1)
+cd <- causal_drivers(d, target = "y")
+cd
+```
+
+The analysis tests three families of links and corrects each of them for
+multiplicity separately: the links into the target, the links from the
+target (feedback) and the links among the explanatory variables.
+
+* `importance` is the share of a driver in the evidence for the links into
+  the target.
+* `direct`: for the methods that can condition on other series, every
+  driver is tested again given all other series. `x2` is a driver of `y`,
+  but not given `x1`: it is an *indirect* driver, and `via` names the
+  mediator, a direct driver that `x2` drives.
+* `lag` is the delay at which the driver acts most strongly, `order` the
+  lag order of the Granger test (by default the first significant order,
+  as in the lag ladder of Kosztyán, Mátrai and Kiss 2026). The two differ
+  for `x3`: its effect sits at lag 2, but the first lag of an autocorrelated
+  series is a proxy of its second lag, so the order-1 test is already
+  significant.
+
+```{r ladder, fig.height = 4.8, fig.cap = "The lag ladder. The target stands on the right; every driver is placed in the column of its lag, from top to bottom by importance. Solid arrows are direct links, dashed arrows links that vanish given the other series; the bar in a box is the importance; the thin arrows are the links among the explanatory variables."}
+plot(cd)
+```
+
+```{r importance, fig.height = 3, fig.cap = "Importance of the explanatory variables with their evidence, lag and role."}
+plot(cd, "importance")
+```
+
+`cd$drivers` holds the table, `cd$graph` the links among the explanatory
+variables, `plot(cd, "graph")` draws the causal network of all series.
+The same analysis runs with every method and its Bayesian variant:
+
+```{r drivers-cmi}
+ct <- .pre("drivers-cmi",
+           causal_drivers(d, target = "y", method = "cmi", bayes = TRUE, max_lag = 3,
+                          n_perm = 200, seed = 1, cores = 2))
+ct$drivers[, c("driver", "lag", "bf10", "significant", "importance", "direct", "role")]
+```
+
+The conditional mutual information finds the two direct drivers with their
+lags; the evidence for the indirect driver `x2` stays below the threshold
+of the Bayes factor.
+
+## Panels
+
+With `id` the drivers are those of the panel; the explanatory graph and
+the direct / indirect distinction are derived from the panel-level tests.
+
+```{r pdrivers}
+pdd <- sim_panel(n_units = 30, n_time = 30, scenario = "drivers", coupling = 0.5, seed = 1)
+cp <- .pre("panel-drivers",
+           causal_drivers(pdd, target = "y", id = "unit", time = "time", seed = 1))
+cp
+```
+
+```{r pheat, fig.height = 3.2, fig.cap = "The drivers of the target in every unit and in the panel."}
+plot(cp, "heatmap")
+```
+
+`plot(cp)` draws the lag ladder of the panel.
+
+# Are the links robust?
+
+`placebo_test()` and `robustness()` accept panel and target analyses.
+A placebo panel reassigns every variable across the units -- each unit
+gets its `x` and its `y` from two different units -- which keeps the
+dynamics of every series and removes the links; the whole analysis is
+repeated on every placebo panel. The robustness check repeats the analysis
+with other lag orders, other corrections, random subsets of the units and
+other methods, and reports the decision of each panel level.
+
+```{r robust}
+pl <- .pre("panel-placebo", placebo_test(pg, n_placebo = 49, seed = 1, cores = 2))
+pl
+rb <- .pre("panel-robust",
+           robustness(pg, lags = 1:2, n_sub = 10, methods = "toda_yamamoto", seed = 1, cores = 2))
+rb
+```
+
+# Do the links help to forecast?
+
+`predict()` turns the links of the panel into forecast equations that are
+pooled over the units (unit fixed effects and unit scales, common
+coefficients) and compares them with the own-lags model on the last periods
+of every unit; `forecast_compare()` does this for several causality methods,
+with the links selected on the training periods only.
+
+```{r forecast, fig.height = 4.4, fig.cap = "Left: hold-out improvement of the causal model over the own-lags model by unit. Other panels: observed series, one-step hold-out predictions and forecasts for three units."}
+fc <- predict(pg, h = 4)
+fc
+plot(fc, units = c("u01", "u02", "u03"))
+```
+
+```{r fcmp}
+.pre("panel-fcmp",
+     forecast_compare(pd, methods = c("granger", "toda_yamamoto"), id = "unit", time = "time", seed = 1))
+```
+
+# Parallel computing
+
+The units, the links, the bootstrap and surrogate samples and the placebo
+runs are distributed over the cores; every unit of work has its own random
+stream, so the results are identical for any number of cores.
+
+```{r cores, eval = FALSE}
+options(Rcausality.cores = 4)                         # for the session
+rcausality(pd, id = "unit", time = "time", method = "cmi", cores = 4, seed = 1)
+```
+
+# References
+
+Benjamini, Y. and Hochberg, Y. (1995). Controlling the false discovery rate: a practical and powerful approach to multiple testing. *Journal of the Royal Statistical Society B*, 57(1), 289-300.
+
+Clark, A. T., Ye, H., Isbell, F., Deyle, E. R., Cowles, J., Tilman, G. D. and Sugihara, G. (2015). Spatial convergent cross mapping to detect causal relationships from short time series. *Ecology*, 96(5), 1174-1181.
+
+Dhaene, G. and Jochmans, K. (2015). Split-panel jackknife estimation of fixed-effect models. *The Review of Economic Studies*, 82(3), 991-1030.
+
+Dumitrescu, E.-I. and Hurlin, C. (2012). Testing for Granger non-causality in heterogeneous panels. *Economic Modelling*, 29(4), 1450-1460.
+
+Efron, B. (2004). Large-scale simultaneous hypothesis testing: the choice of a null hypothesis. *Journal of the American Statistical Association*, 99(465), 96-104.
+
+Ince, R. A. A., Paton, A. T., Kay, J. W. and Schyns, P. G. (2021). Bayesian inference of population prevalence. *eLife*, 10, e62461.
+
+Juodis, A., Karavias, Y. and Sarafidis, V. (2021). A homogeneous approach to testing for Granger non-causality in heterogeneous panels. *Empirical Economics*, 60(1), 93-112.
+
+Kilian, L. (1998). Small-sample confidence intervals for impulse response functions. *The Review of Economics and Statistics*, 80(2), 218-230.
+
+Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. doi:10.1111/twec.70148
+
+Newton, M. A., Noueiry, A., Sarkar, D. and Ahlquist, P. (2004). Detecting differential gene expression with a semiparametric hierarchical mixture method. *Biostatistics*, 5(2), 155-176.
+
+Nickell, S. (1981). Biases in dynamic models with fixed effects. *Econometrica*, 49(6), 1417-1426.
+
+Pesarin, F. and Salmaso, L. (2010). *Permutation Tests for Complex Data: Theory, Applications and Software*. Wiley, Chichester.

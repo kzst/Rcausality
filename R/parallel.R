@@ -8,7 +8,7 @@
 #' random-forest test ([rf_granger()]), the placebo data sets of
 #' [placebo_test()], the alternative settings of [robustness()], the methods
 #' of [compare_methods()] and [forecast_compare()], and the series pairs,
-#' surrogates and placebo panels of [panel_granger()] -- takes a `cores`
+#' units, bootstrap and surrogate panels of [panel_causality()] -- takes a `cores`
 #' argument. Its default is
 #' `getOption("Rcausality.cores", 1L)`, so that
 #' `options(Rcausality.cores = 4)` switches the whole package to four

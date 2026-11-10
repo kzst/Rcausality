@@ -4,12 +4,15 @@
 \name{Rcausality-package}
 \alias{Rcausality}
 \alias{Rcausality-package}
-\title{Rcausality: causality analysis for time series}
+\title{Rcausality: causality analysis for time series and panel data}
 \description{
 One entry point, \code{\link[=rcausality]{rcausality()}}, for a wide range of causality tests on two
-series, all pairs of a data frame or two blocks of series, returning a
-\code{\link[=causres-class]{causres}} object with \code{print}, \code{summary} and \code{plot}
-methods.
+series, all pairs of a data frame, two blocks of series, a panel of units
+observed over time (\code{id}), or the causal drivers of one explained variable
+(\code{target}), returning a \code{\link[=causres-class]{causres}} object with \code{print},
+\code{summary} and \code{plot} methods. The method (\code{method}), its Bayesian variant
+(\code{bayes}) and the number of CPU cores (\code{cores}) are options of every call;
+\code{\link[=causal_methods]{causal_methods()}} lists the methods and their settings.
 }
 \section{Families of methods}{
 
@@ -21,8 +24,7 @@ series), g, hyper-g or BIC priors (\code{"bayes_granger"}, \code{\link[=bayes_gr
 (\code{"toda_yamamoto"}), the frequency-domain decomposition
 (\code{\link[=granger_spectral]{granger_spectral()}}), the nonparametric Diks-Panchenko test
 (\code{"diks_panchenko"}, \code{\link[=diks_panchenko]{diks_panchenko()}}) and the random-forest
-Granger-like test (\code{"rf_granger"}, \code{\link[=rf_granger]{rf_granger()}}); panels of short
-series: \code{\link[=panel_granger]{panel_granger()}}.
+Granger-like test (\code{"rf_granger"}, \code{\link[=rf_granger]{rf_granger()}}).
 \item Information-theoretic and model-free methods: conditional mutual
 information (\code{"cmi"}, \code{"cmi_lag"}), transfer entropy (\code{"te"}), MAR-PID
 (\code{"pid"}), the Markov-chain approach (\code{"markov"}), degrees of freedom
@@ -32,6 +34,17 @@ information (\code{"cmi"}, \code{"cmi_lag"}), transfer entropy (\code{"te"}), MA
 optional, through Python).
 \item Every method has a Bayesian variant (\code{bayes = TRUE}).
 }
+}
+
+\section{Panel data and one explained variable}{
+
+\code{\link[=panel_causality]{panel_causality()}} (every method at the level of the units, of the group
+of units and of the pooled units, with Bayesian variants;
+\code{\link[=panel_control]{panel_control()}}, \code{\link[=plot.causpanel]{plot.causpanel()}}, \code{\link[=sim_panel]{sim_panel()}}, \code{\link[=panel_long]{panel_long()}}) and
+\code{\link[=causal_drivers]{causal_drivers()}} (drivers of a target with lags, importance, direct and
+indirect links and the causal graph of the explanatory variables, for
+time series and panels; \code{\link[=plot.causdrivers]{plot.causdrivers()}}, \code{\link[=sim_drivers]{sim_drivers()}}), following
+Kosztyan, Matrai and Kiss (2026).
 }
 
 \section{Checking and using the links}{
@@ -53,10 +66,14 @@ results that do not depend on the number of cores; see
 \section{Vignettes}{
 
 \code{vignette("rcausality")} (getting started), \code{vignette("methods")} (the
-methods paper by paper) and \code{vignette("extensions")} (generalised,
-nonlinear, Bayesian and panel tests, robustness and forecasting).
+methods paper by paper), \code{vignette("extensions")} (generalised,
+nonlinear and Bayesian tests, robustness and forecasting) and
+\code{vignette("panel")} (panel data and the causal drivers of one variable).
 }
 
+\references{
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+}
 \seealso{
 Useful links:
 \itemize{
@@ -67,6 +84,11 @@ Useful links:
 }
 \author{
 \strong{Maintainer}: Zsolt T. Kosztyán \email{kosztyan.zsolt@gtk.uni-pannon.hu} [copyright holder]
+
+Authors:
+\itemize{
+  \item Zsolt T. Kosztyán \email{kosztyan.zsolt@gtk.uni-pannon.hu} [copyright holder]
+}
 
 }
 \keyword{internal}

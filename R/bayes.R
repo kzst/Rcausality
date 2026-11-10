@@ -380,6 +380,16 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
   cz <- if (is.null(controls)) NULL else do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lagmat(.std(controls[, j]), lag)))
   Xc <- .lagmat(.std(cause), lag); colnames(Xc) <- paste0("lag", seq_len(lag))
   X0 <- cbind(1, own, cz); d0 <- c(1e4, rep(100, ncol(X0) - 1L))        # intercept and always-in terms: vague
+  .bayes_reg_core(yd, X0, d0, Xc, control, prior_prob, cores, lag)
+}
+
+# The spike-and-slab / normal-slab comparison of "cause columns Xc in" against
+# "out" for the response yd, given the always-in regressors X0 with prior
+# variances d0 (times sigma^2).  Used with the lag design of one series pair
+# (bayes_granger()) and with the stacked, within-unit standardised design of a
+# panel (the pooled Bayesian panel test).
+.bayes_reg_core <- function(yd, X0, d0, Xc, control, prior_prob = 0.5, cores = 1L, lag = ncol(Xc)) {
+  if (is.null(colnames(Xc))) colnames(Xc) <- paste0("lag", seq_len(ncol(Xc)))
   q <- ncol(Xc); tau2 <- control$scale^2; pin <- control$inclusion_prob
   N <- length(yd); a0 <- 0.01; b0 <- 0.01
   ml <- function(gam) .log_ml_nig(yd, cbind(X0, Xc[, gam, drop = FALSE]), c(d0, rep(tau2, sum(gam))), a0, b0)
@@ -642,6 +652,12 @@ print.bayes_granger <- function(x, digits = 3, ...) {
   }, cores = sc$outer)
   for (j in seq_len(nrow(P))) {
     b <- res[[j]]
+    if (identical(lag, "first") && !is.null(r$by_lag)) {
+      # the order was searched: the Bayes factor of the selected order divided by the number of orders scanned is a
+      # lower bound of the Bayes factor of "a link at one of the orders" (their average)
+      K <- max(1L, sum(r$by_lag$cause == P$cause[j] & r$by_lag$effect == P$effect[j]))
+      b$bf10 <- b$bf10 / K; b$post_prob <- b$bf10 * prior_prob / (b$bf10 * prior_prob + 1 - prior_prob)
+    }
     P$bf10[j] <- b$bf10; P$post_prob[j] <- b$post_prob
     rows[[j]] <- data.frame(pair = paste(P$cause[j], "->", P$effect[j]), bf10 = b$bf10, post_prob = b$post_prob,
                             effect_mean = b$geweke[["mean"]], effect_lower = b$geweke[["lower"]], effect_upper = b$geweke[["upper"]],

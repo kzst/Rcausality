@@ -24,4 +24,10 @@ p-value of every directed pair at every candidate lag);
 \details{
 Methods: \code{print}, \code{summary}, \code{plot}, \code{as.data.frame}, \code{as.matrix},
 \code{coef}-style accessors via \code{\link[=as.matrix.causres]{as.matrix.causres()}}.
+
+Two subclasses add slots and methods: \code{causpanel} (panel data, see
+\code{\link[=panel_causality]{panel_causality()}}: \code{units}, \code{panel}, \code{prevalence}) and \code{causdrivers}
+(the drivers of one explained variable, see \code{\link[=causal_drivers]{causal_drivers()}}: \code{drivers},
+\code{graph}, \code{target}). Both keep the slots above, so that every function
+that takes a \code{causres} works with them.
 }

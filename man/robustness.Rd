@@ -19,7 +19,8 @@ robustness(
 \method{plot}{causrob}(x, main = NULL, ...)
 }
 \arguments{
-\item{object}{a \code{causres} object from \code{\link[=rcausality]{rcausality()}}.}
+\item{object}{a \code{causres} object from \code{\link[=rcausality]{rcausality()}} (time series, panel
+or target analysis).}
 
 \item{lags}{integer vector of lag orders (\code{NULL} = none).}
 
@@ -27,7 +28,8 @@ robustness(
 
 \item{n_sub}{number of subsamples (\code{0} = none); \code{fraction} their length.}
 
-\item{fraction}{length of a subsample as a fraction of \code{n}.}
+\item{fraction}{length of a subsample as a fraction of \code{n} (panels: share
+of the units).}
 
 \item{methods}{character vector of other methods of \code{\link[=rcausality]{rcausality()}} (run
 with their default settings and the stored \code{alpha}, \code{seed}, \code{n_perm}).}
@@ -62,9 +64,16 @@ no re-run needed);
 \item \code{subsamples}: \code{n_sub} contiguous blocks of \code{fraction} of the
 observations at random positions (a block version of stability
 selection, Meinshausen and Buehlmann 2010; contiguous blocks keep the
-time-series structure);
-\item \code{methods}: other causality methods on the same data (triangulation).
+time-series structure); for panel data \code{n_sub} random subsets of
+\code{fraction} of the units;
+\item \code{methods}: other causality methods on the same data (triangulation);
+\item panel data: the decision of the other panel level (\code{group} or
+\code{pooled}, see \code{\link[=panel_causality]{panel_causality()}}).
 }
+}
+\details{
+For an analysis with a \code{target} (\code{\link[=causal_drivers]{causal_drivers()}}) the corrections are
+applied within its three families of links.
 }
 \examples{
 d <- sim_var(300, n_series = 3, seed = 2)

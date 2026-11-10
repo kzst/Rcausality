@@ -1,6 +1,6 @@
 # Rcausality
 
-Causality analysis for time series in R -- a unified interface to Granger
+Causality analysis for time series and panel data in R -- a unified interface to Granger
 causality, kNN conditional mutual information (plain and lag-shifted with
 common-driver detection), the Markov-chain approach, the degrees-of-freedom
 (conditional-variance) method, Bayesian dimensional causality, the
@@ -17,6 +17,11 @@ Granger-like test), to **short series** (a hierarchical Minnesota prior) and
 to **panels** (Dumitrescu-Hurlin, pooled and Bayesian panel tests), together
 with placebo, time-reversal and robustness analyses and forecasting with the
 links of any method (linear, Bayesian or random-forest forecast models).
+Version 0.0.3 makes the method, its Bayesian variant and the number of cores
+options of every call, carries **every method to panel data** (units, group
+and pooled level, with Bayesian variants; `rcausality(x, id = )`) and adds
+the analysis of the **causal drivers of one explained variable**
+(`rcausality(x, target = )`), for time series and panels.
 Every method from the group's papers has a reproduction of a published
 result in `inst/reproduce/` and a section below ("Reproductions of
 published results") stating what was and what was not reproduced.
@@ -477,6 +482,62 @@ forecast_causal(net, method = "granger", h = 8)
 model with that of the own-lags model for every series: a driven series
 gains, an undriven one does not (the gain is about 0).
 
+## Panel data and the drivers of one variable (version 0.0.3)
+
+The causality method, its Bayesian variant and the number of cores are
+options of every call -- for time series and for panels:
+
+```r
+causal_methods()                                    # the methods and what they can do
+causal_methods("te")                                # the settings of one method
+rcausality(d, method = "te", bayes = TRUE, cores = 4, method_args = list(bins = 6))
+```
+
+**Panel data** (long format: one row per unit and period). Every method is
+applied at three levels: the units one by one (false-discovery-rate control
+over all unit x link cells), a group-level test of "no unit has the link",
+and a pooled estimate from all units; `bayes = TRUE` gives the Bayesian
+variant of each. See `vignette("panel")`.
+
+```r
+pd <- sim_panel(n_units = 30, n_time = 25, prevalence = 0.6, seed = 1)   # x -> y in 60% of the units
+pg <- rcausality(pd, id = "unit", time = "time", seed = 1)               # = panel_causality(...)
+pg                               # units with the link, group and pooled tests, prevalence, decision
+plot(pg)                         # heat map: links x units, with the panel-level tests
+plot(pg, "units"); plot(pg, "prevalence"); plot(pg, "network")
+rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = "hyper_g")   # Bayes factors, posterior prevalence
+rcausality(pd, id = "unit", time = "time", method = "cmi", cores = 4)         # a model-free method, pooled over the units
+placebo_test(pg); robustness(pg); predict(pg, h = 4)                          # checks and forecasts for panels
+compare_methods(pd, methods = c("granger", "toda_yamamoto", "cmi"), id = "unit", time = "time")
+```
+
+For the Granger family the pooled test is the heterogeneous-panel test of
+Juodis, Karavias and Sarafidis (2021) with the half-panel jackknife; the
+unit, group and pooled tests are calibrated by a bootstrap under the null
+hypothesis, because the F distribution and the classical panel tests
+over-reject in short panels of persistent series (the vignette shows the
+rejection rates).
+
+**The causal drivers of one variable**: which series drive the target, at
+which lag, how strongly, directly or through another driver, and how the
+explanatory variables drive each other -- with any method, for time series
+and panels.
+
+```r
+d  <- sim_drivers(300, seed = 1)          # x1 -> y, x3 -> y (lag 2), x2 -> x1, x4 noise
+cd <- causal_drivers(d, target = "y")     # = rcausality(d, target = "y")
+cd                                        # lag, importance, direct / indirect (via), feedback
+plot(cd)                                  # the lag ladder with the explanatory graph
+plot(cd, "importance")
+causal_drivers(d, target = "y", method = "cmi", bayes = TRUE, cores = 4)
+cp <- causal_drivers(sim_panel(30, 30, "drivers", seed = 1), target = "y", id = "unit", time = "time")
+plot(cp, "heatmap")                       # the drivers in every unit and in the panel
+```
+
+These analyses generalise the panel and explanatory Granger procedures of
+Kosztyán, Mátrai and Kiss (2026), *The World Economy*,
+doi:10.1111/twec.70148.
+
 ## Beyond linear Granger causality (version 0.0.2)
 
 See `vignette("extensions")` for the full walkthrough with figures.
@@ -491,8 +552,6 @@ rcausality(lg, method = "diks_panchenko")
 rcausality(lg, method = "rf_granger", lag = 1, n_perm = 99, seed = 1)   # needs ranger
 # short series: hierarchical Minnesota prior, tightness integrated out
 rcausality(short, method = "bayes_granger", prior = "minnesota", lag = 3, conditional = TRUE)
-# panels of short series (units x time, long format)
-panel_granger(sim_panel(30, 15, seed = 1), id = "unit", time = "time", n_placebo = 199, seed = 1)
 ```
 
 **Are the links real?** `placebo_test()` repeats the analysis on data in
@@ -965,7 +1024,8 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
 | `"rf_granger"`, `rf_granger()` | Kosztyan, Matrai & Kiss (2026), *The World Economy*, doi:10.1111/twec.70148; Breiman (2001); Wright & Ziegler (2017), *JSS* 77(1); needs `ranger` |
 | `granger_spectral()` | Geweke (1982), *JASA* 77(378), 304-313; Breitung & Candelon (2006), *Journal of Econometrics* 132(2), 363-378, doi:10.1016/j.jeconom.2005.02.004 |
 | `prior = "minnesota"` | Litterman (1986), *JBES* 4(1), 25-38; Giannone, Lenza & Primiceri (2015), *REStat* 97(2), 436-451, doi:10.1162/REST_a_00483 |
-| `panel_granger()` | Dumitrescu & Hurlin (2012), *Economic Modelling* 29(4), 1450-1460, doi:10.1016/j.econmod.2012.02.014; Benjamini & Hochberg (1995) |
+| `panel_causality()`, `rcausality(id = )` | Kosztyán, Mátrai & Kiss (2026), *The World Economy*, doi:10.1111/twec.70148; Juodis, Karavias & Sarafidis (2021), *Empirical Economics* 60(1), 93-112, doi:10.1007/s00181-020-01970-9; Dhaene & Jochmans (2015), *REStud* 82(3), 991-1030; Dumitrescu & Hurlin (2012), *Economic Modelling* 29(4), 1450-1460, doi:10.1016/j.econmod.2012.02.014; Benjamini & Hochberg (1995); Efron (2004), *JASA* 99(465), 96-104; Clark et al. (2015), *Ecology* 96(5), 1174-1181 |
+| `causal_drivers()`, `rcausality(target = )` | Kosztyán, Mátrai & Kiss (2026), *The World Economy*, doi:10.1111/twec.70148 |
 | `placebo_test()`, `robustness()` | Theiler et al. (1992), *Physica D* 58, 77-94; Haufe et al. (2013), *NeuroImage* 64, 120-133; Winkler et al. (2016), *IEEE TSP* 64(11), 2746-2760; Meinshausen & Buehlmann (2010), *JRSS B* 72(4) |
 | `predict()` / `forecast_causal()` / `forecast_compare()` | restricted VAR forecasts from the detected links; Luetkepohl (2005), Springer, doi:10.1007/978-3-540-27752-1; Minnesota-prior and random-forest forecast models; Diebold & Mariano (1995), *JBES* 13(3), 253-263 |
 

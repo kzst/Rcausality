@@ -17,7 +17,8 @@ placebo_test(
 \method{plot}{causplacebo}(x, main = NULL, ...)
 }
 \arguments{
-\item{object}{a \code{causres} object from \code{\link[=rcausality]{rcausality()}}.}
+\item{object}{a \code{causres} object from \code{\link[=rcausality]{rcausality()}} (time series, panel
+or target analysis).}
 
 \item{n_placebo}{number of placebo data sets.}
 
@@ -66,6 +67,17 @@ a genuine lead-lag relation around, so a positive difference supports the
 direction \code{x -> y}, whereas a link produced by symmetric dependence (for
 instance a common driver observed with noise) does not change sign.
 }
+}
+\details{
+For panel analyses (\code{\link[=panel_causality]{panel_causality()}}) a placebo panel reassigns every
+variable across the units: each unit gets each of its variables from a
+different unit of the same length, which keeps the dynamics of every
+series and the periods (common shocks) and removes all links within the
+units (within short units a circular shift would leave a trace of a true
+link; units without enough partners of the same length are shifted). The
+whole panel analysis is repeated on every placebo panel, the time
+reversal is applied within the units. For an analysis with a \code{target}
+(\code{\link[=causal_drivers]{causal_drivers()}}) the family-wise corrections are repeated as well.
 }
 \examples{
 # Granger analysis of three series and its placebo distribution: in data

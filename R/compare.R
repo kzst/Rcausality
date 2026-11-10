@@ -16,7 +16,10 @@
 #'   remaining cores when there are fewer methods than cores); the verdicts
 #'   do not depend on it (see [Rcausality-parallel]).
 #' @param ... arguments passed to every method (e.g. `seed`, `n_perm`,
-#'   `alpha`).
+#'   `alpha`, `bayes = TRUE`); with `id` (and `time`) the methods are
+#'   compared on panel data (see [panel_causality()]), with `target` on the
+#'   drivers of one variable. A method that cannot be run on the data is
+#'   left out with a warning.
 #' @return An object of class `causcomp`: `table` (one row per pair, one
 #'   column per method, plus `consensus` and `agreement`), `results` (the
 #'   `causres` objects), `methods`. Methods: `print`, `plot` (tile plot of
@@ -35,6 +38,10 @@
 #' # method-specific arguments go in `args`; the dots reach every method
 #' compare_methods(d, methods = c("granger", "cmi"), args = list(cmi = list(max_lag = 2)),
 #'                 n_perm = 100, seed = 1)
+#' # panel data: three members of the Granger family side by side
+#' pd <- sim_panel(n_units = 20, n_time = 25, seed = 1)
+#' compare_methods(pd, methods = c("granger", "bayes_granger", "toda_yamamoto"), id = "unit",
+#'                 time = "time", prior = "bic", seed = 1)
 #' }
 compare_methods <- function(x, y = NULL, methods = c("granger", "bayes_granger", "cmi", "te"),
                             args = list(), cores = getOption("Rcausality.cores", 1L), ...) {
@@ -44,9 +51,15 @@ compare_methods <- function(x, y = NULL, methods = c("granger", "bayes_granger",
   results <- .plapply(methods, function(m) {
     a <- c(list(x = x, y = y, method = m, cores = sc$inner), dots, if (!is.null(args[[m]])) args[[m]])
     a <- a[!duplicated(names(a), fromLast = TRUE)]
-    suppressMessages(do.call(rcausality, a))
+    tryCatch(suppressMessages(do.call(rcausality, a)), error = function(e) structure(conditionMessage(e), class = "method_error"))
   }, cores = sc$outer)
   names(results) <- methods
+  failed <- vapply(results, inherits, TRUE, "method_error")
+  if (all(failed)) stop("No method could be run. First error: ", results[[1]], call. = FALSE)
+  if (any(failed)) {
+    warning("Method(s) left out: ", paste(sprintf("%s (%s)", methods[failed], vapply(results[failed], as.character, "")), collapse = "; "), call. = FALSE)
+    results <- results[!failed]; methods <- methods[!failed]
+  }
   cls <- results[[1]]$classes[, c("var1", "var2")]
   for (m in methods) {
     C <- results[[m]]$classes
@@ -118,7 +131,10 @@ plot.causcomp <- function(x, main = NULL, ...) {
 #' @param methods methods to compare.
 #' @param scenarios scenarios of the simulator (the truth labels).
 #' @param simulator simulator function `function(n, scenario, seed, ...)`
-#'   returning a two-column data frame (further columns are ignored).
+#'   returning a two-column data frame (further columns are ignored). For
+#'   panel data it returns a long data frame and `id` (and `time`) are given
+#'   in `...`, e.g. `function(n, scenario, seed) sim_panel(20, n, scenario,
+#'   seed = seed)` with `id = "unit", time = "time"`.
 #' @param n series length.
 #' @param reps replications per scenario.
 #' @param args per-method argument lists as in [compare_methods()].
@@ -154,8 +170,9 @@ benchmark_methods <- function(methods = c("granger", "cmi", "te"), scenarios = c
   old <- .rng_setup(seed); on.exit(.rng_restore(old), add = TRUE)
   run_one <- function(i) {
     sc <- design$scenario[i]; r <- design$rep[i]
-    d <- simulator(n, sc, seed = seed + 1000L * match(sc, scenarios) + r)
-    d <- as.data.frame(d)[, 1:2]
+    d <- as.data.frame(simulator(n, sc, seed = seed + 1000L * match(sc, scenarios) + r))
+    first <- if (is.null(dots$id)) names(d)[1] else setdiff(names(d), c(dots$id, dots$time))[1]
+    d <- if (is.null(dots$id)) d[, 1:2] else d[, c(dots$id, dots$time, setdiff(names(d), c(dots$id, dots$time))[1:2])]   # panel: long format
     rows <- list()
     for (m in methods) {
       a <- c(list(x = d, method = m), dots, if (!is.null(args[[m]])) args[[m]], list(cores = 1L))
@@ -167,7 +184,7 @@ benchmark_methods <- function(methods = c("granger", "cmi", "te"), scenarios = c
       # the class of the pair oriented as (first column -> second column) of the simulator
       pred <- if (is.null(res)) NA_character_ else {
         cl <- res$classes$class[1]
-        if (res$classes$var1[1] == names(d)[1]) cl else c(x_to_y = "y_to_x", y_to_x = "x_to_y")[cl] %||% cl
+        if (res$classes$var1[1] == first) cl else c(x_to_y = "y_to_x", y_to_x = "x_to_y")[cl] %||% cl
       }
       rows[[m]] <- data.frame(scenario = sc, rep = r, method = m, predicted = unname(pred),
                               seconds = el, error = err, stringsAsFactors = FALSE)
@@ -188,7 +205,7 @@ benchmark_methods <- function(methods = c("granger", "cmi", "te"), scenarios = c
   }); names(conf) <- methods
   structure(list(accuracy = acc, overall = rowMeans(acc, na.rm = TRUE), confusion = conf, runs = runs,
                  time = tapply(runs$seconds, runs$method, mean)[methods], n = n, reps = reps,
-                 simulator = deparse(substitute(simulator))), class = "causbench")
+                 simulator = substr(paste(trimws(deparse(substitute(simulator))), collapse = " "), 1L, 70L)), class = "causbench")
 }
 
 #' @export

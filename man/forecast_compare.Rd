@@ -39,7 +39,12 @@ largest lag of its links).}
 \link{Rcausality-parallel}).}
 
 \item{...}{arguments to every \code{\link[=rcausality]{rcausality()}} call (e.g. \code{seed}, \code{n_perm})
-and to \code{\link[=predict.causres]{predict.causres()}} (\code{control}, \code{rf_settings}).}
+and to \code{\link[=predict.causres]{predict.causres()}} (\code{control}, \code{rf_settings}). With \code{id} (and
+\code{time}) the comparison is made on panel data: the links are those of
+the panel analysis of the training periods, the forecast equations are
+pooled over the units (see \code{\link[=predict.causpanel]{predict.causpanel()}}), and the
+Diebold-Mariano test is applied to the loss differentials averaged over
+the units in every hold-out period.}
 
 \item{main}{optional title.}
 }

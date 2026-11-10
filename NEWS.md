@@ -1,3 +1,94 @@
+# Rcausality 0.0.3
+
+## One interface: method, Bayesian variant and cores as options
+
+* `rcausality(x, y, method, bayes, cores, ...)`: the causality method, its
+  Bayesian variant and the number of CPU cores are the first options of
+  every analysis, for time series and for panel data alike.
+* `method_args`: the settings of a method in one named list (the settings
+  of the 0.0.1 methods are still accepted directly, e.g. `bins = 6`);
+  unknown settings are an error. `causal_methods()` lists the methods (type,
+  conditional and pooled estimators, advisable series length, reference)
+  and `causal_methods("te")` the settings of one method.
+* `lag = "first"` (Granger family): the first significant lag order, with a
+  Bonferroni correction over the scanned orders; the Bayes factor is that of
+  "a link at one of the orders" (the average over the orders).
+
+## Panel data: every method, with Bayesian variants
+
+* `rcausality(x, id = , time = )` / `panel_causality()`: every method for a
+  long data frame of units observed over time, at three levels --
+  **units** (the method in every unit that is long enough, with
+  Benjamini-Hochberg or Bayesian false-discovery-rate control over the unit
+  x link cells), **group** (a test of "no unit has the link" from the unit
+  results: the mean of the standardised unit statistics against the
+  convolution of their null distributions; Dumitrescu-Hurlin, Stouffer,
+  Fisher, Simes and count tests as alternatives) and **pooled** (one
+  estimate from all units). The panel decision uses the group level, the
+  pooled level or both (`panel_control(decision = )`).
+* Granger family: the pooled test is the heterogeneous-panel test of Juodis,
+  Karavias and Sarafidis (2021) with the half-panel jackknife of Dhaene and
+  Jochmans (2015), which removes the bias that makes fixed-effects tests of
+  the reverse direction of a true link over-reject. Unit and pooled
+  statistics are referred to a bootstrap under the null hypothesis (with the
+  small-sample bias of the persistence corrected) through an empirical null
+  (Efron 2004), because the F distribution is anti-conservative in short
+  panels of persistent series. With `lag = "auto"` the order of every link is
+  chosen by the BIC of its pooled regression.
+* Model-free methods: pooled estimators from the stacked, within-unit
+  standardised delay vectors -- random forest, Diks-Panchenko, kNN
+  conditional mutual information (`"cmi"`, `"cmi_lag"`), transfer entropy and
+  multispatial convergent cross mapping (Clark et al. 2015) -- with
+  surrogate panels (the cause delayed circularly within the units). They
+  work with units that are far too short for a unit-by-unit analysis.
+* Bayesian variants of all of them (`bayes = TRUE`): unit Bayes factors, a
+  prevalence model (posterior share of the units with the link, partially
+  pooled unit probabilities), the Bayes factor of the group statistic, and
+  pooled Bayes factors (BIC, g, hyper-g, normal / spike-and-slab and
+  Minnesota priors for the Granger family; surrogate Bayes factors for the
+  model-free methods).
+* `plot()` of a panel analysis: heat map of the links by unit with the
+  panel-level tests (after Kosztyan, Matrai and Kiss 2026), unit evidence,
+  prevalence, network; `summary()`, `as.matrix(by = "units")`.
+* `panel_control()` (levels, decision, group test, unit-level correction,
+  prevalence prior, common time effects), `panel_long()` (matrices and
+  arrays to long format), `sim_panel()` (heterogeneous prevalence, nonlinear
+  coupling, unbalanced panels, a five-variable `"drivers"` scenario).
+* `panel_granger()` is kept as `panel_causality(method = "granger")`; its
+  result is now a `causpanel` object (the 0.0.2 arguments `methods` and
+  `n_placebo` are replaced by `panel_control()` and `placebo_test()`).
+
+## The causal drivers of one explained variable
+
+* `rcausality(x, target = )` / `causal_drivers()`: which series drive the
+  target, at which lag, with how much evidence (importance), directly or
+  through another driver (conditional re-tests; the mediators are named),
+  with feedback from the target or not -- and the causal links among the
+  explanatory variables. Three families of links are corrected for
+  multiplicity separately. Any method, Bayesian variants, time series and
+  panels.
+* `plot()`: the lag ladder with the explanatory graph, the importance
+  chart, the causal network; for panels the drivers-by-unit heat map.
+  `sim_drivers()` simulates a system with direct and indirect drivers.
+
+## Robustness, comparison and forecasting for panels and targets
+
+* `placebo_test()` and `robustness()` accept panel and target analyses
+  (shifts and time reversal within the units; random subsets of the units;
+  the decision of each panel level).
+* `compare_methods(..., id = )` compares methods on panel data; a method that
+  cannot be run on the data is left out with a warning.
+* `predict()` of a panel analysis: forecast equations pooled over the units
+  (`"var"`, `"bvar"`, `"rf"`) with a hold-out evaluation by unit;
+  `forecast_causal()` and `forecast_compare()` accept `id` (Diebold-Mariano
+  test on the loss differentials averaged over the units).
+
+## Documentation
+
+* New vignette `vignette("panel")`; the package cites Kosztyan, Matrai and
+  Kiss (2026, *The World Economy*, doi:10.1111/twec.70148), whose panel and
+  explanatory Granger analyses are generalised here.
+
 # Rcausality 0.0.2
 
 ## Generalisations of the Granger test

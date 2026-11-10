@@ -1,167 +1,180 @@
-#' Detect causal relations between time series
+#' Detect causal relations between time series or in panel data
 #'
-#' Single entry point of the package. Works with
+#' Single entry point of the package. The causality method, its Bayesian
+#' variant and parallel execution are options of the same call,
+#' `rcausality(x, method = , bayes = , cores = )`, for every kind of input:
 #' * two series: `rcausality(x, y)`;
 #' * one data frame / matrix: `rcausality(df)` -- all ordered pairs;
 #' * two blocks (MIMO): `rcausality(X, Y)` with several columns each --
-#'   every column of `X` is tested as a cause of every column of `Y`.
+#'   every column of `X` is tested as a cause of every column of `Y`;
+#' * one explained variable: `rcausality(df, target = "y")` -- which series
+#'   drive `y`, at which lag, directly or through another series, and how the
+#'   explanatory series drive each other (see [causal_drivers()]);
+#' * panel data in long format: `rcausality(df, id = "unit", time = "year")`
+#'   -- the same analysis in every unit, at the group level and, where the
+#'   method allows, pooled over the units (see [panel_causality()]).
 #'
-#' @param x numeric vector, matrix or data frame (the putative causes).
+#' @section Methods:
+#' [causal_methods()] lists the methods; `causal_methods("<name>")` shows the
+#' settings of one of them.
+#' * Granger family: `"granger"` (F-test, default), `"bayes_granger"` (the
+#'   Bayesian Granger regression, i.e. `method = "granger", bayes = TRUE`),
+#'   `"toda_yamamoto"` (lag-augmented test for integrated series; setting
+#'   `d_max`), `"diks_panchenko"` (nonparametric, nonlinear; settings `eps`,
+#'   `C`, `filter`), `"rf_granger"` (random-forest Granger-like test;
+#'   settings `num_trees`, `mtry`, `min_node_size`, `folds`, `shadow`,
+#'   `importance`; needs \pkg{ranger}).
+#' * Information-theoretic: `"cmi"` (kNN conditional mutual information
+#'   `I(x[t-lag]; y[t] | history of y, controls)` with a local-permutation
+#'   test), `"cmi_lag"` (Zlatniczki et al. 2021: also conditions on the
+#'   cause's own past and adds a contemporaneous test whose significance,
+#'   without lagged links, indicates a *common driver*), `"te"` (binned
+#'   transfer entropy, circular-shift surrogates), `"pid"` (MAR-PID: unique
+#'   + synergistic information of the cause's past).
+#' * State-space and dynamical-systems methods: `"ccm"` (convergent cross
+#'   mapping), `"dc"` (Bayesian dimensional causality), `"ccdh"`
+#'   (complexity-based causal discovery), `"hirata"` (recurrence plots),
+#'   `"cd"` (correlation dimensions).
+#' * Markov-chain and order-based methods: `"markov"` (Stippinger et al.
+#'   2023), `"df"` (degrees of freedom, Telcs et al. 2025), `"dfe"`
+#'   (df-entropy with a trained random forest).
+#' * `"pcmci"` (PCMCI of Runge et al. 2019 through the Python package
+#'   tigramite; always multivariate).
+#'
+#' @section Method settings:
+#' Method-specific settings go in `method_args` (a named list; unknown names
+#' are an error). The settings of the methods of version 0.0.1 may also be
+#' given directly in `...`, as before.
+#' * `"cmi"`, `"cmi_lag"`: `k` (neighbours of the estimator, default 5),
+#'   `k_perm` (size of the local-permutation neighbourhood), `history`
+#'   (order of the conditioning history of the effect; `"auto"` = the VAR
+#'   order of the pair, at most 5; too short a history lets the cause's lags
+#'   stand in for the effect's own deeper past and produces spurious reverse
+#'   links). With `lag = "auto"` every lag `1..max_lag` is tested at once:
+#'   the reported lag is the one with the largest statistic and the p-value
+#'   is that of the maximal statistic against the maximum of the permuted
+#'   statistics over the lags (the same max-statistic test is used by
+#'   `"te"`, `"pid"` and `"df"`). Series are standardised.
+#' * `"te"` (see [transfer_entropy()]): `bins` (quantile bins), `history`
+#'   (the effect's own history); the cause's lag is scanned.
+#' * `"ccm"` (see [ccm()]): `m`, `tau` (embedding); a link needs a
+#'   significant and converging cross-map skill.
+#' * `"pid"` (see [marpid()]): `k_target`, `k_source` (binarisation depths),
+#'   `history`.
+#' * `"dc"` (see [dimensional_causality()]): `m`, `tau`, `k_range`, `prep`;
+#'   decisions by posterior probabilities (`prob_threshold`).
+#' * `"hirata"` (see [hirata_rp()]): `m`, `tau`, `rate` (recurrence rate),
+#'   `theta` (coverage-index threshold). `"cd"` (see [krakovska_cd()]): `m`,
+#'   `tau`; bootstrap z-tests at level `alpha`. Both give verdicts per pair.
+#' * `"ccdh"` (see [ccdh()]): `m`, `tau`, `K` (NSRPS steps), `n_surr`
+#'   (circular-shift surrogates), `theta` (reconstruction-index threshold);
+#'   a numeric `lag` aligns the pair.
+#' * `"dfe"` (see [dfe_classify()]): `model`, a trained `dfe_model` from
+#'   [dfe_train()] (`NULL` trains and caches a default one).
+#' * `"df"`: `k` (default 10), `k_perm`, `history`, `max_constr` (largest
+#'   number of constrained past lags). The orders (`$df`) give the Table-2
+#'   reading of the paper (including the common-driver case), which decides
+#'   a pair whenever it is determinate; the other pairs are decided by the
+#'   directed variance-reduction tests (`$pairs`).
+#' * `"markov"`: `memory` (`"auto"` from the PACF), `iid_injection`
+#'   (`"allowed"` or `"forbidden"` in the decision table), `k_nn`, `n_bins`,
+#'   `n_markov`, `k`, `k_perm`. Lags are fixed to 1.
+#' * `"toda_yamamoto"`: `d_max` (default 1), the number of extra lags of the
+#'   lag-augmented VAR (the maximal order of integration); the Wald (F) test
+#'   concerns the first `lag` lags of the cause, so no unit-root pre-test is
+#'   needed.
+#' * `"diks_panchenko"` (see [diks_panchenko()]): `eps` (bandwidth in
+#'   standard deviations, `NULL` = `min(1.5, C n^(-2/7))`), `C` (default 8),
+#'   `filter` (`"none"` or `"var"`: only the nonlinear part is tested); a
+#'   numeric `lag` is the length of the pasts, `"auto"` uses 1.
+#' * `"rf_granger"` (see [rf_granger()]): `num_trees`, `mtry`,
+#'   `min_node_size`, `folds`, `shadow`, `importance`; `n_perm` is the number
+#'   of circular-shift surrogates.
+#'
+#' @section Bayesian variants:
+#' With `bayes = TRUE` (settings in `control`, see [bayes_control()])
+#' `"granger"` becomes a Bayesian regression: closed-form Bayes factors
+#' (`prior = "bic"`, `"g"`, `"hyper_g"`), the hierarchical Minnesota prior
+#' for short series (`"minnesota"`) or the spike-and-slab / normal-slab
+#' sampler of [bayes_granger()]. The surrogate / permutation methods compare
+#' the observed statistic with the surrogate sample through [surrogate_bf()];
+#' `"markov"` combines the surrogate Bayes factors of its tests in a Bayesian
+#' decision table; `"dc"` and `"dfe"` apply the prior over the causal cases;
+#' `"pcmci"` uses a Savage-Dickey Bayes factor. `bf10`, `post_prob` and
+#' `evidence` are filled for every directed test, the details are in
+#' `$bayes`, and a link is declared when `bf10 > bf_threshold` (or, with
+#' `control$decision = "posterior"`, when `post_prob > prob_threshold`).
+#'
+#' @param x numeric vector, matrix or data frame (the putative causes); for
+#'   panel data a data frame in long format (see `id`).
 #' @param y optional numeric vector, matrix or data frame (the putative
 #'   effects). If `NULL` and `x` has several columns, all ordered pairs of the
 #'   columns of `x` are tested.
-#' @param method `"granger"` (F-test, default), `"bayes_granger"` (the
-#'   Bayesian Granger regression, i.e. `bayes = TRUE`: decision by the Bayes
-#'   factor of the spike-and-slab regression by default, or by the
-#'   closed-form BIC / g / hyper-g factor with `prior = "bic"`, `"g"`,
-#'   `"hyper_g"`; p-value *and* Bayes factor are both reported) or `"cmi"`
-#'   (model-free: kNN conditional mutual information
-#'   `I(x[t-lag]; y[t] | history of y, controls)` with a local-permutation
-#'   p-value; detects non-linear dependence) or `"cmi_lag"` (the
-#'   lag-shifted CMI scheme of Zlatniczki et al. (2021): like `"cmi"` but
-#'   also conditioning on the cause's own past, plus a contemporaneous
-#'   test `I(x[t]; y[t] | pasts)` whose significance, without lagged links,
-#'   indicates a *common driver*; `common_cause` class available), or
-#'   `"toda_yamamoto"` (lag-augmented Granger test for integrated series),
-#'   `"diks_panchenko"` (nonparametric, nonlinear Granger test) or
-#'   `"rf_granger"` (random-forest Granger-like test); see `method_args`.
-#'   The other methods are described below.
-#' @param lag integer lag order or `"auto"` (selected by `lag_criterion` on
-#'   the VAR of the involved series).
-#' @param max_lag largest lag order considered when `lag = "auto"`.
+#' @param method the causality method (see Methods and [causal_methods()]).
+#' @param bayes logical; the Bayesian variant of the method (see Bayesian
+#'   variants).
+#' @param cores number of CPU cores (`1` = serial, an integer, `"auto"` = all
+#'   physical cores but one, or a cluster from `parallel::makeCluster()`);
+#'   default `getOption("Rcausality.cores", 1L)`. The work (pairs, panel
+#'   units, permutations, surrogates, chains) is distributed over the cores;
+#'   every unit of work has its own random stream, so the results are
+#'   *identical* for any number of cores given the `seed` (see
+#'   [Rcausality-parallel]).
+#' @param lag integer lag order, `"auto"` (selected by `lag_criterion` on
+#'   the VAR of the involved series; the lag with the largest statistic for
+#'   the methods that scan the lags) or `"first"` (Granger family: the
+#'   smallest order at which the test is significant at level
+#'   `alpha / (number of orders)`, i.e. the delay after which the cause first
+#'   helps; the reported p-value is the Bonferroni-corrected minimum over the
+#'   orders `1..max_lag`; for Bayes-factor decisions the first order with
+#'   `bf10 > bf_threshold`, and the reported Bayes factor is that of "a link
+#'   at one of the orders", the average over the orders). In panels `"auto"`
+#'   chooses the order of every link by the BIC of its pooled regression.
+#'   `NULL` is `"auto"`, except in the time-series analysis of a `target`
+#'   with a method of the Granger family, where it is `"first"`.
+#' @param max_lag largest lag order considered when `lag` is not a number.
 #' @param lag_criterion `"BIC"`, `"AIC"` or `"HQ"`.
-#' @param alpha significance level (applied to adjusted p-values).
-#' @param bf_threshold Bayes factor above which a link is declared
-#'   (used for `method = "bayes_granger"`).
-#' @param adjust multiple-testing correction passed to
-#'   [stats::p.adjust()] (default `"holm"`; `"none"` disables it).
 #' @param conditional logical; if `TRUE` every test conditions on all other
-#'   series in the data (full conditional / multivariate Granger), otherwise
-#'   tests are pairwise.
+#'   series in the data (full conditional / multivariate analysis, for the
+#'   methods that support it), otherwise tests are pairwise.
 #' @param directions for two series / two blocks: `"both"` (default) tests
 #'   x -> y and y -> x; `"forward"` only the causes-in-`x`, effects-in-`y`
 #'   direction. Ignored when `y` is `NULL` (all ordered pairs are tested).
-#' @param k,k_perm,n_perm,history,seed settings of `method = "cmi"`: number
-#'   of neighbours of the estimator (`NULL` = 5; 10 for `method = "df"`),
-#'   size of the local-permutation neighbourhood, number of permutations,
-#'   order of the conditioning history of the effect series (`"auto"` =
-#'   the VAR order of the pair selected by `lag_criterion`, at most 5; too
-#'   short a history lets the cause's lags stand in for the effect's own
-#'   deeper past and produces spurious reverse links), and RNG seed. With
-#'   `lag = "auto"` every lag `1..max_lag` is tested at once: the reported
-#'   lag is the one with the largest statistic and the p-value is that of
-#'   the maximal statistic against the maximum of the permuted statistics
-#'   over the lags (the same max-statistic test is used by `"te"`, `"pid"`
-#'   and `"df"`). Series are standardised before the neighbour searches.
-#' @param m,tau,k_range,prep,prob_threshold settings of `method = "dc"`
-#'   (Bayesian dimensional causality of Benko et al., 2024, see
-#'   [dimensional_causality()]): embedding dimension and delay,
-#'   neighbourhood sizes averaged over, preprocessing, and the posterior
-#'   probability above which a directed link (direct + bidirectional) is
-#'   reported as significant. Pairwise only; the method assumes
-#'   deterministic dynamics (no p-values, decisions by posterior
-#'   probabilities; `bf10` is the posterior odds against the uniform prior).
-#' @param rate `method = "hirata"` (recurrence-plot criteria of Hirata and
-#'   Aihara, 2010, see [hirata_rp()]): recurrence rate; `m`/`tau` give the
-#'   embedding, `n_perm` the surrogates, `theta` the coverage-index
-#'   threshold. `method = "cd"` (correlation-dimension relations of
-#'   Krakovska, 2019, see [krakovska_cd()]) uses `m`/`tau` and bootstrap
-#'   z-tests at level `alpha`. Both pairwise; verdicts are per pair.
-#' @param k_target,k_source `method = "pcmci"` (PCMCI of Runge et al., 2019,
-#'   via the Python package tigramite, see [pcmci()]; needs reticulate +
-#'   tigramite): linear partial-correlation MCI tests over lags 1..`max_lag`
-#'   (or the fixed `lag`), Benjamini-Hochberg adjusted unless
-#'   `adjust = "none"`; always multivariate (conditional on the other
-#'   series). `method = "pid"` (finite-resolution MAR-PID,
-#'   see [marpid()]): binarisation depths of the effect's future (target)
-#'   and of the two sources (the cause's past at the candidate lag and the
-#'   effect's own past); the directed statistic is the unique + synergistic
-#'   ("novel") information of the cause's past, tested with `n_perm`
-#'   surrogates. Pairwise only.
-#' @param bins `method = "te"` (binned transfer entropy, see
-#'   [transfer_entropy()]): number of quantile bins; `history` is the effect's
-#'   own history, the cause's history is scanned over the candidate lags,
-#'   `n_perm` circular-shift surrogates give the p-values. `method = "ccm"`
-#'   (convergent cross mapping, see [ccm()]) uses `m`/`tau` as embedding and
-#'   `n_perm` surrogates; a link needs a significant and converging cross-map
-#'   skill. Both are pairwise.
-#' @param model `method = "dfe"` (df-entropy method with random-forest
-#'   classification, Jakovac et al.; see [dfe_classify()]): a trained
-#'   `dfe_model` from [dfe_train()]; `NULL` trains and caches a default one.
-#'   Decisions by class scores as for `"dc"` (`prob_threshold`); a numeric
-#'   `lag` shifts the pairs. Pairwise only.
-#' @param K,n_surr,theta settings of `method = "ccdh"` (complexity-based
-#'   causal discovery of Stippinger et al., see [ccdh()]): number of NSRPS
-#'   steps, number of circular-shift surrogates and the reconstruction-index
-#'   threshold; `m` and `tau` give the embedding, a numeric `lag` the
-#'   alignment of the pair (`"auto"` = 0 for this method). Pairwise only.
-#' @param max_constr `method = "df"` (degrees-of-freedom / conditional-variance
-#'   method of Telcs, Kurbucz and Jakovac, 2025): largest number of past lags
-#'   constrained when estimating the orders of x, y and of the joint process;
-#'   `k` is the neighbourhood size of the adaptive windows (default 10 for
-#'   this method), `history` the number of own-past lags conditioned on
-#'   in the directed tests, `n_perm`/`k_perm` the local-permutation settings.
-#'   The orders (`$df`) give the Table-2 reading of the paper (including the
-#'   common-driver case), which decides a pair whenever it is determinate;
-#'   pairs the table leaves undetermined are decided by the directed
-#'   variance-reduction tests (`$pairs`), which are always reported.
-#' @param memory,iid_injection,k_nn,n_bins,n_markov settings of
-#'   `method = "markov"` (Markov-chain approach of Stippinger et al., 2023):
-#'   memory (embedding dimension; `"auto"` from the PACF), whether i.i.d.
-#'   injection of one series into the other is `"allowed"` (default, Occam's
-#'   razor) or `"forbidden"` in the decision table, local-neighbourhood size,
-#'   number of bins of the local contingency tables and number of local
-#'   permutations of the Markov tests. Pairwise only (`conditional` is not
-#'   supported). Lags are fixed to 1 in this version.
-#' @param cores number of CPU cores (`1` = serial, an integer, `"auto"` = all
-#'   physical cores but one, or a cluster from `parallel::makeCluster()`);
-#'   default `getOption("Rcausality.cores", 1L)`. Pairs are distributed over
-#'   the cores when there are at least as many pairs as cores, otherwise the
-#'   permutations / surrogates / chains of each test are. Every unit of work
-#'   has its own random stream, so the results are *identical* for any number
-#'   of cores given the `seed` (see [Rcausality-parallel]).
+#' @param alpha significance level (applied to adjusted p-values).
+#' @param adjust multiple-testing correction passed to
+#'   [stats::p.adjust()] (default `"holm"`; `"none"` disables it).
+#' @param bf_threshold Bayes factor above which a link is declared in the
+#'   Bayesian variants.
+#' @param prob_threshold posterior probability above which a link is
+#'   declared by the methods that decide by posterior probabilities (`"dc"`,
+#'   `"dfe"`, and the Bayesian variants with `control$decision =
+#'   "posterior"`).
 #' @param prior_prob prior probability of a causal link (for the posterior).
-#' @param bayes logical; the Bayesian variant of the method (settings in
-#'   `control`, see [bayes_control()]). `"granger"` becomes a Bayesian
-#'   regression: closed-form Bayes factors (`prior = "bic"`, `"g"`,
-#'   `"hyper_g"`) or the spike-and-slab / normal-slab sampler of
-#'   [bayes_granger()] with posterior inclusion probabilities and credible
-#'   intervals of Geweke's measure. The surrogate / permutation methods
-#'   (`cmi`, `cmi_lag`, `df`, `te`, `ccm`, `pid`, `ccdh`, `hirata`, `cd`)
-#'   compare the observed statistic with the surrogate sample through
-#'   [surrogate_bf()] (an explicit effect-size prior); `markov` combines the
-#'   surrogate Bayes factors of its six tests in a Bayesian version of the
-#'   decision table; `dc` and `dfe` apply the prior over the causal cases;
-#'   `pcmci` uses a Savage-Dickey Bayes factor of the Fisher-transformed
-#'   partial correlation. `bf10`, `post_prob` and `evidence` are filled for
-#'   every directed test, the per-pair details are in `$bayes`, and a link
-#'   is declared when `bf10 > bf_threshold` (or, with
-#'   `control$decision = "posterior"`, when `post_prob > prob_threshold`).
 #' @param prior shortcut for `control$prior` (the prior of the Granger
 #'   regression comparison; see [bayes_control()]); `NULL` = the control's.
 #' @param control a [bayes_control()] list with the priors, the Monte Carlo
 #'   and MCMC sizes and the decision rule of the Bayesian variants.
-#' @param method_args named list of the settings of the methods added in
-#'   version 0.0.2 (unknown names are an error):
-#'   * `"toda_yamamoto"` (Toda and Yamamoto, 1995): `d_max` (default 1), the
-#'     number of extra lags of the lag-augmented VAR (the maximal order of
-#'     integration of the series); the Wald (F) test concerns the first
-#'     `lag` lags of the cause, so integrated and cointegrated series need
-#'     no pre-testing;
-#'   * `"diks_panchenko"` (nonparametric test of Diks and Panchenko, 2006,
-#'     see [diks_panchenko()]): `eps` (bandwidth in standard deviations,
-#'     `NULL` = `min(1.5, C n^(-2/7))`), `C` (default 8), `filter` (`"none"`
-#'     or `"var"`: test the residuals of the VAR of the involved series, i.e.
-#'     the nonlinear part only); a numeric `lag` is the length of the pasts,
-#'     `"auto"` uses 1 (the setting of the theory) and scans 1-3 in
-#'     `$by_lag`;
-#'   * `"rf_granger"` (random-forest Granger-like test, see [rf_granger()]):
-#'     `num_trees`, `mtry`, `min_node_size` (forest), `folds` (rolling-origin
-#'     forecast blocks of the out-of-sample gain), `shadow` (shadow-feature
-#'     rule), `importance` (permutation importance); `n_perm` is the number
-#'     of circular-shift surrogates. Needs \pkg{ranger}.
+#' @param n_perm number of permutations / surrogates of the methods with a
+#'   resampling test (raised automatically when it is too small for the
+#'   multiplicity correction to reach significance).
+#' @param seed optional RNG seed (the caller's generator is left untouched).
 #' @param impute logical; interpolate missing values?
-#' @return An object of class [`causres`][causres-class].
+#' @param target optional name of one explained variable: the analysis is
+#'   organised around it (drivers, lags, importance, direct or mediated
+#'   links, explanatory graph); see [causal_drivers()].
+#' @param id,time panel data: the names of the unit and (optional) time
+#'   columns of the long data frame `x`; see [panel_causality()].
+#' @param panel a [panel_control()] list with the settings of the panel
+#'   tests.
+#' @param method_args named list of method-specific settings (see Method
+#'   settings).
+#' @param ... the settings of the 0.0.1 methods given directly (e.g.
+#'   `bins = 6`), as an alternative to `method_args`.
+#' @param m embedding dimension of the state-space methods, as in
+#'   `method_args` (an argument of its own only because the name would
+#'   otherwise be taken for an abbreviation of `method`).
+#' @return An object of class [`causres`][causres-class]; with `target` also
+#'   of class `causdrivers`, with `id` of class `causpanel`.
 #' @references
 #' Granger, C. W. J. (1969). Investigating causal relations by econometric models and cross-spectral methods. *Econometrica*, 37(3), 424-438. \doi{10.2307/1912791}
 #'
@@ -188,6 +201,11 @@
 #' Toda, H. Y. and Yamamoto, T. (1995). Statistical inference in vector autoregressions with possibly integrated processes. *Journal of Econometrics*, 66(1-2), 225-250. \doi{10.1016/0304-4076(94)01616-8}
 #'
 #' Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. *Journal of Economic Dynamics and Control*, 30(9-10), 1647-1669. \doi{10.1016/j.jedc.2005.08.008}
+#'
+#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. \doi{10.1111/twec.70148}
+#' @seealso [causal_methods()], [causal_drivers()], [panel_causality()],
+#'   [compare_methods()], [placebo_test()], [robustness()],
+#'   [predict.causres()]
 #' @export
 #' @examples
 #' # --- two series, Granger causality --------------------------------------
@@ -199,11 +217,9 @@
 #' r$pairs          # one row per directed test
 #' r$classes        # the verdict per pair: x_to_y / y_to_x / bidirectional / ...
 #'
-#' # --- all pairs of a data frame, decision by the Bayes factor ------------
-#' # (closed-form BIC Bayes factor; without `prior` the spike-and-slab
-#' # regression of bayes_granger() is sampled for every pair)
+#' # --- the three options: method, Bayesian variant, cores ---------------------
 #' d3 <- sim_var(400, n_series = 3, seed = 2)
-#' rcausality(d3, method = "bayes_granger", prior = "bic")$classes
+#' rcausality(d3, method = "granger", bayes = TRUE, prior = "bic")$classes
 #' \donttest{
 #' summary(r)
 #' plot(r, "all")                    # network, p-value matrix and lag scan
@@ -214,7 +230,8 @@
 #' # (a second or two each; `cores = 2` halves the time, see ?Rcausality-parallel)
 #' lg <- sim_logistic(200, "x_to_y", seed = 2)
 #' rcausality(lg, method = "cmi", max_lag = 2, n_perm = 50, seed = 1)$classes   # kNN conditional MI
-#' rcausality(lg, method = "te", n_perm = 100, seed = 1)$classes$relation  # binned transfer entropy
+#' rcausality(lg, method = "te", n_perm = 100, seed = 1, cores = 2)$classes$relation
+#' rcausality(lg, method = "te", method_args = list(bins = 6), n_perm = 100, seed = 1)$pairs
 #' rcausality(lg, method = "ccm", n_perm = 50, seed = 1)$classes$relation  # convergent cross mapping
 #' rcausality(sim_logistic_bdc(500, "x_to_y", seed = 1), method = "dc")$classes$relation
 #'
@@ -225,59 +242,79 @@
 #' # --- the Bayesian variant of a surrogate method ---------------------------
 #' rcausality(lg, method = "te", bayes = TRUE, n_perm = 100, seed = 1)$bayes
 #'
-#' # --- generalisations of the Granger test (version 0.0.2) ------------------
+#' # --- generalisations of the Granger test ----------------------------------
 #' rcausality(d, method = "toda_yamamoto", method_args = list(d_max = 1))$classes  # integrated series
 #' rcausality(lg, method = "diks_panchenko")$classes                             # nonlinear
+#' rcausality(d, lag = "first")$pairs[, c("cause", "effect", "lag", "p_value")]  # first order
 #' # short series: the hierarchical Minnesota prior (tightness integrated out)
 #' rcausality(sim_var(30, seed = 3), method = "bayes_granger", prior = "minnesota",
 #'            control = bayes_control(n_iter = 200), seed = 1)$pairs[, c("cause", "effect", "bf10")]
+#'
+#' # --- one explained variable: which series drive v2? -----------------------
+#' rcausality(d3, target = "v2")
+#'
+#' # --- panel data (long format): the same options ---------------------------
+#' pd <- sim_panel(n_units = 20, n_time = 25, seed = 1)
+#' rcausality(pd, id = "unit", time = "time", method = "granger", bayes = TRUE, prior = "bic")
 #' }
-rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "toda_yamamoto", "diks_panchenko", "rf_granger",
-                                  "cmi", "cmi_lag", "markov", "df", "dc", "ccdh", "dfe",
-                                  "te", "ccm", "pid", "hirata", "cd", "pcmci"),
-                       lag = "auto", max_lag = 8L,
-                       lag_criterion = c("BIC", "AIC", "HQ"),
-                       alpha = 0.05, bf_threshold = 3,
-                       adjust = "holm", conditional = FALSE,
-                       prior_prob = 0.5, impute = TRUE,
-                       directions = c("both", "forward"),
-                       k = NULL, k_perm = 5L, n_perm = 200L, history = "auto",
-                       seed = NULL, memory = "auto", iid_injection = c("allowed", "forbidden"),
-                       k_nn = NULL, n_bins = 2L, n_markov = 99L, cores = getOption("Rcausality.cores", 1L),
-                       max_constr = 4L, m = 3L, tau = 1L, k_range = seq(10L, 40L, by = 5L),
-                       prep = c("rank", "scale", "none"), prob_threshold = 0.5,
-                       K = 10L, n_surr = 50L, theta = NULL, model = NULL, bins = 4L,
-                       k_target = 2L, k_source = 2L, rate = 0.05,
-                       bayes = FALSE, prior = NULL, control = bayes_control(), method_args = list()) {
+rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = getOption("Rcausality.cores", 1L),
+                       lag = "auto", max_lag = 8L, lag_criterion = c("BIC", "AIC", "HQ"),
+                       conditional = FALSE, directions = c("both", "forward"),
+                       alpha = 0.05, adjust = "holm", bf_threshold = 3, prob_threshold = 0.5, prior_prob = 0.5,
+                       prior = NULL, control = bayes_control(), n_perm = 200L, seed = NULL, impute = TRUE,
+                       target = NULL, id = NULL, time = NULL, panel = panel_control(), method_args = list(), ..., m = NULL) {
   cl <- match.call()
-  method <- match.arg(method)
+  method <- match.arg(method, .method_names)
+  lag_criterion <- match.arg(lag_criterion); directions <- match.arg(directions)
+  lag_default <- missing(lag) || is.null(lag); if (is.null(lag)) lag <- "auto"
+  st <- .resolve_settings(method, method_args, c(list(...), if (!is.null(m)) list(m = m)))
+  A <- c(mget(setdiff(names(formals(rcausality)), c("x", "y", "method_args", "...", "m"))), st$tune,
+         list(method_args = st$own))
+  if (!is.null(target)) return(.drivers_run(x, y, A, cl, lag_default))
+  if (!is.null(id)) return(.panel_run(x, y, A, cl))
+  .rcausality_ts(x, y, A, cl)
+}
+
+# One time-series analysis from the complete argument list `A` (the formals of
+# rcausality() other than the data, the tuning settings and the method's own
+# settings).  Also the work horse of the panel and the target analyses.
+.rcausality_ts <- function(x, y, A, cl = NULL) {
+  method <- A$method; bayes <- isTRUE(A$bayes); control <- A$control
   if (!inherits(control, "bayes_control")) control <- do.call(bayes_control, as.list(control))
-  if (!is.null(prior)) control$prior <- match.arg(prior, c("bic", "g", "hyper_g", "spike_slab", "normal", "minnesota"))
+  if (!is.null(A[["prior"]])) control$prior <- match.arg(A[["prior"]], c("bic", "g", "hyper_g", "spike_slab", "normal", "minnesota"))
   prior <- control$prior
   if (method == "bayes_granger") bayes <- TRUE
   sampler <- bayes && method %in% c("granger", "bayes_granger") && prior %in% c("spike_slab", "normal", "minnesota")
   if (bayes && method == "granger" && !sampler) method <- "bayes_granger"
   if (sampler) method <- "granger"                      # the F-test run supplies the lags; the sampler adds the evidence
-  old_rng <- .rng_setup(seed); on.exit(.rng_restore(old_rng), add = TRUE)   # the seed also covers the Bayesian stage
-  r <- .rcausality_run(x = x, y = y, method = method, lag = lag, max_lag = max_lag, lag_criterion = lag_criterion,
-                       alpha = alpha, bf_threshold = bf_threshold, adjust = adjust, conditional = conditional,
-                       prior_prob = prior_prob, impute = impute, directions = directions, k = k, k_perm = k_perm,
-                       n_perm = n_perm, history = history, seed = seed, memory = memory, iid_injection = iid_injection,
-                       k_nn = k_nn, n_bins = n_bins, n_markov = n_markov, cores = cores, max_constr = max_constr,
-                       m = m, tau = tau, k_range = k_range, prep = prep, prob_threshold = prob_threshold, K = K,
-                       n_surr = n_surr, theta = theta, model = model, bins = bins, k_target = k_target,
-                       k_source = k_source, rate = rate, prior = if (prior %in% c("bic", "g", "hyper_g")) prior else "bic",
-                       method_args = method_args, cl = cl)
+  old_rng <- .rng_setup(A$seed); on.exit(.rng_restore(old_rng), add = TRUE)   # the seed also covers the Bayesian stage
+  run_args <- A[intersect(names(A), names(formals(.rcausality_run)))]
+  run_args$method <- method; run_args$prior <- if (prior %in% c("bic", "g", "hyper_g")) prior else "bic"
+  # (the call object must not travel through do.call(), which would evaluate it)
+  r <- do.call(function(...) .rcausality_run(x = x, y = y, cl = cl, ...), run_args)
   r <- .restrict_to_grid(r)
-  if (sampler) r <- .bayes_granger_pairs(r, control, prior_prob, bf_threshold, prob_threshold, conditional, cores, lag = lag)
-  else if (bayes && method != "bayes_granger") r <- .bayes_postprocess(r, control, prior_prob, bf_threshold, prob_threshold)
+  if (sampler) r <- .bayes_granger_pairs(r, control, A$prior_prob, A$bf_threshold, A$prob_threshold, A$conditional, A$cores,
+                                         lag = A$lag)
+  else if (bayes && method != "bayes_granger") r <- .bayes_postprocess(r, control, A$prior_prob, A$bf_threshold, A$prob_threshold)
   r$settings$bayes <- bayes
   if (bayes) { r$settings$prior <- prior; r$settings$bayes_control <- control; r$settings$decision <- control$decision }
-  # the full argument list, so that the analysis can be repeated on a subset
-  # (predict.causres(refit = TRUE), benchmark_methods())
-  r$args <- mget(setdiff(names(formals(rcausality)), c("x", "y")))
-  r$args$method <- if (sampler) "granger" else method; r$args$prior <- prior; r$args$bayes <- bayes; r$args$control <- control
+  # the full argument list, so that the analysis can be repeated on other data
+  # (predict(refit = TRUE), placebo_test(), robustness(), benchmark_methods())
+  A$method <- if (sampler) "granger" else method; A[["prior"]] <- prior; A$bayes <- bayes; A$control <- control
+  r$args <- .flat_args(A)
   r
+}
+
+# the stored argument list in the form accepted by rcausality(): the method's
+# own settings and the tuning settings that differ from their defaults are
+# folded into `method_args`
+.flat_args <- function(A) {
+  tn <- names(.tuning_defaults)
+  ch <- tn[!vapply(tn, function(nm) identical(A[[nm]], .tuning_defaults[[nm]]), TRUE)]
+  rel <- intersect(ch, .method_info(A$method)$tuning)
+  out <- A[setdiff(names(A), c(tn, "method_args"))]
+  out$method_args <- c(A$method_args, A[rel])
+  c(out, A[setdiff(ch, rel)])                           # settings foreign to the method travel through `...`
 }
 
 .rcausality_run <- function(x, y = NULL, method, lag, max_lag, lag_criterion, alpha, bf_threshold, adjust,
@@ -292,7 +329,11 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "toda
   .check_number(n_perm, "n_perm", lower = 1, integer = TRUE)
   .check_number(prior_prob, "prior_prob", lower = 0, upper = 1, strict = TRUE)
   .check_number(bf_threshold, "bf_threshold", lower = 0, strict = TRUE)
-  if (!identical(lag, "auto")) .check_number(lag, "lag", lower = 0, integer = TRUE)
+  first_lag <- identical(lag, "first")
+  if (!identical(lag, "auto") && !first_lag) {
+    if (is.character(lag)) stop("`lag` must be an integer, \"auto\" or \"first\".", call. = FALSE)
+    .check_number(lag, "lag", lower = 0, integer = TRUE)
+  }
   if (!identical(history, "auto")) .check_number(history, "history", lower = 1, integer = TRUE)
   if (!adjust %in% c(stats::p.adjust.methods)) stop("`adjust` must be one of ", paste(stats::p.adjust.methods, collapse = ", "), ".", call. = FALSE)
   iid_injection <- match.arg(iid_injection, c("allowed", "forbidden"))
@@ -341,7 +382,7 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "toda
       n_perm <- need
     }
   }
-  fixed_lag <- if (identical(lag, "auto")) NULL else as.integer(lag)
+  fixed_lag <- if (identical(lag, "auto") || first_lag) NULL else as.integer(lag)
   cand_lags <- if (is.null(fixed_lag)) seq_len(max(1L, as.integer(max_lag))) else fixed_lag
   # conditioning history of the effect: the VAR order of the pair when "auto"
   hist_vec <- if (identical(history, "auto")) {
@@ -357,7 +398,8 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "toda
     if (!.method_info(method)$conditional && conditional)
       stop(sprintf("method = \"%s\" supports pairwise analysis only.", method), call. = FALSE)
     pair_fun <- switch(method,
-      toda_yamamoto = .ty_pair_fun(fixed_lag, max_lag, lag_criterion, d_max = as.integer(ma$d_max), prior = prior),
+      toda_yamamoto = .ty_pair_fun(fixed_lag, max_lag, lag_criterion, d_max = as.integer(ma$d_max), prior = prior,
+                                   first = first_lag, alpha = alpha),
       diks_panchenko = .dp_pair_fun(fixed_lag, max_lag, lag_criterion, eps = ma$eps, C = ma$C,
                                     filter = match.arg(ma$filter, c("none", "var"))),
       rf_granger = .rf_pair_fun(fixed_lag, max_lag, lag_criterion, n_perm = n_perm, settings = ma))
@@ -472,16 +514,21 @@ rcausality <- function(x, y = NULL, method = c("granger", "bayes_granger", "toda
                   null = list(statistic = g$statistic, null = g$null, alternative = "greater")))
     }
     inv <- all[, c(ef, cs, ctrl_names), drop = FALSE]
-    p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
-    p <- max(1L, min(p, floor((nrow(all) - 2) / (2 + 2 * ncol(inv)))))
+    cap <- .cap_lag(nrow(all), ncol(inv))
     ctrl <- if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL
-    g <- .granger_pair(all[[ef]], all[[cs]], ctrl, p, prior = prior)
-    # F statistic over all candidate lags (cheap) for the lag plot
-    lags <- seq_len(max(1L, min(as.integer(max_lag), floor((nrow(all) - 2) / (2 + 2 * ncol(inv))))))
-    bl <- do.call(rbind, lapply(lags, function(l) {
-      gl <- .granger_pair(all[[ef]], all[[cs]], ctrl, l)
-      data.frame(cause = cs, effect = ef, lag = l, statistic = gl$statistic, p = gl$p_value)
-    }))
+    # the test at every candidate order (cheap): the lag plot and the "first" rule
+    lags <- seq_len(max(1L, min(as.integer(max_lag), cap)))
+    scan <- lapply(lags, function(l) .granger_pair(all[[ef]], all[[cs]], ctrl, l, prior = prior))
+    bl <- data.frame(cause = cs, effect = ef, lag = lags, statistic = vapply(scan, `[[`, 0, "statistic"),
+                     p = vapply(scan, `[[`, 0, "p_value"), stringsAsFactors = FALSE)
+    if (first_lag) {
+      fs <- .first_lag(lags, bl$p, vapply(scan, `[[`, 0, "bf10"), alpha, bf_threshold, by_bf = method == "bayes_granger")
+      p <- fs$lag; g <- scan[[match(p, lags)]]; g$p_value <- fs$p_value; g$bf10 <- fs$bf10
+    } else {
+      p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
+      p <- max(1L, min(p, cap))
+      g <- if (p %in% lags) scan[[match(p, lags)]] else .granger_pair(all[[ef]], all[[cs]], ctrl, p, prior = prior)
+    }
     list(row = data.frame(cause = cs, effect = ef, lag = p,
                           statistic = g$statistic, df1 = g$df1, df2 = g$df2,
                           p_value = g$p_value, bf10 = g$bf10,

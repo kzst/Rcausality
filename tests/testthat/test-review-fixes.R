@@ -181,7 +181,7 @@ test_that("ccm uses the largest library for rho_max and plots work for posterior
 test_that("explicit theta / k are not overridden", {
   d <- sim_logistic_bdc(500, "x_to_y", seed = 1)
   r <- rcausality(d, method = "hirata", theta = 0.45, n_perm = 20, seed = 1)
-  expect_equal(r$args$theta, 0.45)
+  expect_equal(r$args$method_args$theta, 0.45)
   r2 <- rcausality(d, method = "hirata", n_perm = 20, seed = 1)
-  expect_null(r2$args$theta)
+  expect_null(r2$args$method_args$theta)
 })

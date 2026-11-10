@@ -2,211 +2,97 @@
 % Please edit documentation in R/rcausality.R
 \name{rcausality}
 \alias{rcausality}
-\title{Detect causal relations between time series}
+\title{Detect causal relations between time series or in panel data}
 \usage{
 rcausality(
   x,
   y = NULL,
-  method = c("granger", "bayes_granger", "toda_yamamoto", "diks_panchenko", "rf_granger",
-    "cmi", "cmi_lag", "markov", "df", "dc", "ccdh", "dfe", "te", "ccm", "pid", "hirata",
-    "cd", "pcmci"),
+  method = "granger",
+  bayes = FALSE,
+  cores = getOption("Rcausality.cores", 1L),
   lag = "auto",
   max_lag = 8L,
   lag_criterion = c("BIC", "AIC", "HQ"),
-  alpha = 0.05,
-  bf_threshold = 3,
-  adjust = "holm",
   conditional = FALSE,
-  prior_prob = 0.5,
-  impute = TRUE,
   directions = c("both", "forward"),
-  k = NULL,
-  k_perm = 5L,
-  n_perm = 200L,
-  history = "auto",
-  seed = NULL,
-  memory = "auto",
-  iid_injection = c("allowed", "forbidden"),
-  k_nn = NULL,
-  n_bins = 2L,
-  n_markov = 99L,
-  cores = getOption("Rcausality.cores", 1L),
-  max_constr = 4L,
-  m = 3L,
-  tau = 1L,
-  k_range = seq(10L, 40L, by = 5L),
-  prep = c("rank", "scale", "none"),
+  alpha = 0.05,
+  adjust = "holm",
+  bf_threshold = 3,
   prob_threshold = 0.5,
-  K = 10L,
-  n_surr = 50L,
-  theta = NULL,
-  model = NULL,
-  bins = 4L,
-  k_target = 2L,
-  k_source = 2L,
-  rate = 0.05,
-  bayes = FALSE,
+  prior_prob = 0.5,
   prior = NULL,
   control = bayes_control(),
-  method_args = list()
+  n_perm = 200L,
+  seed = NULL,
+  impute = TRUE,
+  target = NULL,
+  id = NULL,
+  time = NULL,
+  panel = panel_control(),
+  method_args = list(),
+  ...,
+  m = NULL
 )
 }
 \arguments{
-\item{x}{numeric vector, matrix or data frame (the putative causes).}
+\item{x}{numeric vector, matrix or data frame (the putative causes); for
+panel data a data frame in long format (see \code{id}).}
 
 \item{y}{optional numeric vector, matrix or data frame (the putative
 effects). If \code{NULL} and \code{x} has several columns, all ordered pairs of the
 columns of \code{x} are tested.}
 
-\item{method}{\code{"granger"} (F-test, default), \code{"bayes_granger"} (the
-Bayesian Granger regression, i.e. \code{bayes = TRUE}: decision by the Bayes
-factor of the spike-and-slab regression by default, or by the
-closed-form BIC / g / hyper-g factor with \code{prior = "bic"}, \code{"g"},
-\code{"hyper_g"}; p-value \emph{and} Bayes factor are both reported) or \code{"cmi"}
-(model-free: kNN conditional mutual information
-\verb{I(x[t-lag]; y[t] | history of y, controls)} with a local-permutation
-p-value; detects non-linear dependence) or \code{"cmi_lag"} (the
-lag-shifted CMI scheme of Zlatniczki et al. (2021): like \code{"cmi"} but
-also conditioning on the cause's own past, plus a contemporaneous
-test \verb{I(x[t]; y[t] | pasts)} whose significance, without lagged links,
-indicates a \emph{common driver}; \code{common_cause} class available), or
-\code{"toda_yamamoto"} (lag-augmented Granger test for integrated series),
-\code{"diks_panchenko"} (nonparametric, nonlinear Granger test) or
-\code{"rf_granger"} (random-forest Granger-like test); see \code{method_args}.
-The other methods are described below.}
+\item{method}{the causality method (see Methods and \code{\link[=causal_methods]{causal_methods()}}).}
 
-\item{lag}{integer lag order or \code{"auto"} (selected by \code{lag_criterion} on
-the VAR of the involved series).}
+\item{bayes}{logical; the Bayesian variant of the method (see Bayesian
+variants).}
 
-\item{max_lag}{largest lag order considered when \code{lag = "auto"}.}
+\item{cores}{number of CPU cores (\code{1} = serial, an integer, \code{"auto"} = all
+physical cores but one, or a cluster from \code{parallel::makeCluster()});
+default \code{getOption("Rcausality.cores", 1L)}. The work (pairs, panel
+units, permutations, surrogates, chains) is distributed over the cores;
+every unit of work has its own random stream, so the results are
+\emph{identical} for any number of cores given the \code{seed} (see
+\link{Rcausality-parallel}).}
+
+\item{lag}{integer lag order, \code{"auto"} (selected by \code{lag_criterion} on
+the VAR of the involved series; the lag with the largest statistic for
+the methods that scan the lags) or \code{"first"} (Granger family: the
+smallest order at which the test is significant at level
+\verb{alpha / (number of orders)}, i.e. the delay after which the cause first
+helps; the reported p-value is the Bonferroni-corrected minimum over the
+orders \verb{1..max_lag}; for Bayes-factor decisions the first order with
+\code{bf10 > bf_threshold}, and the reported Bayes factor is that of "a link
+at one of the orders", the average over the orders). In panels \code{"auto"}
+chooses the order of every link by the BIC of its pooled regression.
+\code{NULL} is \code{"auto"}, except in the time-series analysis of a \code{target}
+with a method of the Granger family, where it is \code{"first"}.}
+
+\item{max_lag}{largest lag order considered when \code{lag} is not a number.}
 
 \item{lag_criterion}{\code{"BIC"}, \code{"AIC"} or \code{"HQ"}.}
 
-\item{alpha}{significance level (applied to adjusted p-values).}
-
-\item{bf_threshold}{Bayes factor above which a link is declared
-(used for \code{method = "bayes_granger"}).}
-
-\item{adjust}{multiple-testing correction passed to
-\code{\link[stats:p.adjust]{stats::p.adjust()}} (default \code{"holm"}; \code{"none"} disables it).}
-
 \item{conditional}{logical; if \code{TRUE} every test conditions on all other
-series in the data (full conditional / multivariate Granger), otherwise
-tests are pairwise.}
-
-\item{prior_prob}{prior probability of a causal link (for the posterior).}
-
-\item{impute}{logical; interpolate missing values?}
+series in the data (full conditional / multivariate analysis, for the
+methods that support it), otherwise tests are pairwise.}
 
 \item{directions}{for two series / two blocks: \code{"both"} (default) tests
 x -> y and y -> x; \code{"forward"} only the causes-in-\code{x}, effects-in-\code{y}
 direction. Ignored when \code{y} is \code{NULL} (all ordered pairs are tested).}
 
-\item{k, k_perm, n_perm, history, seed}{settings of \code{method = "cmi"}: number
-of neighbours of the estimator (\code{NULL} = 5; 10 for \code{method = "df"}),
-size of the local-permutation neighbourhood, number of permutations,
-order of the conditioning history of the effect series (\code{"auto"} =
-the VAR order of the pair selected by \code{lag_criterion}, at most 5; too
-short a history lets the cause's lags stand in for the effect's own
-deeper past and produces spurious reverse links), and RNG seed. With
-\code{lag = "auto"} every lag \verb{1..max_lag} is tested at once: the reported
-lag is the one with the largest statistic and the p-value is that of
-the maximal statistic against the maximum of the permuted statistics
-over the lags (the same max-statistic test is used by \code{"te"}, \code{"pid"}
-and \code{"df"}). Series are standardised before the neighbour searches.}
+\item{alpha}{significance level (applied to adjusted p-values).}
 
-\item{memory, iid_injection, k_nn, n_bins, n_markov}{settings of
-\code{method = "markov"} (Markov-chain approach of Stippinger et al., 2023):
-memory (embedding dimension; \code{"auto"} from the PACF), whether i.i.d.
-injection of one series into the other is \code{"allowed"} (default, Occam's
-razor) or \code{"forbidden"} in the decision table, local-neighbourhood size,
-number of bins of the local contingency tables and number of local
-permutations of the Markov tests. Pairwise only (\code{conditional} is not
-supported). Lags are fixed to 1 in this version.}
+\item{adjust}{multiple-testing correction passed to
+\code{\link[stats:p.adjust]{stats::p.adjust()}} (default \code{"holm"}; \code{"none"} disables it).}
 
-\item{cores}{number of CPU cores (\code{1} = serial, an integer, \code{"auto"} = all
-physical cores but one, or a cluster from \code{parallel::makeCluster()});
-default \code{getOption("Rcausality.cores", 1L)}. Pairs are distributed over
-the cores when there are at least as many pairs as cores, otherwise the
-permutations / surrogates / chains of each test are. Every unit of work
-has its own random stream, so the results are \emph{identical} for any number
-of cores given the \code{seed} (see \link{Rcausality-parallel}).}
+\item{bf_threshold}{Bayes factor above which a link is declared in the
+Bayesian variants.}
 
-\item{max_constr}{\code{method = "df"} (degrees-of-freedom / conditional-variance
-method of Telcs, Kurbucz and Jakovac, 2025): largest number of past lags
-constrained when estimating the orders of x, y and of the joint process;
-\code{k} is the neighbourhood size of the adaptive windows (default 10 for
-this method), \code{history} the number of own-past lags conditioned on
-in the directed tests, \code{n_perm}/\code{k_perm} the local-permutation settings.
-The orders (\verb{$df}) give the Table-2 reading of the paper (including the
-common-driver case), which decides a pair whenever it is determinate;
-pairs the table leaves undetermined are decided by the directed
-variance-reduction tests (\verb{$pairs}), which are always reported.}
+\item{prob_threshold}{posterior probability above which a link is
+declared by the methods that decide by posterior probabilities (\code{"dc"},
+\code{"dfe"}, and the Bayesian variants with \code{control$decision = "posterior"}).}
 
-\item{m, tau, k_range, prep, prob_threshold}{settings of \code{method = "dc"}
-(Bayesian dimensional causality of Benko et al., 2024, see
-\code{\link[=dimensional_causality]{dimensional_causality()}}): embedding dimension and delay,
-neighbourhood sizes averaged over, preprocessing, and the posterior
-probability above which a directed link (direct + bidirectional) is
-reported as significant. Pairwise only; the method assumes
-deterministic dynamics (no p-values, decisions by posterior
-probabilities; \code{bf10} is the posterior odds against the uniform prior).}
-
-\item{K, n_surr, theta}{settings of \code{method = "ccdh"} (complexity-based
-causal discovery of Stippinger et al., see \code{\link[=ccdh]{ccdh()}}): number of NSRPS
-steps, number of circular-shift surrogates and the reconstruction-index
-threshold; \code{m} and \code{tau} give the embedding, a numeric \code{lag} the
-alignment of the pair (\code{"auto"} = 0 for this method). Pairwise only.}
-
-\item{model}{\code{method = "dfe"} (df-entropy method with random-forest
-classification, Jakovac et al.; see \code{\link[=dfe_classify]{dfe_classify()}}): a trained
-\code{dfe_model} from \code{\link[=dfe_train]{dfe_train()}}; \code{NULL} trains and caches a default one.
-Decisions by class scores as for \code{"dc"} (\code{prob_threshold}); a numeric
-\code{lag} shifts the pairs. Pairwise only.}
-
-\item{bins}{\code{method = "te"} (binned transfer entropy, see
-\code{\link[=transfer_entropy]{transfer_entropy()}}): number of quantile bins; \code{history} is the effect's
-own history, the cause's history is scanned over the candidate lags,
-\code{n_perm} circular-shift surrogates give the p-values. \code{method = "ccm"}
-(convergent cross mapping, see \code{\link[=ccm]{ccm()}}) uses \code{m}/\code{tau} as embedding and
-\code{n_perm} surrogates; a link needs a significant and converging cross-map
-skill. Both are pairwise.}
-
-\item{k_target, k_source}{\code{method = "pcmci"} (PCMCI of Runge et al., 2019,
-via the Python package tigramite, see \code{\link[=pcmci]{pcmci()}}; needs reticulate +
-tigramite): linear partial-correlation MCI tests over lags 1..\code{max_lag}
-(or the fixed \code{lag}), Benjamini-Hochberg adjusted unless
-\code{adjust = "none"}; always multivariate (conditional on the other
-series). \code{method = "pid"} (finite-resolution MAR-PID,
-see \code{\link[=marpid]{marpid()}}): binarisation depths of the effect's future (target)
-and of the two sources (the cause's past at the candidate lag and the
-effect's own past); the directed statistic is the unique + synergistic
-("novel") information of the cause's past, tested with \code{n_perm}
-surrogates. Pairwise only.}
-
-\item{rate}{\code{method = "hirata"} (recurrence-plot criteria of Hirata and
-Aihara, 2010, see \code{\link[=hirata_rp]{hirata_rp()}}): recurrence rate; \code{m}/\code{tau} give the
-embedding, \code{n_perm} the surrogates, \code{theta} the coverage-index
-threshold. \code{method = "cd"} (correlation-dimension relations of
-Krakovska, 2019, see \code{\link[=krakovska_cd]{krakovska_cd()}}) uses \code{m}/\code{tau} and bootstrap
-z-tests at level \code{alpha}. Both pairwise; verdicts are per pair.}
-
-\item{bayes}{logical; the Bayesian variant of the method (settings in
-\code{control}, see \code{\link[=bayes_control]{bayes_control()}}). \code{"granger"} becomes a Bayesian
-regression: closed-form Bayes factors (\code{prior = "bic"}, \code{"g"},
-\code{"hyper_g"}) or the spike-and-slab / normal-slab sampler of
-\code{\link[=bayes_granger]{bayes_granger()}} with posterior inclusion probabilities and credible
-intervals of Geweke's measure. The surrogate / permutation methods
-(\code{cmi}, \code{cmi_lag}, \code{df}, \code{te}, \code{ccm}, \code{pid}, \code{ccdh}, \code{hirata}, \code{cd})
-compare the observed statistic with the surrogate sample through
-\code{\link[=surrogate_bf]{surrogate_bf()}} (an explicit effect-size prior); \code{markov} combines the
-surrogate Bayes factors of its six tests in a Bayesian version of the
-decision table; \code{dc} and \code{dfe} apply the prior over the causal cases;
-\code{pcmci} uses a Savage-Dickey Bayes factor of the Fisher-transformed
-partial correlation. \code{bf10}, \code{post_prob} and \code{evidence} are filled for
-every directed test, the per-pair details are in \verb{$bayes}, and a link
-is declared when \code{bf10 > bf_threshold} (or, with
-\code{control$decision = "posterior"}, when \code{post_prob > prob_threshold}).}
+\item{prior_prob}{prior probability of a causal link (for the posterior).}
 
 \item{prior}{shortcut for \code{control$prior} (the prior of the Granger
 regression comparison; see \code{\link[=bayes_control]{bayes_control()}}); \code{NULL} = the control's.}
@@ -214,40 +100,158 @@ regression comparison; see \code{\link[=bayes_control]{bayes_control()}}); \code
 \item{control}{a \code{\link[=bayes_control]{bayes_control()}} list with the priors, the Monte Carlo
 and MCMC sizes and the decision rule of the Bayesian variants.}
 
-\item{method_args}{named list of the settings of the methods added in
-version 0.0.2 (unknown names are an error):
-\itemize{
-\item \code{"toda_yamamoto"} (Toda and Yamamoto, 1995): \code{d_max} (default 1), the
-number of extra lags of the lag-augmented VAR (the maximal order of
-integration of the series); the Wald (F) test concerns the first
-\code{lag} lags of the cause, so integrated and cointegrated series need
-no pre-testing;
-\item \code{"diks_panchenko"} (nonparametric test of Diks and Panchenko, 2006,
-see \code{\link[=diks_panchenko]{diks_panchenko()}}): \code{eps} (bandwidth in standard deviations,
-\code{NULL} = \verb{min(1.5, C n^(-2/7))}), \code{C} (default 8), \code{filter} (\code{"none"}
-or \code{"var"}: test the residuals of the VAR of the involved series, i.e.
-the nonlinear part only); a numeric \code{lag} is the length of the pasts,
-\code{"auto"} uses 1 (the setting of the theory) and scans 1-3 in
-\verb{$by_lag};
-\item \code{"rf_granger"} (random-forest Granger-like test, see \code{\link[=rf_granger]{rf_granger()}}):
-\code{num_trees}, \code{mtry}, \code{min_node_size} (forest), \code{folds} (rolling-origin
-forecast blocks of the out-of-sample gain), \code{shadow} (shadow-feature
-rule), \code{importance} (permutation importance); \code{n_perm} is the number
-of circular-shift surrogates. Needs \pkg{ranger}.
-}}
+\item{n_perm}{number of permutations / surrogates of the methods with a
+resampling test (raised automatically when it is too small for the
+multiplicity correction to reach significance).}
+
+\item{seed}{optional RNG seed (the caller's generator is left untouched).}
+
+\item{impute}{logical; interpolate missing values?}
+
+\item{target}{optional name of one explained variable: the analysis is
+organised around it (drivers, lags, importance, direct or mediated
+links, explanatory graph); see \code{\link[=causal_drivers]{causal_drivers()}}.}
+
+\item{id, time}{panel data: the names of the unit and (optional) time
+columns of the long data frame \code{x}; see \code{\link[=panel_causality]{panel_causality()}}.}
+
+\item{panel}{a \code{\link[=panel_control]{panel_control()}} list with the settings of the panel
+tests.}
+
+\item{method_args}{named list of method-specific settings (see Method
+settings).}
+
+\item{...}{the settings of the 0.0.1 methods given directly (e.g.
+\code{bins = 6}), as an alternative to \code{method_args}.}
+
+\item{m}{embedding dimension of the state-space methods, as in
+\code{method_args} (an argument of its own only because the name would
+otherwise be taken for an abbreviation of \code{method}).}
 }
 \value{
-An object of class \code{\link[=causres-class]{causres}}.
+An object of class \code{\link[=causres-class]{causres}}; with \code{target} also
+of class \code{causdrivers}, with \code{id} of class \code{causpanel}.
 }
 \description{
-Single entry point of the package. Works with
+Single entry point of the package. The causality method, its Bayesian
+variant and parallel execution are options of the same call,
+\code{rcausality(x, method = , bayes = , cores = )}, for every kind of input:
 \itemize{
 \item two series: \code{rcausality(x, y)};
 \item one data frame / matrix: \code{rcausality(df)} -- all ordered pairs;
 \item two blocks (MIMO): \code{rcausality(X, Y)} with several columns each --
-every column of \code{X} is tested as a cause of every column of \code{Y}.
+every column of \code{X} is tested as a cause of every column of \code{Y};
+\item one explained variable: \code{rcausality(df, target = "y")} -- which series
+drive \code{y}, at which lag, directly or through another series, and how the
+explanatory series drive each other (see \code{\link[=causal_drivers]{causal_drivers()}});
+\item panel data in long format: \code{rcausality(df, id = "unit", time = "year")}
+-- the same analysis in every unit, at the group level and, where the
+method allows, pooled over the units (see \code{\link[=panel_causality]{panel_causality()}}).
 }
 }
+\section{Methods}{
+
+\code{\link[=causal_methods]{causal_methods()}} lists the methods; \code{causal_methods("<name>")} shows the
+settings of one of them.
+\itemize{
+\item Granger family: \code{"granger"} (F-test, default), \code{"bayes_granger"} (the
+Bayesian Granger regression, i.e. \verb{method = "granger", bayes = TRUE}),
+\code{"toda_yamamoto"} (lag-augmented test for integrated series; setting
+\code{d_max}), \code{"diks_panchenko"} (nonparametric, nonlinear; settings \code{eps},
+\code{C}, \code{filter}), \code{"rf_granger"} (random-forest Granger-like test;
+settings \code{num_trees}, \code{mtry}, \code{min_node_size}, \code{folds}, \code{shadow},
+\code{importance}; needs \pkg{ranger}).
+\item Information-theoretic: \code{"cmi"} (kNN conditional mutual information
+\verb{I(x[t-lag]; y[t] | history of y, controls)} with a local-permutation
+test), \code{"cmi_lag"} (Zlatniczki et al. 2021: also conditions on the
+cause's own past and adds a contemporaneous test whose significance,
+without lagged links, indicates a \emph{common driver}), \code{"te"} (binned
+transfer entropy, circular-shift surrogates), \code{"pid"} (MAR-PID: unique
+\itemize{
+\item synergistic information of the cause's past).
+}
+\item State-space and dynamical-systems methods: \code{"ccm"} (convergent cross
+mapping), \code{"dc"} (Bayesian dimensional causality), \code{"ccdh"}
+(complexity-based causal discovery), \code{"hirata"} (recurrence plots),
+\code{"cd"} (correlation dimensions).
+\item Markov-chain and order-based methods: \code{"markov"} (Stippinger et al.
+2023), \code{"df"} (degrees of freedom, Telcs et al. 2025), \code{"dfe"}
+(df-entropy with a trained random forest).
+\item \code{"pcmci"} (PCMCI of Runge et al. 2019 through the Python package
+tigramite; always multivariate).
+}
+}
+
+\section{Method settings}{
+
+Method-specific settings go in \code{method_args} (a named list; unknown names
+are an error). The settings of the methods of version 0.0.1 may also be
+given directly in \code{...}, as before.
+\itemize{
+\item \code{"cmi"}, \code{"cmi_lag"}: \code{k} (neighbours of the estimator, default 5),
+\code{k_perm} (size of the local-permutation neighbourhood), \code{history}
+(order of the conditioning history of the effect; \code{"auto"} = the VAR
+order of the pair, at most 5; too short a history lets the cause's lags
+stand in for the effect's own deeper past and produces spurious reverse
+links). With \code{lag = "auto"} every lag \verb{1..max_lag} is tested at once:
+the reported lag is the one with the largest statistic and the p-value
+is that of the maximal statistic against the maximum of the permuted
+statistics over the lags (the same max-statistic test is used by
+\code{"te"}, \code{"pid"} and \code{"df"}). Series are standardised.
+\item \code{"te"} (see \code{\link[=transfer_entropy]{transfer_entropy()}}): \code{bins} (quantile bins), \code{history}
+(the effect's own history); the cause's lag is scanned.
+\item \code{"ccm"} (see \code{\link[=ccm]{ccm()}}): \code{m}, \code{tau} (embedding); a link needs a
+significant and converging cross-map skill.
+\item \code{"pid"} (see \code{\link[=marpid]{marpid()}}): \code{k_target}, \code{k_source} (binarisation depths),
+\code{history}.
+\item \code{"dc"} (see \code{\link[=dimensional_causality]{dimensional_causality()}}): \code{m}, \code{tau}, \code{k_range}, \code{prep};
+decisions by posterior probabilities (\code{prob_threshold}).
+\item \code{"hirata"} (see \code{\link[=hirata_rp]{hirata_rp()}}): \code{m}, \code{tau}, \code{rate} (recurrence rate),
+\code{theta} (coverage-index threshold). \code{"cd"} (see \code{\link[=krakovska_cd]{krakovska_cd()}}): \code{m},
+\code{tau}; bootstrap z-tests at level \code{alpha}. Both give verdicts per pair.
+\item \code{"ccdh"} (see \code{\link[=ccdh]{ccdh()}}): \code{m}, \code{tau}, \code{K} (NSRPS steps), \code{n_surr}
+(circular-shift surrogates), \code{theta} (reconstruction-index threshold);
+a numeric \code{lag} aligns the pair.
+\item \code{"dfe"} (see \code{\link[=dfe_classify]{dfe_classify()}}): \code{model}, a trained \code{dfe_model} from
+\code{\link[=dfe_train]{dfe_train()}} (\code{NULL} trains and caches a default one).
+\item \code{"df"}: \code{k} (default 10), \code{k_perm}, \code{history}, \code{max_constr} (largest
+number of constrained past lags). The orders (\verb{$df}) give the Table-2
+reading of the paper (including the common-driver case), which decides
+a pair whenever it is determinate; the other pairs are decided by the
+directed variance-reduction tests (\verb{$pairs}).
+\item \code{"markov"}: \code{memory} (\code{"auto"} from the PACF), \code{iid_injection}
+(\code{"allowed"} or \code{"forbidden"} in the decision table), \code{k_nn}, \code{n_bins},
+\code{n_markov}, \code{k}, \code{k_perm}. Lags are fixed to 1.
+\item \code{"toda_yamamoto"}: \code{d_max} (default 1), the number of extra lags of the
+lag-augmented VAR (the maximal order of integration); the Wald (F) test
+concerns the first \code{lag} lags of the cause, so no unit-root pre-test is
+needed.
+\item \code{"diks_panchenko"} (see \code{\link[=diks_panchenko]{diks_panchenko()}}): \code{eps} (bandwidth in
+standard deviations, \code{NULL} = \verb{min(1.5, C n^(-2/7))}), \code{C} (default 8),
+\code{filter} (\code{"none"} or \code{"var"}: only the nonlinear part is tested); a
+numeric \code{lag} is the length of the pasts, \code{"auto"} uses 1.
+\item \code{"rf_granger"} (see \code{\link[=rf_granger]{rf_granger()}}): \code{num_trees}, \code{mtry},
+\code{min_node_size}, \code{folds}, \code{shadow}, \code{importance}; \code{n_perm} is the number
+of circular-shift surrogates.
+}
+}
+
+\section{Bayesian variants}{
+
+With \code{bayes = TRUE} (settings in \code{control}, see \code{\link[=bayes_control]{bayes_control()}})
+\code{"granger"} becomes a Bayesian regression: closed-form Bayes factors
+(\code{prior = "bic"}, \code{"g"}, \code{"hyper_g"}), the hierarchical Minnesota prior
+for short series (\code{"minnesota"}) or the spike-and-slab / normal-slab
+sampler of \code{\link[=bayes_granger]{bayes_granger()}}. The surrogate / permutation methods compare
+the observed statistic with the surrogate sample through \code{\link[=surrogate_bf]{surrogate_bf()}};
+\code{"markov"} combines the surrogate Bayes factors of its tests in a Bayesian
+decision table; \code{"dc"} and \code{"dfe"} apply the prior over the causal cases;
+\code{"pcmci"} uses a Savage-Dickey Bayes factor. \code{bf10}, \code{post_prob} and
+\code{evidence} are filled for every directed test, the details are in
+\verb{$bayes}, and a link is declared when \code{bf10 > bf_threshold} (or, with
+\code{control$decision = "posterior"}, when \code{post_prob > prob_threshold}).
+}
+
 \examples{
 # --- two series, Granger causality --------------------------------------
 # A VAR where x drives y.  The print shows both directed tests (lag chosen
@@ -258,11 +262,9 @@ r
 r$pairs          # one row per directed test
 r$classes        # the verdict per pair: x_to_y / y_to_x / bidirectional / ...
 
-# --- all pairs of a data frame, decision by the Bayes factor ------------
-# (closed-form BIC Bayes factor; without `prior` the spike-and-slab
-# regression of bayes_granger() is sampled for every pair)
+# --- the three options: method, Bayesian variant, cores ---------------------
 d3 <- sim_var(400, n_series = 3, seed = 2)
-rcausality(d3, method = "bayes_granger", prior = "bic")$classes
+rcausality(d3, method = "granger", bayes = TRUE, prior = "bic")$classes
 \donttest{
 summary(r)
 plot(r, "all")                    # network, p-value matrix and lag scan
@@ -273,7 +275,8 @@ rcausality(d3, method = "bayes_granger", control = bayes_control(n_iter = 300),
 # (a second or two each; `cores = 2` halves the time, see ?Rcausality-parallel)
 lg <- sim_logistic(200, "x_to_y", seed = 2)
 rcausality(lg, method = "cmi", max_lag = 2, n_perm = 50, seed = 1)$classes   # kNN conditional MI
-rcausality(lg, method = "te", n_perm = 100, seed = 1)$classes$relation  # binned transfer entropy
+rcausality(lg, method = "te", n_perm = 100, seed = 1, cores = 2)$classes$relation
+rcausality(lg, method = "te", method_args = list(bins = 6), n_perm = 100, seed = 1)$pairs
 rcausality(lg, method = "ccm", n_perm = 50, seed = 1)$classes$relation  # convergent cross mapping
 rcausality(sim_logistic_bdc(500, "x_to_y", seed = 1), method = "dc")$classes$relation
 
@@ -284,12 +287,20 @@ rcausality(d3[, 1:2], d3[, 3, drop = FALSE], directions = "forward")
 # --- the Bayesian variant of a surrogate method ---------------------------
 rcausality(lg, method = "te", bayes = TRUE, n_perm = 100, seed = 1)$bayes
 
-# --- generalisations of the Granger test (version 0.0.2) ------------------
+# --- generalisations of the Granger test ----------------------------------
 rcausality(d, method = "toda_yamamoto", method_args = list(d_max = 1))$classes  # integrated series
 rcausality(lg, method = "diks_panchenko")$classes                             # nonlinear
+rcausality(d, lag = "first")$pairs[, c("cause", "effect", "lag", "p_value")]  # first order
 # short series: the hierarchical Minnesota prior (tightness integrated out)
 rcausality(sim_var(30, seed = 3), method = "bayes_granger", prior = "minnesota",
            control = bayes_control(n_iter = 200), seed = 1)$pairs[, c("cause", "effect", "bf10")]
+
+# --- one explained variable: which series drive v2? -----------------------
+rcausality(d3, target = "v2")
+
+# --- panel data (long format): the same options ---------------------------
+pd <- sim_panel(n_units = 20, n_time = 25, seed = 1)
+rcausality(pd, id = "unit", time = "time", method = "granger", bayes = TRUE, prior = "bic")
 }
 }
 \references{
@@ -318,4 +329,11 @@ Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A. (2023).
 Toda, H. Y. and Yamamoto, T. (1995). Statistical inference in vector autoregressions with possibly integrated processes. \emph{Journal of Econometrics}, 66(1-2), 225-250. \doi{10.1016/0304-4076(94)01616-8}
 
 Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. \emph{Journal of Economic Dynamics and Control}, 30(9-10), 1647-1669. \doi{10.1016/j.jedc.2005.08.008}
+
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+}
+\seealso{
+\code{\link[=causal_methods]{causal_methods()}}, \code{\link[=causal_drivers]{causal_drivers()}}, \code{\link[=panel_causality]{panel_causality()}},
+\code{\link[=compare_methods]{compare_methods()}}, \code{\link[=placebo_test]{placebo_test()}}, \code{\link[=robustness]{robustness()}},
+\code{\link[=predict.causres]{predict.causres()}}
 }

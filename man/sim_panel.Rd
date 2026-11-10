@@ -2,14 +2,16 @@
 % Please edit documentation in R/panel.R
 \name{sim_panel}
 \alias{sim_panel}
-\title{Simulate a panel of short VAR(1) series}
+\title{Simulate panels of short series}
 \usage{
 sim_panel(
   n_units = 30L,
   n_time = 20L,
-  scenario = c("x_to_y", "bidirectional", "independent"),
+  scenario = c("x_to_y", "bidirectional", "independent", "drivers"),
   coupling = 0.4,
   heterogeneity = 0.5,
+  prevalence = 1,
+  nonlinear = FALSE,
   ar = 0.5,
   seed = NULL
 )
@@ -17,26 +19,45 @@ sim_panel(
 \arguments{
 \item{n_units}{number of units.}
 
-\item{n_time}{number of periods per unit.}
+\item{n_time}{number of periods per unit (a vector gives an unbalanced
+panel).}
 
-\item{scenario}{\code{"x_to_y"}, \code{"bidirectional"} or \code{"independent"}.}
+\item{scenario}{\code{"x_to_y"}, \code{"bidirectional"}, \code{"independent"} or
+\code{"drivers"}.}
 
 \item{coupling}{mean coupling strength; \code{heterogeneity} its relative
 standard deviation across the units.}
 
 \item{heterogeneity}{relative standard deviation of the coupling.}
 
+\item{prevalence}{share of the units in which the links exist.}
+
+\item{nonlinear}{logical; quadratic instead of linear coupling.}
+
 \item{ar}{autoregressive coefficient.}
 
 \item{seed}{optional RNG seed.}
 }
 \value{
-A long data frame with columns \code{unit}, \code{time}, \code{x}, \code{y}.
+A long data frame with the columns \code{unit}, \code{time} and the series;
+attribute \code{"linked"} names the units with the links, \code{"truth"} the
+scenario.
 }
 \description{
-Every unit follows \verb{x[t] = a x[t-1] + e1}, \verb{y[t] = a y[t-1] + b_i x[t-1] + e2} (scenario \code{"x_to_y"}), with unit-specific coupling \code{b_i ~ N(coupling, (heterogeneity * coupling)^2)} and unit fixed effects; \code{"independent"} sets
-\code{b_i = 0}, \code{"bidirectional"} couples both ways.
+Every unit follows a VAR(1) with unit-specific coupling strengths
+\code{b_i ~ N(coupling, (heterogeneity * coupling)^2)} and unit fixed effects.
+\itemize{
+\item two series (\code{x}, \code{y}): \code{"x_to_y"}, \code{"bidirectional"}, \code{"independent"};
+\item \code{scenario = "drivers"}: five series for the analysis of one explained
+variable \code{y} -- \code{x1 -> y} at lag 1 and \code{x3 -> y} at lag 2 (direct
+drivers), \code{x2 -> x1} (so \code{x2} drives \code{y} only through \code{x1}), \code{x4}
+unrelated.
+With \code{prevalence < 1} only that share of the units has the links (a
+heterogeneous panel); \code{nonlinear = TRUE} couples through the centred
+square of the cause, which is invisible to linear tests.
+}
 }
 \examples{
 head(sim_panel(n_units = 3, n_time = 5, seed = 1))
+str(sim_panel(n_units = 4, n_time = 6, scenario = "drivers", seed = 1))
 }

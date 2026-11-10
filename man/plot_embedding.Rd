@@ -38,7 +38,7 @@ noisy for maps).}
 
 \item{note}{optional one-line note printed under the plot.}
 
-\item{...}{passed to \code{\link[graphics:plot.default]{graphics::plot()}}.}
+\item{...}{passed to \code{\link[graphics:plot]{graphics::plot()}}.}
 }
 \value{
 Invisibly, the embedded matrix.

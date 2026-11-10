@@ -94,26 +94,6 @@ test_that("random-forest results do not depend on the number of cores", {
   expect_equal(a$extra, b$extra)
 })
 
-test_that("panel Granger causality: units, Dumitrescu-Hurlin, pooled, Bayesian", {
-  pd <- sim_panel(n_units = 25, n_time = 15, scenario = "x_to_y", seed = 1)
-  expect_equal(dim(pd), c(375L, 4L))
-  pg <- panel_granger(pd, id = "unit", time = "time")
-  T <- pg$tests
-  expect_true(all(T$significant[T$cause == "x" & T$method %in% c("dh", "pooled", "bayes")]))
-  expect_false(any(T$significant[T$cause == "y" & T$method %in% c("dh", "pooled", "bayes")]))
-  expect_equal(nrow(pg$units), 50L)
-  expect_output(print(pg), "Dumitrescu-Hurlin")
-  grDevices::pdf(NULL); on.exit(grDevices::dev.off())
-  expect_silent(plot(pg))
-  # the finite-T moments of K F(K, d2)
-  dh <- Rcausality:::.dh_test(W = rep(1, 10), K = 1, d2 = rep(20, 10))
-  expect_equal(unname(dh["W_bar"]), 1)
-  expect_lt(unname(dh["Z_tilde"]), 0)
-  p0 <- sim_panel(n_units = 25, n_time = 15, scenario = "independent", seed = 2)
-  pl <- panel_granger(p0, id = "unit", time = "time", methods = c("dh", "pooled"), n_placebo = 19, seed = 1)
-  expect_true(all(pl$tests$p_placebo > 0 & pl$tests$p_placebo <= 1))
-})
-
 test_that("placebo test and time reversal", {
   d <- sim_var(300, "x_to_y", seed = 1)
   r <- rcausality(d)

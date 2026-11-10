@@ -14,7 +14,7 @@ systems of \code{\link[=dfe_train]{dfe_train()}}, the surrogate forests and fore
 random-forest test (\code{\link[=rf_granger]{rf_granger()}}), the placebo data sets of
 \code{\link[=placebo_test]{placebo_test()}}, the alternative settings of \code{\link[=robustness]{robustness()}}, the methods
 of \code{\link[=compare_methods]{compare_methods()}} and \code{\link[=forecast_compare]{forecast_compare()}}, and the series pairs,
-surrogates and placebo panels of \code{\link[=panel_granger]{panel_granger()}} -- takes a \code{cores}
+units, bootstrap and surrogate panels of \code{\link[=panel_causality]{panel_causality()}} -- takes a \code{cores}
 argument. Its default is
 \code{getOption("Rcausality.cores", 1L)}, so that
 \code{options(Rcausality.cores = 4)} switches the whole package to four

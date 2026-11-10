@@ -1,14 +1,17 @@
 Package: Rcausality
 Type: Package
-Title: Causality Analysis for Time Series
-Version: 0.0.2
+Title: Causality Analysis for Time Series and Panel Data
+Version: 0.0.3
 Authors@R: c(
     person("Zsolt T.", "Kosztyán", email = "kosztyan.zsolt@gtk.uni-pannon.hu",
            role = c("aut", "cre", "cph")))
 Description: A unified interface to causality detection methods for time
-    series, returning one result object ('causres') with 'print', 'summary'
-    and 'plot' methods for two series, a data frame (all pairs) or two
-    blocks of series. Implements Granger causality with classical and
+    series and panel data, returning one result object ('causres') with
+    'print', 'summary' and 'plot' methods for two series, a data frame (all
+    pairs), two blocks of series, a panel of units observed over time, or
+    the causal drivers of one explained variable. The causality method, its
+    Bayesian variant and the number of CPU cores are options of every call.
+    Implements Granger causality with classical and
     Bayesian (spike-and-slab regression, hierarchical Minnesota prior for
     short series after Giannone, Lenza and Primiceri (2015)
     <doi:10.1162/REST_a_00483>, BIC, g-prior and hyper-g Bayes factor)
@@ -16,11 +19,9 @@ Description: A unified interface to causality detection methods for time
     1995, <doi:10.1016/0304-4076(94)01616-8>), to nonlinear dependence (the
     nonparametric test of Diks and Panchenko, 2006,
     <doi:10.1016/j.jedc.2005.08.008>, and a random-forest Granger-like test
-    with surrogate, out-of-sample and shadow-feature evidence), to the
+    with surrogate, out-of-sample and shadow-feature evidence) and to the
     frequency domain (Breitung and Candelon, 2006,
-    <doi:10.1016/j.jeconom.2005.02.004>) and to panels of short series
-    (Dumitrescu and Hurlin, 2012, <doi:10.1016/j.econmod.2012.02.014>);
-    conditional
+    <doi:10.1016/j.jeconom.2005.02.004>); conditional
     mutual information with local-permutation tests and the lag-shifted
     scheme of Zlatniczki et al. (2021) <doi:10.3390/e23111450>; the
     Markov-chain approach of Stippinger et al. (2023)
@@ -36,13 +37,20 @@ Description: A unified interface to causality detection methods for time
     correlation-dimension relations of Krakovska (2019)
     <doi:10.3390/e21090818>; transfer entropy and convergent cross mapping
     as baselines; an optional wrapper for PCMCI (Runge et al., 2019,
-    <doi:10.1126/sciadv.aau4996>) through the 'Python' package 'tigramite';
-    tools to compare and benchmark methods, placebo, time-reversal and
-    robustness analyses, causality-informed forecasting with linear,
-    Bayesian and random-forest models, multi-core execution with results
-    independent of the number of cores, and a Bayesian variant of every
-    method with explicit priors, posterior draws and Bayes-factor or
-    posterior-probability decisions.
+    <doi:10.1126/sciadv.aau4996>) through the 'Python' package 'tigramite'.
+    Every method is available for panel data at the level of the units
+    (with false-discovery-rate control), of the group of units (Dumitrescu
+    and Hurlin, 2012, <doi:10.1016/j.econmod.2012.02.014>, and combinations
+    calibrated by bootstrap or surrogates) and of the pooled units (the
+    half-panel-jackknife test of Juodis, Karavias and Sarafidis, 2021,
+    <doi:10.1007/s00181-020-01970-9>, and pooled model-free statistics),
+    following the triangulation of Kosztyan, Matrai and Kiss (2026)
+    <doi:10.1111/twec.70148>. Further tools compare and benchmark methods,
+    run placebo, time-reversal and robustness analyses, produce
+    causality-informed forecasts with linear, Bayesian and random-forest
+    models, and run on several cores with results independent of the number
+    of cores; every method has a Bayesian variant with explicit priors and
+    Bayes-factor or posterior-probability decisions.
 License: GPL-3
 URL: https://github.com/kzst/rcausality
 BugReports: https://github.com/kzst/rcausality/issues
@@ -54,4 +62,4 @@ Suggests: testthat (>= 3.0.0), lmtest, ranger, reticulate, knitr, rmarkdown, FNN
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
+Config/roxygen2/version: 8.1.1
