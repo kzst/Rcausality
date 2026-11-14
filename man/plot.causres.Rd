@@ -20,7 +20,7 @@
 \itemize{
 \item \code{"network"}: directed graph of the significant links (edge width ~
 evidence, label = lag, colour = sign of the net influence, dashed
-orange = common-driver evidence);
+orange = the common-cause criterion of the method holds);
 \item \code{"matrix"} (alias \code{"heatmap"}): causal matrix, rows = cause, columns =
 effect; every cell is a directed test "row -> column", coloured by
 evidence, significant cells framed and starred;

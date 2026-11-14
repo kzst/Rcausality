@@ -8,7 +8,7 @@
 #' @param type one of
 #'   * `"network"`: directed graph of the significant links (edge width ~
 #'     evidence, label = lag, colour = sign of the net influence, dashed
-#'     orange = common-driver evidence);
+#'     orange = the common-cause criterion of the method holds);
 #'   * `"matrix"` (alias `"heatmap"`): causal matrix, rows = cause, columns =
 #'     effect; every cell is a directed test "row -> column", coloured by
 #'     evidence, significant cells framed and starred;
@@ -158,7 +158,7 @@ plot.causres <- function(x, type = c("network", "matrix", "heatmap", "bars", "la
   for (i in seq_len(nrow(Cd))) {
     a <- xy[Cd$var1[i], ]; b <- xy[Cd$var2[i], ]
     graphics::segments(a[1], a[2], b[1], b[2], lty = 2, lwd = 2.2, col = "#E69F00")
-    m <- (a + b) / 2; graphics::text(m[1], m[2] + 0.1, "hidden\ncommon driver?", cex = 0.6, col = "#B36B00")
+    m <- (a + b) / 2; graphics::text(m[1], m[2] + 0.1, "common\ncause?", cex = 0.6, col = "#B36B00")
   }
   deg_out <- vapply(vars, function(v) sum(P$cause == v & sig), 0)
   deg_in <- vapply(vars, function(v) sum(P$effect == v & sig), 0)
@@ -169,7 +169,7 @@ plot.causres <- function(x, type = c("network", "matrix", "heatmap", "bars", "la
   graphics::text(xy[, 1], xy[, 2], vars, cex = 0.9, font = 2, col = .pal$text)
   graphics::legend("bottomleft", bty = "n", cex = 0.62, inset = c(-0.02, -0.04),
                    legend = c("significant link (+ net effect)", "significant link (- net effect)", "tested, not significant",
-                              "common-driver evidence"),
+                              "common-cause criterion"),
                    col = c(.pal$pos, .pal$neg, "grey70", "#E69F00"), lty = c(1, 1, 3, 2), lwd = c(2.5, 2.5, 1, 2))
   graphics::legend("bottomright", bty = "n", cex = 0.62, inset = c(-0.02, -0.04), legend = c("driver", "driven", "mediator", "isolated"),
                    pt.bg = c(.pal$causal, .pal$node, "#D7C6E8", .pal$nocausal), pch = 22, pt.cex = 1.5, col = .pal$border)

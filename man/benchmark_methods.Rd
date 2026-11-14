@@ -35,8 +35,11 @@ in \code{...}, e.g. \code{function(n, scenario, seed) sim_panel(20, n, scenario,
 
 \item{args}{per-method argument lists as in \code{\link[=compare_methods]{compare_methods()}}.}
 
-\item{seed}{base RNG seed (the data set of replication \code{r} of a scenario
-is simulated with \verb{seed + 1000 * scenario index + r}).}
+\item{seed}{base RNG seed. The data set of replication \code{r} of a scenario
+is simulated with \verb{seed + 1000 * scenario index + r} under the random
+number generator of the parallel streams: to obtain one of these data
+sets outside the function, call \code{RNGkind("L'Ecuyer-CMRG")} before the
+simulator (under the default generator the same seed gives other data).}
 
 \item{cores}{CPU cores: the simulated data sets are analysed in parallel
 (every method runs serially inside a replication; see

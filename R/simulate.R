@@ -151,6 +151,39 @@ sim_henon <- function(n = 500, scenario = "x_to_y", coupling = 0.3, noise = 0,
 }
 
 #' @rdname simulators
+#' @param ar autoregressive coefficient of the series of `sim_nonlinear`
+#'   that are not driven.
+#' @details `sim_nonlinear` returns stochastic series with a link that
+#'   leaves no linear trace: the driver sets the autoregressive coefficient
+#'   of the driven series,
+#'   `y[t] = phi(x[t-1]) y[t-1] + e[t]` with
+#'   `phi(u) = coupling * (1 - 2 exp(-u^2 / 2))` and standard normal `e`, a
+#'   smooth-transition autoregression (negative dependence on the own past
+#'   while the driver is near zero, positive while it is far from it;
+#'   `|coupling| < 1` keeps every scenario stable). Series that are not
+#'   driven are first-order autoregressions with coefficient `ar`. The
+#'   conditional mean of the driven series depends on the past of the
+#'   driver, but its correlation with that past is zero in every scenario
+#'   (the joint distribution is symmetric under a change of sign of either
+#'   series), so that tests of linear predictability have no power, while
+#'   the errors of their regressions are heteroskedastic.
+#' @export
+sim_nonlinear <- function(n = 500, scenario = "x_to_y", coupling = 0.9, noise = 0,
+                          ar = 0.5, seed = NULL, burn = 100L) {
+  .local_seed(seed)
+  stopifnot(scenario %in% .scenarios, abs(coupling) < 1, abs(ar) < 1)
+  A <- .coupling_mat(scenario, 1) > 0
+  T <- n + burn; X <- matrix(0, T, 3); E <- matrix(stats::rnorm(T * 3), ncol = 3)
+  src <- lapply(1:3, function(i) which(A[i, ]))
+  for (t in 2:T) for (i in 1:3) {
+    a <- if (length(src[[i]])) coupling * (1 - 2 * exp(-X[t - 1, src[[i]][1L]]^2 / 2)) else ar
+    X[t, i] <- a * X[t - 1, i] + E[t, i]
+  }
+  X <- X[-seq_len(burn), 1:2, drop = FALSE]; colnames(X) <- c("x", "y")
+  .finish(X, scenario, noise)
+}
+
+#' @rdname simulators
 #' @param p transition parameter of the binary Markov chains.
 #' @export
 sim_markov01 <- function(n = 1000, scenario = "x_to_y", coupling = 0.5, noise = 0,

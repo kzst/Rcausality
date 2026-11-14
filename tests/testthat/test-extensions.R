@@ -64,6 +64,7 @@ test_that("the hierarchical Minnesota prior works where the F-test cannot", {
   d3 <- sim_var(14, n_series = 3, seed = 6)
   r <- rcausality(d3, conditional = TRUE, lag = 3, method = "bayes_granger", prior = "minnesota",
                   control = bayes_control(n_iter = 50, chains = 1), seed = 1)
+  expect_warning(rcausality(d3, conditional = TRUE, lag = 3), "requested order lag = 3 was changed to 1")
   expect_true(all(r$pairs$lag == 3L))
   expect_true(all(is.finite(r$pairs$bf10)))
   expect_output(print(r), "Minnesota")
@@ -154,4 +155,29 @@ test_that("method comparison runs in parallel with identical verdicts", {
   a <- compare_methods(d, methods = c("granger", "toda_yamamoto", "te"), n_perm = 60, seed = 1, cores = 1)
   b <- compare_methods(d, methods = c("granger", "toda_yamamoto", "te"), n_perm = 60, seed = 1, cores = 2)
   expect_equal(a$table, b$table)
+})
+
+test_that("the node size of the forests is selected by the out-of-bag error", {
+  skip_if_not_installed("ranger")
+  set.seed(1); y <- as.numeric(arima.sim(list(ar = 0.5), 300)); x <- as.numeric(arima.sim(list(ar = 0.5), 300))
+  expect_true(all(Rcausality:::.rf_node_grid(300) >= 5))
+  expect_identical(Rcausality:::.rf_node_size(matrix(0, 10, 1), rnorm(10), list(min_node_size = 7)), 7L)
+  r <- rf_granger(x, y, lag = 1, n_surr = 19, num_trees = 100, seed = 1)
+  expect_true(all(r$tests$node_size %in% Rcausality:::.rf_node_grid(299)))
+  expect_gt(min(r$tests$node_size), 5)               # a noisy AR(1): fully grown trees interpolate the noise
+  expect_lt(max(abs(r$tests$oob_gain)), 0.08)        # an unrelated series brings no out-of-bag gain
+  expect_true(all(r$tests$p_value > 0.05))
+  r5 <- rf_granger(x, y, lag = 1, n_surr = 19, num_trees = 100, min_node_size = 5, seed = 1)
+  expect_true(all(r5$tests$node_size == 5))
+  expect_error(rf_granger(x, y, min_node_size = "small"))
+  # through rcausality(): the selected size is reported with the test
+  rc <- rcausality(x, y, method = "rf_granger", lag = 1, n_perm = 40, seed = 1, method_args = list(num_trees = 60, folds = 2))
+  expect_true(all(rc$extra$node_size %in% Rcausality:::.rf_node_grid(299)))
+  expect_false(any(rc$pairs$significant))
+  # the forests of the rolling-origin evaluation select their size on their own training part: the size of the
+  # whole sample is too coarse for the short early windows, and the out-of-sample gain of a clear link was lost
+  lg <- sim_logistic(300, "x_to_y", seed = 1)
+  rl <- rf_granger(lg$x, lg$y, lag = 1, n_surr = 19, num_trees = 100, shadow = FALSE, seed = 1)$tests
+  expect_gt(rl$node_size[1], 5)
+  expect_gt(rl$oos_gain[1], 0.2)
 })

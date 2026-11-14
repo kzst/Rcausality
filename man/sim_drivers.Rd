@@ -12,7 +12,10 @@ sim_drivers(n = 300L, coupling = 0.5, nonlinear = FALSE, ar = 0.5, seed = NULL)
 \item{coupling}{strength of the links.}
 
 \item{nonlinear}{logical; couple through the centred square of the cause
-(invisible to linear tests) instead of linearly.}
+instead of linearly. The link of a symmetric cause (\code{x2 -> x1},
+\code{x3 -> y}) is then invisible to linear tests; \code{x1}, which is itself
+driven through a square, is skewed, so that its link to \code{y} keeps a
+linear trace.}
 
 \item{ar}{autoregressive coefficient.}
 

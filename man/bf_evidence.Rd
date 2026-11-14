@@ -2,7 +2,7 @@
 % Please edit documentation in R/granger.R
 \name{bf_evidence}
 \alias{bf_evidence}
-\title{Evidence category of a Bayes factor (Jeffreys/Kass-Raftery style)}
+\title{Evidence category of a Bayes factor}
 \usage{
 bf_evidence(bf)
 }
@@ -10,16 +10,24 @@ bf_evidence(bf)
 \item{bf}{numeric vector of Bayes factors (BF10).}
 }
 \value{
-Character vector of evidence labels.
+Factor of evidence labels.
 }
 \description{
-Evidence category of a Bayes factor (Jeffreys/Kass-Raftery style)
+The categories of Jeffreys (1961) in the wording of Lee and Wagenmakers
+(2013): "anecdotal" between 1 and 3, "moderate" between 3 and 10, "strong"
+between 10 and 30, "very strong" between 30 and 100 and "decisive" above
+100, for \code{H1} when \code{BF10 > 1} and against it (with the reciprocal limits)
+when \code{BF10 < 1}. On the scale of Kass and Raftery (1995) values between 3
+and 20 are "positive", between 20 and 150 "strong" and above 150 "very
+strong" evidence.
 }
 \examples{
-# Kass-Raftery labels: BF10 < 1 favours H0, > 3 is positive evidence for H1
+# BF10 < 1 favours H0, BF10 > 1 favours H1; the labels change at 3, 10, 30 and 100
 bf_evidence(c(0.02, 0.5, 2, 15, 200))
 }
 \references{
+Lee, M. D. and Wagenmakers, E.-J. (2013). \emph{Bayesian Cognitive Modeling: A Practical Course}. Cambridge University Press, Cambridge. \doi{10.1017/CBO9781139087759}
+
 Kass, R. E. and Raftery, A. E. (1995). Bayes factors. \emph{Journal of the American Statistical Association}, 90(430), 773-795. \doi{10.1080/01621459.1995.10476572}
 
 Jeffreys, H. (1961). \emph{Theory of Probability} (3rd ed.). Oxford University Press, Oxford.

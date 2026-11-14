@@ -17,6 +17,10 @@
 #' Methods: `print`, `summary`, `plot`, `as.data.frame`, `as.matrix`,
 #' `coef`-style accessors via [as.matrix.causres()].
 #'
+#' The explanatory lines of the `print` methods are wrapped to the width of
+#' the console (`getOption("width")`); `options(Rcausality.guide = FALSE)`
+#' hides the reading guide that `print` appends to a result.
+#'
 #' Two subclasses add slots and methods: `causpanel` (panel data, see
 #' [panel_causality()]: `units`, `panel`, `prevalence`) and `causdrivers`
 #' (the drivers of one explained variable, see [causal_drivers()]: `drivers`,
@@ -65,11 +69,11 @@ NULL
     ifelse(classes$class == "x_to_y", paste(classes$var1, "->", classes$var2),
     ifelse(classes$class == "y_to_x", paste(classes$var2, "->", classes$var1),
     ifelse(classes$class == "bidirectional", paste(classes$var1, "<->", classes$var2),
-    ifelse(classes$class == "common_cause", paste(classes$var1, "<-L->", classes$var2),
+    ifelse(classes$class == "common_cause", paste(classes$var1, "<~>", classes$var2),
            paste(classes$var1, "|", classes$var2))))))
   classes$relation <- ifelse(!is.na(classes$class) & classes$common_driver &
                                classes$class != "common_cause",
-                             paste0(classes$relation, " (+ common driver?)"), classes$relation)
+                             paste0(classes$relation, " (+ <~>)"), classes$relation)
   # direction labels are relative to (var1, var2): x = var1, y = var2
   structure(list(pairs = pairs, classes = classes, series = series,
                  causes = causes, effects = effects,
@@ -147,31 +151,33 @@ as.matrix.causres <- function(x, what = "p_adj", ...) {
 print.causres <- function(x, digits = 3, ...) {
   s <- x$settings
   info <- .method_info(s$method); mname <- info$label
-  cat("\n  Rcausality: ", mname, "\n", sep = "")
-  cat("  ", length(x$series), " series, n = ", s$n, ", ",
+  .out("\n  Rcausality: ", mname, "\n", sep = "")
+  .out("  ", length(x$series), " series, n = ", s$n, ", ",
       nrow(x$pairs), " directed tests",
       if (s$conditional) " (conditional on the other series)" else " (pairwise)",
       "\n", sep = "")
   bc <- s$bayes_control
+  g_txt <- function() if (is.null(bc) || isTRUE(all.equal(bc$scale, 1))) "n" else sprintf("%g n", bc$scale)
   bayes_rule <- function() {
     dec <- if (!is.null(bc) && identical(bc$decision, "posterior")) sprintf("posterior probability > %g", s$prob_threshold)
            else sprintf("BF10 > %g", s$bf_threshold)
     how <- if (s$method %in% c("granger", "bayes_granger"))
-      switch(if (is.null(s$prior)) "bic" else s$prior, bic = "BIC approximation", g = "Zellner g-prior", hyper_g = "hyper-g prior",
+      switch(if (is.null(s$prior)) "bic" else s$prior, bic = "BIC approximation", g = sprintf("Zellner g-prior, g = %s", g_txt()),
+             hyper_g = sprintf("hyper-g prior, a = %g", bc$hyper_a),
              spike_slab = sprintf("spike-and-slab regression, slab scale %g, inclusion prior %g", bc$scale, bc$inclusion_prob),
              normal = sprintf("Bayesian regression, normal slab of scale %g", bc$scale),
              minnesota = sprintf("hierarchical Minnesota prior, tightness %s, lag decay %g",
                                  if (identical(bc$lambda, "auto")) "integrated out" else format(bc$lambda), bc$decay))
       else if (s$method == "toda_yamamoto")
-        sprintf("lag-augmented regressions, %s", switch(if (is.null(s$prior)) "bic" else s$prior, g = "Zellner g-prior",
-                                                       hyper_g = "hyper-g prior", "BIC approximation"))
+        sprintf("lag-augmented regressions, %s", switch(if (is.null(s$prior)) "bic" else s$prior, g = sprintf("Zellner g-prior, g = %s", g_txt()),
+                                                       hyper_g = sprintf("hyper-g prior, a = %g", bc$hyper_a), "BIC approximation"))
       else if (s$method %in% c("dc", "dfe")) "posterior of the causal cases"
       else if (s$method == "markov") "Bayesian decision table from the surrogate Bayes factors"
       else if (s$method == "pcmci") "Savage-Dickey Bayes factor of the partial correlation"
       else sprintf("Bayesian surrogate test, %s effect prior of scale %g, %s null", bc$effect_prior, bc$scale, bc$null_model)
     sprintf("%s (%s)", dec, how)
   }
-  cat("  decision: ",
+  .out("  decision: ",
       if (isTRUE(s$bayes) && !is.null(bc)) bayes_rule()
       else if (s$method %in% c("dc", "dfe")) sprintf("class score P(cause drives effect) > %g", s$prob_threshold)
       else if (s$method == "ccdh") sprintf("shared information: adjusted p < %g (%s); reconstruction index <= %g", s$alpha, s$adjust, s$prob_threshold)
@@ -181,9 +187,16 @@ print.causres <- function(x, digits = 3, ...) {
       else if (s$method == "df") sprintf("Table-2 reading of the orders where determinate, else directed variance-reduction tests with adjusted p < %g (%s)", s$alpha, s$adjust)
       else if (s$method != "bayes_granger") sprintf("adjusted p < %g (%s)", s$alpha, s$adjust)
       else sprintf("BF10 (%s) > %g", switch(if (is.null(s$prior)) "bic" else s$prior, bic = "BIC approximation",
-                                            g = "Zellner g-prior, g = n", hyper_g = "hyper-g prior, a = 3"), s$bf_threshold),
+                                            g = sprintf("Zellner g-prior, g = %s", g_txt()),
+                                            hyper_g = sprintf("hyper-g prior, a = %g", if (is.null(bc)) 3 else bc$hyper_a)), s$bf_threshold),
       "\n\n", sep = "")
   P <- x$pairs
+  # Bayes factors beyond the range of the replicates are shown as "> bound", as in the table of the Bayesian evidence
+  bfs <- .fmt_bf(P$bf10)
+  if (!is.null(x$bayes) && !is.null(x$bayes$bf_bound)) {
+    bd <- x$bayes$bf_bound[match(paste(P$cause, "->", P$effect), x$bayes$pair)]
+    bfs <- ifelse(is.finite(bd), paste0(">", .fmt_bf(bd)), bfs)
+  }
   tab <- data.frame(
     link = paste(P$cause, "->", P$effect),
     lag = P$lag,
@@ -191,7 +204,7 @@ print.causres <- function(x, digits = 3, ...) {
     df = ifelse(is.na(P$df1), "-", paste0(P$df1, ",", P$df2)),
     p = .fmt_p(P$p_value),
     p.adj = .fmt_p(P$p_adj),
-    BF10 = .fmt_bf(P$bf10),
+    BF10 = bfs,
     P.post = formatC(P$post_prob, digits = digits, format = "f"),
     sig = ifelse(P$significant, paste0("yes ", .stars(P$p_adj)), "no"),
     check.names = FALSE, stringsAsFactors = FALSE)
@@ -204,8 +217,8 @@ print.causres <- function(x, digits = 3, ...) {
   }
   print(tab, row.names = FALSE, right = FALSE)
   if (s$method %in% c("dc", "dfe")) {
-    cat("  P.direct = score of the unidirectional link, P.post = P(direct) + P(bidirectional), BF10 against the uniform prior\n")
-    cat(if (s$method == "dc") "\n  Intrinsic dimensions and posterior probabilities of the five causal cases:\n"
+    .out("  P.direct = score of the unidirectional link, P.post = P(direct) + P(bidirectional), BF10 against the uniform prior\n")
+    .out(if (s$method == "dc") "\n  Intrinsic dimensions and posterior probabilities of the five causal cases:\n"
         else "\n  Random-forest class scores of the five causal cases:\n")
     Dc <- x$dc
     tb <- data.frame(pair = paste(Dc$var1, "~", Dc$var2))
@@ -214,36 +227,43 @@ print.causres <- function(x, digits = 3, ...) {
                 common = round(Dc$common_cause, 3), indep = round(Dc$independent, 3), best = Dc$best)
     print(tb, row.names = FALSE, right = FALSE)
   }
-  if (s$method == "df") cat("  sd.red = relative reduction of the conditional sd of the effect when the cause's past is constrained\n")
+  if (s$method == "df") .out("  sd.red = relative reduction of the conditional sd of the effect when the cause's past is constrained\n")
   if (s$method == "ccm") {
     tab$lag <- NULL
-    cat("  rho = cross-map skill of 'effect xmap cause' at the largest library; p = surrogate test;\n")
-    cat("  a link also requires convergence (Kendall test of rho against the library size):\n")
+    .out("  rho = cross-map skill of 'effect xmap cause' at the largest library; p = surrogate test;\n")
+    .out("  a link also requires convergence (Kendall test of rho against the library size):\n")
     Cv <- x$ccm
     print(data.frame(link = paste(Cv$cause, "->", Cv$effect), converging = ifelse(Cv$converging, "yes", "no"),
                      p.convergence = .fmt_p(Cv$p_convergence)), row.names = FALSE, right = FALSE)
   }
   if (s$method == "pid") {
-    cat("  U+S.bits = unique + synergistic information (bits per target bit) of the cause's past about the effect's future beyond the effect's own past\n")
-    cat("\n  MAR-PID atoms at the selected lag (bits per target bit):\n")
+    .out("  U+S.bits = unique + synergistic information (bits per target bit) of the cause's past about the effect's future beyond the effect's own past\n")
+    .out("\n  MAR-PID atoms at the selected lag (bits per target bit):\n")
     Pd <- x$pid
     print(data.frame(link = paste(Pd$cause, "->", Pd$effect), lag = Pd$lag, unique.cause = round(Pd$unique_cause, 3),
                      unique.effect = round(Pd$unique_effect, 3), redundant = round(Pd$redundant, 3),
                      synergy = round(Pd$synergy, 3), total = round(Pd$total, 3)), row.names = FALSE, right = FALSE)
   }
-  if (s$method == "te") cat("  TE.bits = transfer entropy at the selected lag (bits); effect_size column of $pairs = effective TE\n")
+  if (s$method == "te") .out("  TE.bits = transfer entropy at the selected lag (bits); effect_size column of $pairs = effective TE\n")
+  if (s$method %in% c("cmi", "cmi_lag"))
+    .out(sprintf("  CMI = kNN conditional mutual information at the selected lag (nats); p = against %s\n",
+                 if (identical(s$method_args$reference, "local")) "local permutations of the cause (Runge 2018)"
+                 else "conditional shifts of the cause (location and scale given the conditioning past kept, residuals shifted circularly)"))
   if (s$method == "toda_yamamoto")
-    cat(sprintf("  F = Wald test of the first 'lag' cause lags in a VAR augmented by d_max = %d extra lags (not tested)\n",
+    .out(sprintf("  F = Wald test of the first 'lag' cause lags in a VAR augmented by d_max = %d extra lags (not tested)\n",
                 as.integer(s$method_args$d_max)))
   if (s$method == "diks_panchenko") {
     E <- x$extra
-    cat(sprintf("  T.n = Diks-Panchenko statistic (bandwidth %.3g sd%s); p = one-sided asymptotic normal test of z = sqrt(n) T.n / S.n\n",
-                E$eps[1], if (identical(E$filter[1], "var")) ", VAR residuals" else ""))
+    .out(sprintf("  T.n = Diks-Panchenko statistic (bandwidth %.3g sd%s); p = %s\n",
+                E$eps[1], if (identical(E$filter[1], "var")) ", VAR residuals" else "",
+                if (any(E$reference == "conditional shifts", na.rm = TRUE))
+                  "against conditional shifts of the cause (location and scale given the conditioning past kept, residuals shifted circularly)"
+                else "one-sided asymptotic normal test of z = sqrt(n) T.n / S.n"))
   }
   if (s$method == "rf_granger") {
     E <- x$extra
-    cat("  OOB.gain = 1 - MSE(own + cause) / MSE(own) out of bag, p = against circular-shift surrogates of the cause\n")
-    cat("\n  Out-of-sample gain (rolling origin), permutation importance and shadow-feature rule:\n")
+    .out("  OOB.gain = 1 - MSE(own + cause) / MSE(own) out of bag, p = against conditional shifts of the cause (location and scale given the conditioning past kept, residuals shifted circularly)\n")
+    .out("\n  Out-of-sample gain (rolling origin), permutation importance and shadow-feature rule:\n")
     print(data.frame(link = paste(E$cause, "->", E$effect), OOB.gain = sprintf("%+.3f", E$oob_gain),
                      OOS.gain = ifelse(is.na(E$oos_gain), "-", sprintf("%+.3f", E$oos_gain)),
                      VI.best = ifelse(is.na(E$vi_cause), "-", sprintf("%.3g (lag %d)", E$vi_cause, as.integer(E$vi_lag))),
@@ -251,16 +271,16 @@ print.causres <- function(x, digits = 3, ...) {
           row.names = FALSE, right = FALSE)
   }
   if (s$method %in% c("hirata", "cd")) {
-    if (s$method == "hirata") cat("  cover.idx = normalised coverage P(R_cause | R_effect); p = surrogate test of the coverage\n")
-    else cat("  D2.diff = D2(effect) - D2(cause); no p-values, the verdict comes from the z-tests of the dimension relations\n")
-    cat("\n  Per-pair quantities and verdict:\n")
+    if (s$method == "hirata") .out("  cover.idx = normalised coverage P(R_cause | R_effect); p = surrogate test of the coverage\n")
+    else .out("  D2.diff = D2(effect) - D2(cause); no p-values, the verdict comes from the z-tests of the dimension relations\n")
+    .out("\n  Per-pair quantities and verdict:\n")
     Cc <- x$ccdh; Cc$pair <- paste(Cc$var1, "~", Cc$var2); Cc$var1 <- Cc$var2 <- NULL
     num <- vapply(Cc, is.numeric, TRUE); Cc[num] <- lapply(Cc[num], round, 3)
     print(Cc[, c("pair", setdiff(names(Cc), "pair"))], row.names = FALSE, right = FALSE)
   }
   if (s$method == "ccdh") {
-    cat("  recon = 1 - reconstruction index (1: the cause is perfectly reconstructible from the effect's embedding); p = shared-information surrogate test\n")
-    cat("\n  Mean compression rates of the series and of their skewed joints:\n")
+    .out("  recon = 1 - reconstruction index (1: the cause is perfectly reconstructible from the effect's embedding); p = shared-information surrogate test\n")
+    .out("\n  Mean compression rates of the series and of their skewed joints:\n")
     Cc <- x$ccdh
     print(data.frame(pair = paste(Cc$var1, "~", Cc$var2), cr.x = round(Cc$cr_x, 3), cr.y = round(Cc$cr_y, 3),
                      cr.Jxxy = round(Cc$cr_jxxy, 3), cr.Jyyx = round(Cc$cr_jyyx, 3),
@@ -268,7 +288,7 @@ print.causres <- function(x, digits = 3, ...) {
                      check.names = FALSE), row.names = FALSE, right = FALSE)
   }
   if (!is.null(x$instant) && s$method == "pcmci") {
-    cat("\n  Contemporaneous links (lag 0):\n")
+    .out("\n  Contemporaneous links (lag 0):\n")
     I <- x$instant
     print(data.frame(pair = paste(I$var1, "--", I$var2),
                      MCI.stat = formatC(I$statistic, digits = digits, format = "f"),
@@ -277,24 +297,24 @@ print.causres <- function(x, digits = 3, ...) {
                      check.names = FALSE), row.names = FALSE, right = FALSE)
   }
   if (!is.null(x$instant) && !s$method %in% c("df", "dc", "ccdh", "dfe", "hirata", "cd", "pcmci")) {
-    cat("\n  Contemporaneous dependence given both pasts (k = 0; common-driver evidence):\n")
+    .out("\n  Contemporaneous dependence given both pasts (k = 0; a common driver or an instantaneous relation):\n")
     I <- x$instant
     print(data.frame(pair = paste(I$var1, "~", I$var2),
                      CMI = formatC(I$cmi, digits = digits, format = "f"),
                      p = .fmt_p(I$p_value), p.adj = .fmt_p(I$p_adj),
-                     common.driver = ifelse(I$significant, "yes", "no"),
+                     dependent = ifelse(I$significant, "yes", "no"),
                      check.names = FALSE), row.names = FALSE, right = FALSE)
   }
   if (!is.null(x$df)) {
-    cat("\n  Orders (degrees of freedom = conditions on the observed pasts) and the Table-2 reading:\n")
+    .out("\n  Orders (degrees of freedom = conditions on the observed pasts) and the Table-2 reading:\n")
     Dd <- x$df
     print(data.frame(pair = paste(Dd$var1, "~", Dd$var2), df.x = Dd$df_x, df.y = Dd$df_y,
                      df.joint = Dd$df_joint, conditions.joint = Dd$conditions_joint,
                      `Table 2` = Dd$table2, decided.by = Dd$decided_by, check.names = FALSE), row.names = FALSE, right = FALSE)
-    cat("  a determinate Table-2 reading decides the pair; undetermined pairs are decided by the directed tests above\n")
+    .out("  a determinate Table-2 reading decides the pair; undetermined pairs are decided by the directed tests above\n")
   }
   if (!is.null(x$markov)) {
-    cat("\n  Markov property (p small = not Markov) and decision-table case:\n")
+    .out("\n  Markov property (p small = not Markov) and decision-table case:\n")
     M <- x$markov
     print(data.frame(pair = paste(M$var1, "~", M$var2), m = M$memory,
                      p.x = .fmt_p(M$p_markov_x), p.y = .fmt_p(M$p_markov_y),
@@ -302,32 +322,44 @@ print.causres <- function(x, digits = 3, ...) {
                      case = M$case, `x->y` = M$inj_x_to_y, `y->x` = M$inj_y_to_x,
                      hidden = M$hidden, consistent = M$consistent, check.names = FALSE),
           row.names = FALSE, right = FALSE)
-    cat("  injection: i.i. = i.i.d. injection, n.i. = non-i.i.d., d = driving; U_* = hidden own-source\n")
+    .out("  injection: i.i. = i.i.d. injection, n.i. = non-i.i.d., d = driving; U_* = hidden own-source\n")
   }
   if (!is.null(x$bayes)) {
     B <- x$bayes
-    cat("\n  Bayesian evidence per directed test (effect = posterior mean [credible interval] under H1):\n")
-    tb <- data.frame(link = B$pair, BF10 = .fmt_bf(B$bf10), P.post = formatC(B$post_prob, digits = 3, format = "f"),
-                     evidence = as.character(bf_evidence(B$bf10)),
+    .out("\n  Bayesian evidence per directed test (effect = posterior mean [credible interval] under H1):\n")
+    ext <- if (is.null(B$bf_bound)) rep(FALSE, nrow(B)) else is.finite(B$bf_bound)   # statistics outside the range of their replicates
+    tb <- data.frame(link = B$pair, BF10 = ifelse(ext, paste0(">", .fmt_bf(B$bf_bound)), .fmt_bf(B$bf10)),
+                     P.post = formatC(B$post_prob, digits = 3, format = "f"),
+                     evidence = ifelse(ext, paste("at least", as.character(bf_evidence(B$bf_bound))), as.character(bf_evidence(B$bf10))),
                      effect = ifelse(is.na(B$effect_mean), "-", sprintf("%.3g [%.3g, %.3g]", B$effect_mean, B$effect_lower, B$effect_upper)),
                      model = B$model, check.names = FALSE, stringsAsFactors = FALSE)
     if (!is.null(B$rhat) && any(!is.na(B$rhat)))
       tb$`R-hat` <- ifelse(is.na(B$rhat), "-", formatC(B$rhat, digits = 3, format = "f"))
     print(tb, row.names = FALSE, right = FALSE)
     if (!is.null(B$rhat) && any(!is.na(B$rhat)))
-      cat("  R-hat = Gelman-Rubin factor of the effect over the chains (close to 1: the chains agree)\n")
+      .out("  R-hat = Gelman-Rubin factor of the effect over the chains (close to 1: the chains agree)\n")
+    if (any(ext))
+      .out(paste0("  '>': the statistic lies outside the range of its replicates; the value is the Bayes factor at the extreme replicate,\n",
+                  "   a lower bound (P.post and the decision use a normal continuation of the tail; see ?surrogate_bf)\n"))
   }
-  cat("\n  Classification of series pairs:\n")
+  .out("\n  Classification of series pairs:\n")
   C <- x$classes
   ct <- data.frame(pair = paste(C$var1, "~", C$var2), class = C$class,
                    relation = C$relation,
                    stringsAsFactors = FALSE)
   print(ct, row.names = FALSE, right = FALSE)
   if (any(!C$both_directions_tested))
-    cat("  (pairs with only one tested direction are labelled by that direction alone)\n")
-  cat("  How to read: one row per directed test cause -> effect; 'sig' applies the decision rule above;\n",
-      " the classification combines the two directions of a pair (x -> y, y -> x, x <-> y, independent;\n",
-      " 'common_cause' = no directed link but evidence of a hidden common driver). plot(x, \"all\") shows the same.\n", sep = "")
+    .out("  (pairs with only one tested direction are labelled by that direction alone)\n")
+  if (!isFALSE(getOption("Rcausality.guide")))
+    .out("  How to read: one row per directed test cause -> effect; 'sig' applies the decision rule above; ",
+         if (!isTRUE(s$bayes) && s$method %in% c("granger", "toda_yamamoto"))
+           "BF10 and P.post (Bayes factor of the unit-information prior, posterior probability for a prior of 1/2) are given for information; " else "",
+         "the classification combines the two directions of a pair (x -> y, y -> x, x <-> y, independent; ",
+         "'independent' = no relation detected; 'common_cause', printed as <~> = the criterion of the method for shared information ",
+         "without a directed link holds: for \"cmi_lag\" and \"markov\" dependence within the sampling interval, which a hidden driver ",
+         "with memory does not produce; see the help page of the method for the systems on which the class is a hidden common cause). ",
+         "plot(x, \"all\") shows the same. ",
+         "(options(Rcausality.guide = FALSE) hides this note.)\n", sep = "")
   invisible(x)
 }
 
@@ -368,16 +400,16 @@ summary.causres <- function(object, ...) {
 #' @export
 print.summary.causres <- function(x, digits = 3, ...) {
   s <- x$settings
-  cat("\nRcausality summary\n", strrep("=", 50), "\n", sep = "")
-  cat("Call:   ", deparse(x$call), "\n", sep = "")
-  cat("Method: ", s$method, if (s$conditional) " (conditional)" else " (pairwise)",
+  .out("\nRcausality summary\n", strrep("=", 50), "\n", sep = "")
+  .out("Call:   ", deparse(x$call), "\n", sep = "")
+  .out("Method: ", s$method, if (s$conditional) " (conditional)" else " (pairwise)",
       "   n = ", s$n, "   alpha = ", s$alpha, " (", s$adjust, ")\n", sep = "")
-  cat("Tests:  ", x$n_tests, "   significant links: ", x$n_sig,
+  .out("Tests:  ", x$n_tests, "   significant links: ", x$n_sig,
       sprintf("   (density %.0f%%)\n", 100 * x$density), sep = "")
-  cat("\nPair classes (x = first, y = second variable of the pair):\n")
+  .out("\nPair classes (x = first, y = second variable of the pair):\n")
   print(x$classes)
   if (x$n_sig) {
-    cat("\nSignificant links, strongest first:\n")
+    .out("\nSignificant links, strongest first:\n")
     L <- x$links
     tab <- data.frame(link = paste(L$cause, "->", L$effect), lag = L$lag,
                       sign = ifelse(L$sign > 0, "+", ifelse(L$sign < 0, "-", "0")),
@@ -388,10 +420,10 @@ print.summary.causres <- function(x, digits = 3, ...) {
                       evidence = L$evidence, check.names = FALSE,
                       stringsAsFactors = FALSE)
     print(tab, row.names = FALSE, right = FALSE)
-    cat("\nNode roles:\n")
+    .out("\nNode roles:\n")
     print(x$degree, row.names = FALSE, right = FALSE)
-    cat("\nLag distribution of significant links:\n")
+    .out("\nLag distribution of significant links:\n")
     print(x$lags)
-  } else cat("\nNo significant causal links at the chosen threshold.\n")
+  } else .out("\nNo significant causal links at the chosen threshold.\n")
   invisible(x)
 }

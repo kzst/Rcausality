@@ -54,7 +54,7 @@ benchmarks.
 | `method` | Reference | Kind of system |
 |---|---|---|
 | `"granger"`, `"bayes_granger"` | Granger (1969); Geweke (1982); Kass & Raftery (1995); Liang et al. (2008) | linear, stochastic |
-| `"cmi"`, `"cmi_lag"` | Frenzel & Pompe (2007); Runge (2018); Zlatniczki et al. (2021) | non-linear, stochastic; hidden common driver |
+| `"cmi"`, `"cmi_lag"` | Frenzel & Pompe (2007); Runge (2018); Zlatniczki et al. (2021) | non-linear, stochastic; contemporaneous dependence (common shocks) |
 | `"markov"` | Stippinger et al. (2023) | stochastic dynamical systems |
 | `"df"` | Telcs, Kurbucz & Jakovac (2025) | deterministic or stochastic |
 | `"dc"` | Benko et al. (2024) | deterministic (chaotic) |
@@ -98,7 +98,7 @@ closed-form factors: the Schwarz (BIC) approximation
 $\log BF_{10} \approx (BIC_r - BIC_u)/2$, the exact factor under Zellner's
 g-prior with $g = n$ (`"g"`) and under the hyper-g prior of Liang et al.
 (2008) (`"hyper_g"`). Posterior draws give credible intervals of Geweke's
-measure. Evidence labels follow Kass and Raftery. Every other method has a
+measure. The evidence labels are those of Jeffreys in the wording of Lee and Wagenmakers (`bf_evidence()`). Every other method has a
 Bayesian variant as well (a Bayesian surrogate test with an effect-size
 prior, a prior over the causal cases, a Bayesian Markov decision table);
 see `vignette("rcausality")`.
@@ -144,15 +144,19 @@ depth; Sects. 2.4-2.6 relate the delays of the three processes by a
 triangle inequality (`lag_triangle_check()`).
 
 **Implemented.** `method = "cmi_lag"`: the CMIs are estimated with the
-Frenzel-Pompe kNN estimator (`knn_cmi()`), tested with Runge's
-local-permutation scheme (`local_permutation_test()`); the
-contemporaneous test adds the `common_cause` class. The paper is
+Frenzel-Pompe kNN estimator (`knn_cmi()`) and tested against conditional shifts,
+surrogates that keep the serial dependence of the cause and its location
+and scale given the conditioning set (the residuals are shifted circularly;
+`method_args = list(reference = "local")` uses Runge's local-permutation
+scheme, `local_permutation_test()`, instead); the contemporaneous test
+adds the `common_cause` class, which stands for contemporaneous dependence
+without a directed link (a common driver or an instantaneous relation). The paper is
 theoretical (no numerical experiments), so the reproduction illustrates
 its propositions on systems with known truth.
 
 ```{r zlatniczki}
 set.seed(5); n <- 400
-e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # shared innovation = hidden common driver
+e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # correlated innovations: a common shock within the period
 common <- data.frame(x = as.numeric(stats::filter(e1, 0.5, "recursive")),
                      y = as.numeric(stats::filter(e2, 0.5, "recursive")))
 r_dir <- rcausality(sim_var(n, "x_to_y", seed = 1), method = "cmi_lag", lag = 1, seed = 1)
@@ -161,9 +165,11 @@ rbind(direct = c(class = r_dir$classes$class, instant_p = signif(r_dir$instant$p
       common = c(class = r_com$classes$class, instant_p = signif(r_com$instant$p_value, 2)))
 ```
 
-Appendix A: the contemporaneous CMI of the common-driver pair stays
+Appendix A: the contemporaneous CMI of the pair with the common shock stays
 positive as the conditioning history grows, that of the directly driven
-pair stays at zero.
+pair stays at zero. (A hidden driver with memory is a different case: its
+past predicts both series, so that the lagged quantities do not vanish and
+the tests report directed links.)
 
 ```{r zlatniczki-conv, fig.height = 3.8, fig.cap = "Convergence of the contemporaneous CMI in the history depth (Zlatniczki et al. 2021, Appendix A)."}
 dd <- sim_var(n, "x_to_y", seed = 1)
@@ -172,7 +178,7 @@ cv <- cbind(common_driver = cmi_convergence(common$x, common$y, lag = 0, depths 
 matplot(1:4, cv, type = "b", pch = 16, lwd = 2, lty = 1, col = c("#B2403A", "#2B5C8A"), xlab = "history depth d",
         ylab = "I(x[t]; y[t] | pasts of depth d)", xaxt = "n", main = "Contemporaneous CMI vs history depth", font.main = 2)
 axis(1, 1:4); abline(h = 0, lty = 3, col = "grey50")
-legend("topright", c("common driver", "direct link x -> y"), col = c("#B2403A", "#2B5C8A"), lwd = 2, pch = 16, bty = "n")
+legend("topright", c("common shock", "direct link x -> y"), col = c("#B2403A", "#2B5C8A"), lwd = 2, pch = 16, bty = "n")
 ```
 
 # Stippinger et al. (2023): the Markov-chain approach
@@ -295,7 +301,7 @@ Manifold-adaptive dimension estimation. *ICML 2007*, 265-272.
 contains the driver, so the intrinsic dimensions of the embedded $X$,
 $Y$, their joint $J$ and an "independent joint" $Z$ (the joint of $X$
 with a shuffled $Y$) obey different relations in the five causal cases
-(Eqs. 1-4): $D_X = D_J < D_Y$ ... for $X \to Y$ (the joint is no larger
+(Eqs. 1-4): $D_X < D_Y = D_J$ for $X \to Y$ (the joint is no larger
 than the driven system), $D_J = D_X + D_Y = D_Z$ for independence,
 $\max(D_X, D_Y) < D_J < D_Z$ for a hidden common cause. Dimensions are
 estimated with the Farahmand kNN estimator at several $k$, and Appendix
@@ -571,14 +577,21 @@ rp$pairs[, c("cause", "effect", "lag", "statistic", "p_adj", "significant")]
 ## Linear versus non-linear coupling
 
 `compare_methods()` runs several methods on one data set. On a linear
-VAR link the stochastic methods agree. On the chaotic logistic maps of
-Benko et al. the picture splits: the regression- and binning-based tests
-(`granger`, `te`) and CCM read the strong unidirectional coupling as
-bidirectional (the driven system's past does carry information about
-the driver, and the driver's embedding some about the driven system),
-while the kNN-CMI test and the dimension-, recurrence- and
-correlation-dimension methods return the true direction; CCDH reads
-this particular realisation as a hidden common cause.
+VAR link the stochastic methods agree. On one realisation of the chaotic
+logistic maps of Benko et al. (500 time points, `x` drives `y`) the
+verdicts split: the predictive tests (`granger`, `te`, the kNN-CMI test
+with one lag) and the recurrence- and correlation-dimension methods
+return the true direction; CCM reads the strong unidirectional coupling
+as bidirectional (the driver's embedding carries some information about
+the driven system); the dimension-based method does not find the
+relation in a series of this length; and CCDH reads this realisation as
+a hidden common cause. One data set is an illustration, not an
+assessment: the benchmark below gives the frequencies. (In noise-free
+deterministic systems the driver is a function of the past of the driven
+series. With a conditioning past that is long enough to reconstruct it,
+the tests of conditional independence, `cmi` and `rf_granger`, notice
+this, carry out no test and say so in a warning; see `?rcausality`,
+section "Conditional shifts".)
 
 ```{r compare1, fig.height = 3.4, fig.cap = "Verdicts on a linear VAR(1) link."}
 cv <- compare_methods(sim_var(500, "x_to_y", seed = 1), methods = c("granger", "cmi", "te", "pid"), seed = 1, lag = 1)
@@ -668,7 +681,8 @@ plot(bv)
   `hirata`, `ccm`) see the structure the regression misses; `dc` and
   `ccdh` can name a hidden common cause, `ccm` tends to call strong
   coupling bidirectional.
-* **Hidden common drivers**: `cmi_lag` (stochastic), `dc`, `ccdh`,
+* **Common causes**: `cmi_lag` and `markov` (stochastic: dependence
+  within the period, not a hidden driver with memory), `dc`, `ccdh`,
   `hirata` (deterministic) and the Table-2 reading of `df` are the
   methods that can return `common_cause`; the others can only report the
   absence of a directed link.

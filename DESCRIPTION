@@ -1,7 +1,7 @@
 Package: Rcausality
 Type: Package
 Title: Causality Analysis for Time Series and Panel Data
-Version: 0.0.3
+Version: 0.0.11
 Authors@R: c(
     person("Zsolt T.", "Kosztyán", email = "kosztyan.zsolt@gtk.uni-pannon.hu",
            role = c("aut", "cre", "cph")))
@@ -52,14 +52,14 @@ Description: A unified interface to causality detection methods for time
     of cores; every method has a Bayesian variant with explicit priors and
     Bayes-factor or posterior-probability decisions.
 License: GPL-3
-URL: https://github.com/kzst/rcausality
-BugReports: https://github.com/kzst/rcausality/issues
+URL: https://github.com/kzst/Rcausality
+BugReports: https://github.com/kzst/Rcausality/issues
 Encoding: UTF-8
 Depends: R (>= 4.0.0)
 Imports: stats, graphics, grDevices, parallel, utils, Rcpp
 LinkingTo: Rcpp
-Suggests: testthat (>= 3.0.0), lmtest, ranger, reticulate, knitr, rmarkdown, FNN, svglite
+Suggests: testthat (>= 3.0.0), lmtest, plm, sandwich, ranger, reticulate, knitr, rmarkdown, svglite
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
-Config/roxygen2/version: 8.1.1
+RoxygenNote: 7.3.3

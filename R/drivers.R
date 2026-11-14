@@ -74,6 +74,11 @@
   if (!length(drivers)) stop("No explanatory variable besides the target.", call. = FALSE)
   A1 <- A; A1["target"] <- list(NULL); A1$adjust <- "none"; A1$directions <- "both"
   fam_fun <- function(cause, effect) .family_of(cause, effect, target)
+  # the p-values are corrected within the families (links to the target, from the target, among the drivers): the
+  # size of its family decides how many replicates the lag scan of a pair must leave
+  nd <- length(drivers)
+  if (A$adjust %in% c("holm", "bonferroni"))
+    A1$m_family <- function(cause, effect) ifelse(cause == target | effect == target, nd, nd * (nd - 1L))
   old_rng <- .rng_setup(A$seed); on.exit(.rng_restore(old_rng), add = TRUE)
   A1["seed"] <- list(NULL)
 
@@ -100,6 +105,7 @@
   } else if (light) {
   } else if (info$conditional && length(drivers) >= 2L) {
     A2 <- A1; A2$conditional <- TRUE; A2$directions <- "forward"
+    if (!is.null(A1$m_family)) A2$m_family <- nd
     rc <- tryCatch(suppressWarnings(suppressMessages({
       if (panel) .panel_run(D, NULL, A2, cl, xvars = drivers, yvars = target, fam_fun = fam_fun, adjust = A$adjust)
       else {
@@ -221,7 +227,7 @@
 #'   Methods: `print`, `summary`, `plot` (see [plot.causdrivers()]) and the
 #'   methods of `causres` ([placebo_test()], [robustness()], `predict`).
 #' @references
-#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. \doi{10.1111/twec.70148}
+#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 #'
 #' Granger, C. W. J. (1969). Investigating causal relations by econometric models and cross-spectral methods. *Econometrica*, 37(3), 424-438. \doi{10.2307/1912791}
 #'
@@ -272,7 +278,10 @@ causal_drivers <- function(data, target, drivers = NULL, method = "granger", bay
 #' @param n number of observations.
 #' @param coupling strength of the links.
 #' @param nonlinear logical; couple through the centred square of the cause
-#'   (invisible to linear tests) instead of linearly.
+#'   instead of linearly. The link of a symmetric cause (`x2 -> x1`,
+#'   `x3 -> y`) is then invisible to linear tests; `x1`, which is itself
+#'   driven through a square, is skewed, so that its link to `y` keeps a
+#'   linear trace.
 #' @param ar autoregressive coefficient.
 #' @param seed optional RNG seed.
 #' @return A data frame with the columns `x1`, `x2`, `x3`, `x4`, `y`.
@@ -306,14 +315,14 @@ sim_drivers <- function(n = 300L, coupling = 0.5, nonlinear = FALSE, ar = 0.5, s
 print.causdrivers <- function(x, digits = 3, ...) {
   s <- x$settings; d <- x$drivers; panel <- inherits(x, "causpanel")
   base <- if (is.null(s$base_method)) s$method else s$base_method
-  cat(sprintf("Causal drivers of '%s': %s%s\n", x$target, .method_info(base)$short, if (isTRUE(s$bayes)) ", Bayesian variant" else ""))
+  .out(sprintf("Causal drivers of '%s': %s%s\n", x$target, .method_info(base)$short, if (isTRUE(s$bayes)) ", Bayesian variant" else ""))
   if (panel) {
     ps <- s$panel
-    cat(sprintf("  panel of %d units (%s periods), decision: %s\n", ps$n_units,
+    .out(sprintf("  panel of %d units (%s periods), decision: %s\n", ps$n_units,
                 if (ps$n_range[1] == ps$n_range[2]) ps$n_range[1] else paste(ps$n_range, collapse = "-"),
                 c(group = "group level", pooled = "pooled level", both = "group or pooled level")[[ps$decision]]))
-  } else cat(sprintf("  %d explanatory series, n = %d\n", nrow(d), s$n))
-  cat(sprintf("  link if %s%s\n", if (isTRUE(s$use_bf)) sprintf("BF10 > %g", s$bf_threshold) else sprintf("adj. p < %g (%s)", s$alpha, s$adjust),
+  } else .out(sprintf("  %d explanatory series, n = %d\n", nrow(d), s$n))
+  .out(sprintf("  link if %s%s\n", if (isTRUE(s$use_bf)) sprintf("BF10 > %g", s$bf_threshold) else sprintf("adj. p < %g (%s)", s$alpha, s$adjust),
               if (isTRUE(s$use_bf)) "" else ";\n  correction within the families: drivers -> target, target -> drivers, among the drivers"))
   show <- data.frame(driver = d$driver, lag = ifelse(is.na(d$lag), "-", as.character(d$lag)), stringsAsFactors = FALSE)
   if (any(d$significant & !is.na(d$order) & d$order != d$lag)) show$order <- ifelse(is.na(d$order), "-", as.character(d$order))
@@ -323,14 +332,14 @@ print.causdrivers <- function(x, digits = 3, ...) {
   if (any(!is.na(d$direct))) show$direct <- ifelse(!d$significant, "", ifelse(is.na(d$direct), "?", ifelse(d$direct, "yes", "no")))
   show$feedback <- ifelse(d$feedback, "yes", "")
   show$role <- ifelse(nzchar(d$via), sprintf("%s (via %s)", d$role, d$via), d$role)
-  cat("\n"); print(show, row.names = FALSE, right = FALSE)
+  .out("\n"); print(show, row.names = FALSE, right = FALSE)
   g <- x$graph
-  cat("\nLinks among the explanatory variables:")
-  if (!nrow(g)) cat(" none\n") else {
-    cat("\n"); for (i in seq_len(nrow(g))) cat(sprintf("  %s -> %s%s\n", g$cause[i], g$effect[i], if (is.na(g$lag[i])) "" else sprintf(" (lag %d)", g$lag[i])))
+  .out("\nLinks among the explanatory variables:")
+  if (!nrow(g)) .out(" none\n") else {
+    .out("\n"); for (i in seq_len(nrow(g))) .out(sprintf("  %s -> %s%s\n", g$cause[i], g$effect[i], if (is.na(g$lag[i])) "" else sprintf(" (lag %d)", g$lag[i])))
   }
-  if (!is.null(s$drivers_note)) cat(sprintf("\nNote: %s.\n", s$drivers_note))
-  cat("\n  lag: delay of the strongest effect", if (!is.null(show$order)) " (order: lag order of the test)" else "",
+  if (!is.null(s$drivers_note)) .out(sprintf("\nNote: %s.\n", s$drivers_note))
+  .out("\n  lag: delay of the strongest effect", if (!is.null(show$order)) " (order: lag order of the test)" else "",
       ";\n  importance: share in the evidence for the links into the target;\n",
       "  direct: still a driver given all other series; feedback: the target drives the series.\n",
       "  plot(x) draws the lag ladder.\n", sep = "")
@@ -345,14 +354,14 @@ summary.causdrivers <- function(object, ...) {
 
 #' @export
 print.summary.causdrivers <- function(x, digits = 3, ...) {
-  cat(sprintf("Causal drivers of '%s'\n\n", x$target))
+  .out(sprintf("Causal drivers of '%s'\n\n", x$target))
   d <- x$drivers; num <- vapply(d, is.numeric, TRUE); d[num] <- lapply(d[num], function(v) signif(v, digits))
   print(d, row.names = FALSE)
-  cat("\nLinks among the explanatory variables:\n")
+  .out("\nLinks among the explanatory variables:\n")
   if (nrow(x$graph)) { g <- x$graph; num <- vapply(g, is.numeric, TRUE); g[num] <- lapply(g[num], function(v) signif(v, digits)); print(g, row.names = FALSE) }
-  else cat("  none\n")
+  else .out("  none\n")
   if (!is.null(x$panel)) {
-    cat("\nPanel levels of the links into the target:\n")
+    .out("\nPanel levels of the links into the target:\n")
     p <- x$panel[grepl(paste0("-> ", x$target, "$"), x$panel$link), , drop = FALSE]
     num <- vapply(p, is.numeric, TRUE); p[num] <- lapply(p[num], function(v) signif(v, digits)); print(p, row.names = FALSE)
   }
@@ -386,7 +395,7 @@ print.summary.causdrivers <- function(x, digits = 3, ...) {
 #' @param ... passed on to [plot.causres()] / [plot.causpanel()].
 #' @return Invisibly, `x`.
 #' @references
-#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. \doi{10.1111/twec.70148}
+#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 #' @export
 #' @examples
 #' cd <- causal_drivers(sim_drivers(300, seed = 1), target = "y")

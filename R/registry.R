@@ -26,23 +26,23 @@
                         ref = "Toda & Yamamoto (1995)", tuning = character(0)),
   diks_panchenko = list(label = "Diks-Panchenko nonparametric (nonlinear) Granger causality test",
                         short = "Diks-Panchenko nonparametric test", stat = "T.n", family = "surrogate", conditional = TRUE,
-                        type = "nonlinear", pooled = TRUE, min_n = 30L,
-                        desc = "nonparametric test of conditional independence with kernel densities",
+                        type = "nonlinear", pooled = TRUE, min_n = 50L,
+                        desc = "nonparametric test of conditional independence with kernel densities and conditional-shift surrogates",
                         ref = "Diks & Panchenko (2006)", tuning = character(0)),
-  rf_granger     = list(label = "Random-forest Granger-like causality (out-of-bag gain, circular-shift surrogates)",
+  rf_granger     = list(label = "Random-forest Granger-like causality (out-of-bag gain, conditional-shift surrogates)",
                         short = "random-forest Granger-like causality", stat = "OOB.gain", family = "surrogate",
-                        conditional = TRUE, type = "nonlinear", pooled = TRUE, min_n = 25L, needs = "ranger",
+                        conditional = TRUE, type = "nonlinear", pooled = TRUE, min_n = 50L, needs = "ranger",
                         desc = "predictive gain of a random forest from the cause's past, surrogate test",
                         ref = "Kosztyan, Matrai & Kiss (2026)", tuning = character(0)),
-  cmi            = list(label = "Conditional mutual information (kNN, local permutation)",
+  cmi            = list(label = "Conditional mutual information (kNN, conditional-shift surrogates)",
                         short = "kNN conditional mutual information", stat = "CMI", family = "surrogate", conditional = TRUE,
                         type = "nonlinear", pooled = TRUE, min_n = 50L,
-                        desc = "kNN conditional mutual information of the cause's past and the effect, local permutation test",
+                        desc = "kNN conditional mutual information of the cause's past and the effect, surrogate test",
                         ref = "Frenzel & Pompe (2007); Runge (2018)", tuning = c("k", "k_perm", "history")),
   cmi_lag        = list(label = "Lag-shifted conditional mutual information (Zlatniczki et al., 2021)",
                         short = "lag-shifted CMI (Zlatniczki et al. 2021)", stat = "CMI", family = "surrogate", conditional = TRUE,
                         type = "nonlinear", pooled = TRUE, min_n = 50L,
-                        desc = "CMI conditioned on both pasts, with a contemporaneous test for common drivers",
+                        desc = "CMI conditioned on both pasts, with a test of contemporaneous dependence (common shocks)",
                         ref = "Zlatniczki et al. (2021)", tuning = c("k", "k_perm", "history")),
   markov         = list(label = "Markov-chain approach (Stippinger et al., 2023)",
                         short = "Markov-chain approach (Stippinger et al. 2023)", stat = "CMI", family = "surrogate",
@@ -72,12 +72,12 @@
                         ref = "Jakovac et al.", tuning = "model"),
   te             = list(label = "Transfer entropy, binned (Schreiber, 2000) with surrogate test",
                         short = "transfer entropy (Schreiber 2000)", stat = "TE.bits", family = "surrogate", conditional = FALSE,
-                        type = "nonlinear", pooled = TRUE, min_n = 30L,
+                        type = "nonlinear", pooled = TRUE, min_n = 50L,
                         desc = "binned transfer entropy with circular-shift surrogates",
                         ref = "Schreiber (2000)", tuning = c("bins", "history")),
   ccm            = list(label = "Convergent cross mapping (Sugihara et al., 2012)",
                         short = "convergent cross mapping (Sugihara et al. 2012)", stat = "rho", family = "surrogate",
-                        conditional = FALSE, type = "nonlinear", pooled = TRUE, min_n = 50L,
+                        conditional = FALSE, type = "nonlinear", pooled = TRUE, min_n = 55L,
                         desc = "cross-map skill of the cause from the effect's delay embedding, convergence and surrogates",
                         ref = "Sugihara et al. (2012); Clark et al. (2015)", tuning = c("m", "tau")),
   pid            = list(label = "MAR-PID: unique + synergistic information of the cause's past about the effect's future (Telcs, 2026)",
@@ -122,9 +122,14 @@
                          model = NULL, bins = 4L, k_target = 2L, k_source = 2L, rate = 0.05)
 
 .method_arg_defaults <- list(
-  toda_yamamoto  = list(d_max = 1L),
-  diks_panchenko = list(eps = NULL, C = 8, filter = "none"),
-  rf_granger     = list(num_trees = 200L, mtry = NULL, min_node_size = 5L, folds = 5L, shadow = TRUE,
+  granger        = list(vcov = "classical"),
+  cmi            = list(reference = "shift"),
+  cmi_lag        = list(reference = "shift"),
+  toda_yamamoto  = list(d_max = 1L, vcov = "classical"),
+  diks_panchenko = list(eps = NULL, C = 8, filter = "none", reference = "conditional"),
+  te             = list(reference = "circular"),
+  pid            = list(reference = "permutation"),
+  rf_granger     = list(num_trees = 200L, mtry = "all", min_node_size = "auto", folds = 5L, shadow = TRUE,
                         importance = TRUE)
 )
 
@@ -210,31 +215,32 @@ causal_methods <- function(method = NULL) {
 print.causal_methods <- function(x, ...) {
   if (!all(c("method", "type", "conditional", "pooled", "needs", "description") %in% names(x)))     # a subset of the columns
     return(invisible(print.data.frame(x, row.names = FALSE, right = FALSE)))
-  cat("Causality methods of Rcausality: rcausality(x, method = <name>, bayes = TRUE / FALSE, cores = <n>)\n")
+  .out("Causality methods of Rcausality: rcausality(x, method = <name>, bayes = TRUE / FALSE, cores = <n>)\n")
   tb <- data.frame(method = x$method, type = x$type, conditional = ifelse(x$conditional, "yes", "-"),
                    pooled.panel = ifelse(x$pooled, "yes", "-"), needs = x$needs, description = x$description,
                    stringsAsFactors = FALSE)
   print(tb, row.names = FALSE, right = FALSE)
-  cat("  every method has a Bayesian variant (bayes = TRUE) and unit- and group-level panel tests (id = , time = );\n",
+  .out("  every method has a Bayesian variant (bayes = TRUE; in panels all but rf_granger) and unit- and group-level\n",
+      " panel tests (id = , time = );\n",
       " pooled.panel: a pooled estimator on the stacked units exists.  causal_methods(\"<name>\") lists the settings.\n", sep = "")
   invisible(x)
 }
 
 #' @export
 print.causal_method <- function(x, ...) {
-  cat(sprintf("%s -- %s\n", x$method, x$label))
-  cat(sprintf("  %s; %s; %s\n", x$description, x$type, if (x$conditional) "pairwise or conditional" else "pairwise only"))
-  cat(sprintf("  Bayesian variant: %s; panel tests: %s; advisable series length: at least %d\n", x$bayes,
+  .out(sprintf("%s -- %s\n", x$method, x$label))
+  .out(sprintf("  %s; %s; %s\n", x$description, x$type, if (x$conditional) "pairwise or conditional" else "pairwise only"))
+  .out(sprintf("  Bayesian variant: %s; panel tests: %s; advisable series length: at least %d\n", x$bayes,
               paste(x$panel, collapse = ", "), x$min_length))
-  if (!is.na(x$needs)) cat("  needs:", x$needs, "\n")
+  if (!is.na(x$needs)) .out("  needs:", x$needs, "\n")
   if (length(x$settings)) {
-    cat("  settings (method_args = list(...)) and defaults:\n")
+    .out("  settings (method_args = list(...)) and defaults:\n")
     for (nm in names(x$settings)) {
       v <- x$settings[[nm]]
-      cat(sprintf("    %-14s %s\n", nm, if (is.null(v)) "NULL (automatic)" else paste(format(v), collapse = ", ")))
+      .out(sprintf("    %-14s %s\n", nm, if (is.null(v)) "NULL (automatic)" else paste(format(v), collapse = ", ")))
     }
-  } else cat("  no method-specific settings\n")
-  cat("  reference:", x$reference, "\n")
+  } else .out("  no method-specific settings\n")
+  .out("  reference:", x$reference, "\n")
   invisible(x)
 }
 

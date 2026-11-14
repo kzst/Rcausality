@@ -1,7 +1,7 @@
 # Regression tests for the issues found in the 0.0.1 code review (October 2026).
 
 test_that("CMI decisions do not depend on the units of one series", {
-  lg <- sim_logistic(400, "x_to_y", seed = 2)
+  lg <- nl_pair(400, 2)
   r0 <- rcausality(lg$x, lg$y, method = "cmi", lag = 1, n_perm = 60, seed = 1)
   r1 <- rcausality(1000 * lg$x, lg$y, method = "cmi", lag = 1, n_perm = 60, seed = 1)
   r2 <- rcausality(lg$x, 1000 * lg$y, method = "cmi", lag = 1, n_perm = 60, seed = 1)
@@ -75,8 +75,8 @@ test_that("directions = 'forward' is honoured by every method", {
   net <- sim_var(300, n_series = 3, seed = 1)
   m_small <- dfe_train(n_per_class = 3, lengths = c(200, 300), seed = 1)
   for (m in c("markov", "hirata", "cd", "dc", "ccdh", "dfe", "te", "pid")) {
-    r <- suppressMessages(rcausality(net[, 1:2], net[, 3, drop = FALSE], method = m, directions = "forward",
-                                     seed = 1, n_perm = 40, model = m_small))
+    r <- suppressWarnings(suppressMessages(rcausality(net[, 1:2], net[, 3, drop = FALSE], method = m, directions = "forward",
+                                                      seed = 1, n_perm = 40, model = m_small)))
     expect_equal(nrow(r$pairs), 2L, info = m)
     expect_true(all(r$pairs$effect == "v3"), info = m)
     expect_false(any(r$classes$both_directions_tested), info = m)
@@ -101,7 +101,7 @@ test_that("forecast evaluation refits the links on the training part and copes w
   expect_equal(predict(r, h = 3, refit = FALSE)$evaluation_source, "full sample (optimistic)")
   fc0 <- predict(r, h = 3, holdout = 0)
   expect_null(fc0$evaluation); expect_output(print(fc0), "no hold-out")
-  dc <- cbind(d, z = 1); rz <- rcausality(dc); fz <- predict(rz, h = 3)
+  dc <- cbind(d, z = 1); expect_warning(rz <- rcausality(dc), "Constant series \\(z\\)"); fz <- suppressWarnings(predict(rz, h = 3))
   expect_true(all(is.finite(fz$forecasts$lower)))
   expect_equal(fz$evaluation$improvement[fz$evaluation$series == "z"], 0)
 })

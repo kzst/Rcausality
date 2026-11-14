@@ -12,9 +12,10 @@ test_that("local permutation test separates dependence", {
 })
 
 test_that("method = 'cmi' detects non-linear coupling direction", {
-  d <- sim_logistic(300, scenario = "x_to_y", coupling = 0.25, seed = 1)
-  r <- rcausality(d$x, d$y, method = "cmi", seed = 1)
+  d <- nl_pair(300, 1)
+  r <- suppressMessages(rcausality(d$x, d$y, method = "cmi", seed = 1))
   expect_equal(r$classes$class, "x_to_y")
+  expect_equal(suppressWarnings(rcausality(d$x, d$y, method = "granger", lag = 1))$classes$class, "independent")   # no linear trace
   expect_output(print(r), "mutual information")
   pdf(NULL); on.exit(dev.off()); expect_no_error(plot(r, "both"))
   expect_no_error(summary(r))
@@ -34,8 +35,8 @@ test_that("cmi_lag finds a common (shared-noise) driver, not a directed link", {
 
 test_that("cmi_lag keeps direction for a driven pair and helpers work", {
   skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
-  d <- sim_logistic(300, scenario = "x_to_y", coupling = 0.25, seed = 1)
-  r <- rcausality(d$x, d$y, method = "cmi_lag", seed = 1)
+  d <- nl_pair(300, 1)
+  r <- suppressMessages(rcausality(d$x, d$y, method = "cmi_lag", seed = 1))
   expect_true(r$classes$class %in% c("x_to_y", "bidirectional"))
   expect_true(r$pairs$significant[r$pairs$cause == "x"])
   expect_equal(nrow(cmi_convergence(d$x, d$y, 1, 1:2)), 2)

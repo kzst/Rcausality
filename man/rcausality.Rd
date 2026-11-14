@@ -106,7 +106,10 @@ multiplicity correction to reach significance).}
 
 \item{seed}{optional RNG seed (the caller's generator is left untouched).}
 
-\item{impute}{logical; interpolate missing values?}
+\item{impute}{logical (default \code{TRUE}): missing and non-finite values are
+replaced by linear interpolation (the ends are carried), and a message
+reports how many were replaced in which series; \code{FALSE} stops with an
+error when a value is missing.}
 
 \item{target}{optional name of one explained variable: the analysis is
 organised around it (drivers, lags, importance, direct or mediated
@@ -162,10 +165,11 @@ Bayesian Granger regression, i.e. \verb{method = "granger", bayes = TRUE}),
 settings \code{num_trees}, \code{mtry}, \code{min_node_size}, \code{folds}, \code{shadow},
 \code{importance}; needs \pkg{ranger}).
 \item Information-theoretic: \code{"cmi"} (kNN conditional mutual information
-\verb{I(x[t-lag]; y[t] | history of y, controls)} with a local-permutation
-test), \code{"cmi_lag"} (Zlatniczki et al. 2021: also conditions on the
+\verb{I(x[t-lag]; y[t] | history of y, controls)} with a surrogate test
+by conditional shifts of the cause, see below), \code{"cmi_lag"} (Zlatniczki et al. 2021: also conditions on the
 cause's own past and adds a contemporaneous test whose significance,
-without lagged links, indicates a \emph{common driver}), \code{"te"} (binned
+without lagged links, indicates dependence within the sampling interval:
+a common shock or an instantaneous relation; class \code{common_cause}), \code{"te"} (binned
 transfer entropy, circular-shift surrogates), \code{"pid"} (MAR-PID: unique
 \itemize{
 \item synergistic information of the cause's past).
@@ -189,21 +193,53 @@ are an error). The settings of the methods of version 0.0.1 may also be
 given directly in \code{...}, as before.
 \itemize{
 \item \code{"cmi"}, \code{"cmi_lag"}: \code{k} (neighbours of the estimator, default 5),
-\code{k_perm} (size of the local-permutation neighbourhood), \code{history}
-(order of the conditioning history of the effect; \code{"auto"} = the VAR
-order of the pair, at most 5; too short a history lets the cause's lags
-stand in for the effect's own deeper past and produces spurious reverse
-links). With \code{lag = "auto"} every lag \verb{1..max_lag} is tested at once:
-the reported lag is the one with the largest statistic and the p-value
-is that of the maximal statistic against the maximum of the permuted
-statistics over the lags (the same max-statistic test is used by
-\code{"te"}, \code{"pid"} and \code{"df"}). Series are standardised.
+\code{history} (order of the conditioning history of the effect; \code{"auto"} =
+the VAR order of the pair, at most 5; too short a history lets the
+cause's lags stand in for the effect's own deeper past and produces
+spurious reverse links), \code{reference} (the reference distribution:
+\code{"shift"}, the default, uses conditional shifts: the lags of the cause
+are written as location plus scale times a standardized residual, with
+location and scale estimated as functions of the conditioning vector
+(see the section on conditional shifts), and the residuals are shifted
+circularly, which keeps the serial dependence of the cause;
+\code{"local"} uses the local permutations of Runge (2018) among the
+\code{k_perm} nearest neighbours in the conditioning space, which do not
+keep it and reject too often for strongly autocorrelated series). With
+\code{lag = "auto"} the lags \verb{1..max_lag} are tested at once (with
+\code{reference = "shift"} the scan is limited as for \code{"te"}): the reported
+lag is the one
+with the largest statistic and the p-value is that of the maximal
+statistic against the maximum of the replicated statistics over the
+lags (the same max-statistic test is used by \code{"te"}, \code{"pid"} and
+\code{"df"}). Series are standardised.
 \item \code{"te"} (see \code{\link[=transfer_entropy]{transfer_entropy()}}): \code{bins} (quantile bins), \code{history}
-(the effect's own history); the cause's lag is scanned.
+(the effect's own history); the cause's lag is scanned. The circular
+shifts of a scan over \code{L} lags are spaced by \code{L}, which leaves about
+\verb{0.8 n / L} replicates; the scan is limited to the lags for which
+enough of them remain (at least 40, and as many as the smallest
+p-value needs to pass a Holm or Bonferroni correction over the tests of
+the analysis; a message reports the limit). A numeric \code{lag} tests one
+lag with all shifts. \code{reference}: \code{"circular"} (default), circular
+shifts of the coded cause, which generate the hypothesis that the two
+series are independent; \code{"conditional"}, conditional shifts of the cause
+given the past of the effect, coded after the shift, for series on a
+continuous scale. In the reverse direction of a strong link whose
+driver is persistent the past of the cause is a function of the past
+of the effect, which a few symbols do not resolve: with circular
+shifts the test then rejects too often in long series (a warning names
+the situation), with conditional shifts it does not.
 \item \code{"ccm"} (see \code{\link[=ccm]{ccm()}}): \code{m}, \code{tau} (embedding); a link needs a
 significant and converging cross-map skill.
 \item \code{"pid"} (see \code{\link[=marpid]{marpid()}}): \code{k_target}, \code{k_source} (binarisation depths),
-\code{history}.
+\code{history}. \code{reference}: \code{"permutation"} (default), the cause is permuted
+within the levels of the coded own past of the effect, an exact test
+for the coded variables; \code{"conditional"}, conditional shifts of the
+cause given the past of the effect, coded after the shift, for series
+on a continuous scale. The code does not resolve a persistent past:
+in the reverse direction of a strong link whose driver is persistent
+the permutation test rejects too often, the more so the longer the
+series (a warning names the situation); the test with conditional
+shifts does not.
 \item \code{"dc"} (see \code{\link[=dimensional_causality]{dimensional_causality()}}): \code{m}, \code{tau}, \code{k_range}, \code{prep};
 decisions by posterior probabilities (\code{prob_threshold}).
 \item \code{"hirata"} (see \code{\link[=hirata_rp]{hirata_rp()}}): \code{m}, \code{tau}, \code{rate} (recurrence rate),
@@ -228,12 +264,62 @@ concerns the first \code{lag} lags of the cause, so no unit-root pre-test is
 needed.
 \item \code{"diks_panchenko"} (see \code{\link[=diks_panchenko]{diks_panchenko()}}): \code{eps} (bandwidth in
 standard deviations, \code{NULL} = \verb{min(1.5, C n^(-2/7))}), \code{C} (default 8),
-\code{filter} (\code{"none"} or \code{"var"}: only the nonlinear part is tested); a
+\code{filter} (\code{"none"} or \code{"var"}: only the nonlinear part is tested),
+\code{reference} (\code{"conditional"}, conditional shifts of the cause, the
+default; \code{"normal"}, the asymptotic test of Diks and Panchenko 2006,
+which rejects too often when the past of the cause depends on the past
+of an autocorrelated effect, as in the reverse direction of a link); a
 numeric \code{lag} is the length of the pasts, \code{"auto"} uses 1.
 \item \code{"rf_granger"} (see \code{\link[=rf_granger]{rf_granger()}}): \code{num_trees}, \code{mtry},
 \code{min_node_size}, \code{folds}, \code{shadow}, \code{importance}; \code{n_perm} is the number
-of circular-shift surrogates.
+of surrogates (conditional circular shifts).
+\item \code{"granger"}, \code{"toda_yamamoto"} (time series): \code{vcov}, \code{"classical"}
+(default), \code{"HC3"} or \code{"HAC"}. \code{"HC3"} is the Wald test with the
+heteroskedasticity-consistent covariance of MacKinnon and White (1985),
+divided by the number of restrictions and referred to the F
+distribution; \code{"HAC"} adds the autocovariances of the scores with
+Bartlett weights up to lag \code{floor(4 (n / 100)^(2/9))} (Newey and West
+1987), for regressions whose errors are not martingale differences, as
+those of a linear regression on a nonlinear process (it rejects a true
+null hypothesis somewhat too often in short series). The regressions
+are tested for heteroskedasticity
+(White's test in the form of Koenker 1981; \verb{$extra$het_p}), and a
+warning names these options when the test rejects at the 0.1\% level:
+the classical F test can then reject without a linear link, for
+example when the dependence is nonlinear.
 }
+}
+
+\section{Conditional shifts}{
+
+The tests of \code{"cmi"}, \code{"cmi_lag"}, \code{"rf_granger"} and
+\code{"diks_panchenko"} (and of \code{"te"} and \code{"pid"} with \code{reference = "conditional"}) refer
+their statistic to surrogates of the cause that keep its location and scale
+given the conditioning vector. Every
+lag of the cause is written as \verb{g(w) + s(w) e}, with the conditioning
+vector \code{w} (the past of the effect and of the controls), a location \code{g},
+a scale \code{s} and a standardized residual \code{e}; a surrogate keeps \code{g} and
+\code{s} and shifts \code{e} circularly. Location and scale are estimated flexibly
+(the polynomial basis in \code{w} with the smallest leave-one-out error, plus
+a nearest-neighbour mean of its residuals where that predicts them out of
+sample; an out-of-bag forest for \code{"rf_granger"}; for the scale the
+absolute values of \code{w} are among the candidate bases, since a spread
+often depends on the size of a variable and not on its sign, and the
+fit is weighted by the inverse squared scale), so that a cause that is
+a nonlinear function of a control, or whose spread a control drives, has
+surrogates that depend on the control as it does. A dependence of the
+shape of the cause on \code{w} beyond location and scale is not reproduced (no
+test of conditional independence is valid for all null distributions;
+Shah and Peters 2020).
+
+When \code{w} explains 99\% or more of the variance of a lag of the cause, no
+surrogate differs from the cause by more than the error of the fit: no
+test is carried out (p-value 1, Bayes factor 1), and a warning says so.
+This is the case of redundant series, of series with a common trend, and
+of noise-free deterministic systems, in which the driver is a function of
+the past of the driven series (Takens 1981). For deterministic systems
+\code{"te"} and the state-space methods (\code{"ccm"}, \code{"dc"}, \code{"cd"}, \code{"ccdh"},
+\code{"hirata"}) are the tools.
 }
 
 \section{Bayesian variants}{
@@ -246,7 +332,10 @@ sampler of \code{\link[=bayes_granger]{bayes_granger()}}. The surrogate / permut
 the observed statistic with the surrogate sample through \code{\link[=surrogate_bf]{surrogate_bf()}};
 \code{"markov"} combines the surrogate Bayes factors of its tests in a Bayesian
 decision table; \code{"dc"} and \code{"dfe"} apply the prior over the causal cases;
-\code{"pcmci"} uses a Savage-Dickey Bayes factor. \code{bf10}, \code{post_prob} and
+\code{"pcmci"} uses a Savage-Dickey Bayes factor. Without \code{bayes = TRUE} the
+regression tests are accompanied by the Bayes factor of the
+unit-information prior (\code{prior = "g"} with its default scale; columns
+\code{bf10}, \code{post_prob}), which does not enter the decision. \code{bf10}, \code{post_prob} and
 \code{evidence} are filled for every directed test, the details are in
 \verb{$bayes}, and a link is declared when \code{bf10 > bf_threshold} (or, with
 \code{control$decision = "posterior"}, when \code{post_prob > prob_threshold}).
@@ -273,8 +362,9 @@ rcausality(d3, method = "bayes_granger", control = bayes_control(n_iter = 300),
 
 # --- model-free methods on a non-linear coupling --------------------------
 # (a second or two each; `cores = 2` halves the time, see ?Rcausality-parallel)
-lg <- sim_logistic(200, "x_to_y", seed = 2)
-rcausality(lg, method = "cmi", max_lag = 2, n_perm = 50, seed = 1)$classes   # kNN conditional MI
+nl <- sim_nonlinear(300, "x_to_y", seed = 2)       # stochastic, no linear trace of the link
+rcausality(nl, method = "cmi", max_lag = 2, n_perm = 50, seed = 1)$classes   # kNN conditional MI
+lg <- sim_logistic(200, "x_to_y", seed = 2)        # deterministic maps
 rcausality(lg, method = "te", n_perm = 100, seed = 1, cores = 2)$classes$relation
 rcausality(lg, method = "te", method_args = list(bins = 6), n_perm = 100, seed = 1)$pairs
 rcausality(lg, method = "ccm", n_perm = 50, seed = 1)$classes$relation  # convergent cross mapping
@@ -322,6 +412,16 @@ Frenzel, S. and Pompe, B. (2007). Partial mutual information for coupling analys
 
 Runge, J. (2018). Conditional independence testing based on a nearest-neighbor estimator of conditional mutual information. \emph{Proceedings of the 21st International Conference on Artificial Intelligence and Statistics (AISTATS)}, PMLR 84, 938-947.
 
+Shah, R. D. and Peters, J. (2020). The hardness of conditional independence testing and the generalised covariance measure. \emph{The Annals of Statistics}, 48(3), 1514-1538. \doi{10.1214/19-AOS1857}
+
+Takens, F. (1981). Detecting strange attractors in turbulence. In \emph{Dynamical Systems and Turbulence, Warwick 1980}, Lecture Notes in Mathematics 898, 366-381. Springer, Berlin. \doi{10.1007/BFb0091924}
+
+MacKinnon, J. G. and White, H. (1985). Some heteroskedasticity-consistent covariance matrix estimators with improved finite sample properties. \emph{Journal of Econometrics}, 29(3), 305-325. \doi{10.1016/0304-4076(85)90158-7}
+
+Newey, W. K. and West, K. D. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. \emph{Econometrica}, 55(3), 703-708. \doi{10.2307/1913610}
+
+Koenker, R. (1981). A note on studentizing a test for heteroscedasticity. \emph{Journal of Econometrics}, 17(1), 107-112. \doi{10.1016/0304-4076(81)90062-2}
+
 Zlatniczki, A., Stippinger, M., Benko, Z., Somogyvari, Z. and Telcs, A. (2021). Relaxation of some confusions about confounders. \emph{Entropy}, 23(11), 1450. \doi{10.3390/e23111450}
 
 Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A. (2023). Causal discovery of stochastic dynamical systems: a Markov chain approach. \emph{Mathematics}, 11(4), 852. \doi{10.3390/math11040852}
@@ -330,7 +430,7 @@ Toda, H. Y. and Yamamoto, T. (1995). Statistical inference in vector autoregress
 
 Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. \emph{Journal of Economic Dynamics and Control}, 30(9-10), 1647-1669. \doi{10.1016/j.jedc.2005.08.008}
 
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 }
 \seealso{
 \code{\link[=causal_methods]{causal_methods()}}, \code{\link[=causal_drivers]{causal_drivers()}}, \code{\link[=panel_causality]{panel_causality()}},

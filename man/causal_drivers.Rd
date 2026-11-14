@@ -110,7 +110,7 @@ plot(cp, "heatmap")       # drivers by unit, with the panel-level tests
 }
 }
 \references{
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 
 Granger, C. W. J. (1969). Investigating causal relations by econometric models and cross-spectral methods. \emph{Econometrica}, 37(3), 424-438. \doi{10.2307/1912791}
 

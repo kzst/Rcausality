@@ -2,7 +2,7 @@
 
 Causality analysis for time series and panel data in R -- a unified interface to Granger
 causality, kNN conditional mutual information (plain and lag-shifted with
-common-driver detection), the Markov-chain approach, the degrees-of-freedom
+a test of contemporaneous dependence), the Markov-chain approach, the degrees-of-freedom
 (conditional-variance) method, Bayesian dimensional causality, the
 complexity-based CCDH method, the df-entropy / random-forest method,
 finite-resolution MAR-PID, recurrence-plot and correlation-dimension
@@ -22,6 +22,15 @@ options of every call, carries **every method to panel data** (units, group
 and pooled level, with Bayesian variants; `rcausality(x, id = )`) and adds
 the analysis of the **causal drivers of one explained variable**
 (`rcausality(x, target = )`), for time series and panels.
+Version 0.0.4 corrects the reference distributions of the surrogate and
+permutation tests and several Bayesian quantities and adds checks of the
+input (see `NEWS.md`; several results change).
+Version 0.0.5 makes the surrogates of the conditional tests keep nonlinear
+and scale dependence on the conditioning set, regenerates the cause in the
+panel bootstrap, and adds a heteroskedasticity-consistent form of the F
+test and resampling of common periods for panels with cross-sectional
+dependence (see `NEWS.md`; several results change, among them those of
+`"cmi"` and `"rf_granger"` on noise-free deterministic systems).
 Every method from the group's papers has a reproduction of a published
 result in `inst/reproduce/` and a section below ("Reproductions of
 published results") stating what was and what was not reproduced.
@@ -36,7 +45,7 @@ published results") stating what was and what was not reproduced.
 # from GitHub (development version; needs a C++ compiler: Rtools on Windows,
 # Xcode command-line tools on macOS)
 # install.packages("remotes")
-remotes::install_github("kzst/rcausality", build_vignettes = TRUE)
+remotes::install_github("kzst/Rcausality", build_vignettes = TRUE)
 ```
 
 The neighbour searches of the kNN-based methods (`cmi`, `cmi_lag`, `markov`,
@@ -70,7 +79,7 @@ a short reading guide. For the simulated pair the `x -> y` row is significant
 (F = 118, p < 1e-4, `BF10 > 1e4`), the `y -> x` row is not (p = 0.77,
 `BF10 = 0.05`, i.e. evidence *against* a link), and the class is `x_to_y`.
 `summary(r)` adds the sign of the net influence, the effect size (the gain
-in R^2), the Kass-Raftery evidence label and the *node roles* (driver,
+in R^2), the evidence label of the Bayes factor and the *node roles* (driver,
 target, hub/mediator, isolated).
 
 ```r
@@ -95,7 +104,7 @@ same shape:
   `effect_size`, `r2_gain`, `sign`, `n_eff` and `significant`.
 * `$classes` -- one row per *unordered* pair with its class (the five classes
   above) and a `relation` string such as `x -> y`.
-* `$instant` -- for the methods that test a contemporaneous / common-driver
+* `$instant` -- for the methods that test a contemporaneous / common-cause
   component (`cmi_lag`, `markov`, `df`, `ccdh`, `hirata`, `cd`, `dc`).
 * `$by_lag` -- the statistic of every directed test at every candidate lag
   (the lag-scan plot), `$settings` -- every setting that was used, and
@@ -148,8 +157,10 @@ lags.
 ### Decision by Bayes factors instead of p-values
 
 `method = "bayes_granger"` decides by the Bayes factor `BF10` of the link
-(Kass & Raftery labels: 1-3 anecdotal, 3-20 positive, 20-150 strong,
-> 150 very strong); a link needs `BF10 > bf_threshold` (3 by default).
+(labels of `bf_evidence()`, the categories of Jeffreys in the wording of
+Lee and Wagenmakers: 1-3 anecdotal, 3-10 moderate, 10-30 strong, 30-100
+very strong, > 100 decisive, and the same against the link for the
+reciprocal values); a link needs `BF10 > bf_threshold` (3 by default).
 With `prior = "bic"` the factor is the closed-form BIC approximation of the
 same regressions as the F-test; without `prior` the spike-and-slab
 regression of `bayes_granger()` is sampled for every pair (see "Bayesian
@@ -198,41 +209,78 @@ surrogates. They are slower (the kNN searches are O(n^2) per permutation, in
 C++), and `cores` distributes the work (see "Speed" below); `seed` makes a
 run reproducible.
 
+Two kinds of systems must be told apart. In a *stochastic* system the
+cause carries information that the past of the effect does not have, and
+the tests of conditional independence (`"cmi"`, `"rf_granger"`,
+`"diks_panchenko"`) are the tools: `sim_nonlinear()` gives such series
+with a link that leaves no linear trace. In a noise-free *deterministic*
+system (`sim_logistic()`, `sim_henon()`) the driver is a function of the
+past of the driven series (Takens 1981), so that given this past the
+driver has nothing to add: a conditional test is not informative, and
+`"cmi"` and `"rf_granger"` say so with a warning instead of a test. The
+state-space methods (`"ccm"`, `"dc"`, `"cd"`, `"ccdh"`, `"hirata"`), which
+use exactly this reconstruction, and `"te"` with plain circular shifts are
+the tools there. With observational noise both kinds of methods work.
+
 ### kNN conditional mutual information (`"cmi"`)
 
 The directed statistic is `I(x[t-lag]; y[t] | y's own past)`, the
-Frenzel-Pompe kNN estimator, with the local-permutation null of Runge (2018)
-(x's past is permuted within neighbourhoods of the conditioning set). With
-`lag = "auto"` every lag `1..max_lag` is tested at once and the p-value is a
-max-statistic test over the lags, so no further correction is needed.
+Frenzel-Pompe kNN estimator. Its reference distribution comes from
+conditional shifts, surrogates that keep the serial dependence of the cause
+and its location and scale given the conditioning set: every lag of the cause is written as a location plus a scale
+times a standardized residual, location and scale are estimated flexibly
+as functions of the conditioning set, and the residuals are shifted
+circularly (conditional shifts; nonlinear and scale dependence on the
+conditioning set are kept since version 0.0.5). The local permutations of
+Runge (2018), in which x's past
+is permuted within neighbourhoods of the conditioning set, are available
+with `method_args = list(reference = "local")`; they do not keep the
+serial dependence of the cause and reject too often for strongly
+autocorrelated series. With `lag = "auto"` the lags are tested at once and
+the p-value is a max-statistic test over the lags, so no further
+correction is needed; the scan is limited to the lags for which enough
+circular shifts remain (a message reports the limit).
 
 ```r
-lg <- sim_logistic(300, scenario = "x_to_y", seed = 1)    # coupled logistic maps, x drives y
-rc <- rcausality(lg, method = "cmi", max_lag = 3, n_perm = 100, seed = 1)
+nl <- sim_nonlinear(300, scenario = "x_to_y", seed = 1)   # x[t-1] sets the autoregressive coefficient of y
+rc <- rcausality(nl, method = "cmi", max_lag = 3, n_perm = 100, seed = 1)
 rc
 plot(rc, "lags")                                           # the CMI over the candidate lags
+rcausality(nl, method = "granger")                         # no linear link; warns: heteroskedastic errors
+rcausality(nl, method = "granger", method_args = list(vcov = "HC3"))
+lg <- sim_logistic(300, scenario = "x_to_y", seed = 1)    # noise-free coupled logistic maps
+rcausality(lg, method = "cmi", seed = 1)                   # warns: the past of y determines x, no test
+rcausality(lg, method = "te", seed = 1)                    # plain shifts: x -> y
 ```
 
 **What to look for.** The `x -> y` row has a clearly positive CMI (in
 nats) with a small p-value and the reported lag is the one with the largest
-CMI; the `y -> x` row is at the permutation level (a CMI around zero, p near
-1). The linear F-test may also react to a logistic coupling, but its F
-statistic measures the fit of a linear model, not the amount of dependence;
-the CMI quantifies the information flow directly and its null preserves the
-effect's own dynamics. `history = "auto"` conditions on the VAR order of the
+CMI; the `y -> x` row is at the level of the surrogates (a CMI around zero,
+p near 1). The linear F-test has no power for this link, whose linear
+projection is zero; what it does notice is that the variance of its errors
+depends on the regressors, and the classical F statistic can then reject
+for the wrong reason (a warning names the heteroskedasticity-consistent
+form, `vcov = "HC3"`, and `vcov = "HAC"`, which also allows for the serial
+dependence of the errors of a misspecified regression). The CMI quantifies the information flow directly and
+its null preserves the effect's own dynamics. `history = "auto"` conditions on the VAR order of the
 pair (at most 5 lags of the effect's own past); too short a history lets the
 cause's lags stand in for the effect's deeper past and produces spurious
 reverse links.
 
-### Hidden common driver: the lag-shifted CMI (`"cmi_lag"`)
+### Contemporaneous dependence: the lag-shifted CMI (`"cmi_lag"`)
 
 Zlatniczki et al. (2021): if neither lagged direction is significant but the
-*contemporaneous* dependence `I(x[t]; y[t] | both pasts)` is, the two series
-share a common driver. `cmi_lag` adds this test (the `$instant` table) and
-the class `common_cause`.
+*contemporaneous* dependence `I(x[t]; y[t] | both pasts)` is, then -- without
+instantaneous effects and with independent noises -- the two series share a
+common driver. `cmi_lag` adds this test (the `$instant` table) and the class
+`common_cause`. In data the class stands for dependence within the sampling
+interval (a common shock, an instantaneous or a fast link); a hidden driver
+*with memory* predicts both series from the past and is reported as a
+directed or bidirectional link by every method that uses the two series
+alone.
 
 ```r
-# two AR(1) series with correlated innovations: no directed link, a shared driver
+# two AR(1) series with correlated innovations: no directed link, a common shock in each period
 set.seed(5); n <- 300
 e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)
 x <- as.numeric(stats::filter(e1, 0.5, "recursive"))
@@ -325,8 +373,14 @@ coupled binary Markov chains of the five classes scores the pair (needs the
 mdl <- dfe_train(n_per_class = 200, seed = 1, cores = 2)   # about 20 s; done once
 mk2 <- sim_markov_pair(2000, "common_cause", seed = 1)     # hidden z drives x and y
 dfe_classify(mk2$x, mk2$y, model = mdl)                    # class scores of the five cases
-rcausality(d, method = "dfe", model = mdl)$classes         # the VAR pair of the quick start
+rcausality(mk2[, c("x", "y")], method = "dfe", model = mdl)$classes   # the same through the common interface
 ```
+
+The classifier is valid for symbolic series of short memory. A continuous
+autocorrelated series that is cut at its mean has long memory, which the
+classifier reads as the trace of a hidden process (93 of 100 pairs of
+independent first-order autoregressions were classified as `common_cause`);
+`rcausality()` therefore warns when the series are not binary.
 
 ### Information atoms: MAR-PID (`"pid"`)
 
@@ -497,7 +551,7 @@ rcausality(d, method = "te", bayes = TRUE, cores = 4, method_args = list(bins = 
 applied at three levels: the units one by one (false-discovery-rate control
 over all unit x link cells), a group-level test of "no unit has the link",
 and a pooled estimate from all units; `bayes = TRUE` gives the Bayesian
-variant of each. See `vignette("panel")`.
+variant of each (all methods but the random forest). See `vignette("panel")`.
 
 ```r
 pd <- sim_panel(n_units = 30, n_time = 25, prevalence = 0.6, seed = 1)   # x -> y in 60% of the units
@@ -516,7 +570,16 @@ Juodis, Karavias and Sarafidis (2021) with the half-panel jackknife; the
 unit, group and pooled tests are calibrated by a bootstrap under the null
 hypothesis, because the F distribution and the classical panel tests
 over-reject in short panels of persistent series (the vignette shows the
-rejection rates).
+rejection rates). The bootstrap regenerates the effect without the cause
+and the cause from its own past and the past of the bootstrap effect, so
+that feedback from the effect to the cause is kept. When the units share
+shocks or factors, `panel_control(resample = "periods")` resamples the
+same periods in all units of a balanced panel, which keeps the dependence
+between the units in the reference distribution;
+`panel_control(time_effects = TRUE)` removes shocks that move all units
+alike. Without one of the two options the analysis checks the assumption:
+it computes the CD statistic of Pesaran (2021) for every variable (slot
+`dependence`) and warns when the units move together.
 
 **The causal drivers of one variable**: which series drive the target, at
 which lag, how strongly, directly or through another driver, and how the
@@ -548,14 +611,15 @@ rcausality(my_levels, method = "toda_yamamoto", method_args = list(d_max = 1))
 # at which frequencies? Geweke's spectral measure + Breitung-Candelon tests
 plot(granger_spectral(net$v1, net$v2, lag = 3))
 # nonlinear: nonparametric test (Diks & Panchenko 2006) and random forests
-rcausality(lg, method = "diks_panchenko")
-rcausality(lg, method = "rf_granger", lag = 1, n_perm = 99, seed = 1)   # needs ranger
+rcausality(nl, method = "diks_panchenko", seed = 1)
+rcausality(nl, method = "rf_granger", lag = 1, n_perm = 99, seed = 1)   # needs ranger
 # short series: hierarchical Minnesota prior, tightness integrated out
 rcausality(short, method = "bayes_granger", prior = "minnesota", lag = 3, conditional = TRUE)
 ```
 
 **Are the links real?** `placebo_test()` repeats the analysis on data in
-which every series is shifted circularly by an independent offset (its own
+which every series is shifted circularly, with offsets that keep every
+pair of series apart (its own
 dynamics kept, the lead-lag structure destroyed) and reports the placebo
 distribution of the number of links, a placebo p-value per link and, with
 `reverse = TRUE`, the time-reversed Granger score (a genuine `x -> y` turns
@@ -651,9 +715,9 @@ We only claim what was actually run; open items are listed explicitly.
 |---|---|---|
 | x drives y (lag 1) | `I_B = 0`, `I_A > 0`, `I^(k) = 0` => A -> B | `x_to_y`, k = 0 CMI = 0.008 (n.s.) |
 | independent AR(1) series | all quantities zero | `independent` |
-| shared innovation (hidden common driver) | `I^(k) > 0`, no lagged link => common driver | `common_cause`, k = 0 CMI = 0.42 (p = 0.01) |
+| correlated innovations (common shock within the period) | `I^(k) > 0`, no lagged link => common driver | `common_cause`, k = 0 CMI = 0.42 (p = 0.01) |
 
-Appendix A: for the common-driver system the k = 0 CMI stays clearly positive
+Appendix A: for the system with the common shock the k = 0 CMI stays clearly positive
 as the history depth grows (0.42, 0.33, 0.27, 0.23 for d = 1..4), while for the
 directly driven system it stays at about 0 (0.003, 0.004, 0.007, -0.005).
 The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
@@ -834,7 +898,9 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
 * **Beyond the paper's training domain:** on linear VAR pairs
   (`sim_var()`, n = 2000) the Markov-trained model gets the directed,
   bidirectional and common-cause cases right (10/10, 10/10, 10/10, 9/10)
-  but calls 6 of 10 independent pairs "common cause"; on coupled logistic
+  but calls 6 of 10 independent pairs "common cause" (92 of 100 pairs of
+  independent autoregressions of length 300, hence the warning for series
+  that are not binary); on coupled logistic
   maps it is unreliable without the tuning the paper applies to its Lorenz
   and logistic benchmarks (not implemented).
 * **Implementation notes:** the feature set follows Appendix F.0.5 (two
@@ -989,7 +1055,7 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
     cases (`case_prior`) replaces the uniform one; `pcmci`: Savage-Dickey
     Bayes factor of the Fisher-transformed partial correlation.
   - Every variant fills `bf10`, `post_prob` (with `prior_prob`) and
-    `evidence` (Jeffreys / Kass-Raftery labels), stores the per-link
+    `evidence` (the labels of `bf_evidence()`), stores the per-link
     details in `$bayes` (and the fitted regressions in `$bayes_fits`),
     decides by `bf10 > bf_threshold` or, with `decision = "posterior"`, by
     `post_prob > prob_threshold`, and plots with `plot(r, "posterior")`.

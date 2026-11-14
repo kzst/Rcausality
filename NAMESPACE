@@ -110,6 +110,7 @@ export(sim_logistic3)
 export(sim_logistic_bdc)
 export(sim_markov01)
 export(sim_markov_pair)
+export(sim_nonlinear)
 export(sim_panel)
 export(sim_tent)
 export(sim_turnwheel)
@@ -117,9 +118,7 @@ export(sim_var)
 export(surrogate_bf)
 export(transfer_entropy)
 importFrom(Rcpp,sourceCpp)
-importFrom(stats,
-  lm.fit,
-  pf,
-  setNames
-)
+importFrom(stats,lm.fit)
+importFrom(stats,pf)
+importFrom(stats,setNames)
 useDynLib(Rcausality, .registration = TRUE)

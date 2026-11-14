@@ -81,12 +81,12 @@ compare_methods <- function(x, y = NULL, methods = c("granger", "bayes_granger",
 
 #' @export
 print.causcomp <- function(x, ...) {
-  cat("Rcausality method comparison (n = ", x$n, ", ", length(x$methods), " methods)\n", sep = "")
+  .out("Rcausality method comparison (n = ", x$n, ", ", length(x$methods), " methods)\n", sep = "")
   tb <- x$table
   tb$pair <- paste(tb$var1, "~", tb$var2); tb$var1 <- tb$var2 <- NULL
   tb$agreement <- sprintf("%.0f%%", 100 * tb$agreement)
   print(tb[, c("pair", x$methods, "consensus", "agreement")], row.names = FALSE, right = FALSE)
-  cat("  consensus = majority vote over the methods ('undetermined' on ties)\n")
+  .out("  consensus = majority vote over the methods ('undetermined' on ties)\n")
   invisible(x)
 }
 
@@ -138,8 +138,11 @@ plot.causcomp <- function(x, main = NULL, ...) {
 #' @param n series length.
 #' @param reps replications per scenario.
 #' @param args per-method argument lists as in [compare_methods()].
-#' @param seed base RNG seed (the data set of replication `r` of a scenario
-#'   is simulated with `seed + 1000 * scenario index + r`).
+#' @param seed base RNG seed. The data set of replication `r` of a scenario
+#'   is simulated with `seed + 1000 * scenario index + r` under the random
+#'   number generator of the parallel streams: to obtain one of these data
+#'   sets outside the function, call `RNGkind("L'Ecuyer-CMRG")` before the
+#'   simulator (under the default generator the same seed gives other data).
 #' @param cores CPU cores: the simulated data sets are analysed in parallel
 #'   (every method runs serially inside a replication; see
 #'   [Rcausality-parallel]).
@@ -175,7 +178,10 @@ benchmark_methods <- function(methods = c("granger", "cmi", "te"), scenarios = c
     d <- if (is.null(dots$id)) d[, 1:2] else d[, c(dots$id, dots$time, setdiff(names(d), c(dots$id, dots$time))[1:2])]   # panel: long format
     rows <- list()
     for (m in methods) {
-      a <- c(list(x = d, method = m), dots, if (!is.null(args[[m]])) args[[m]], list(cores = 1L))
+      # every (scenario, replication, method) has its own seed, so that the result of a method does not depend on
+      # which other methods are benchmarked with it
+      a <- c(list(x = d, method = m, seed = seed + 1000L * match(sc, scenarios) + r + 100000L * match(m, .method_names)),
+             dots, if (!is.null(args[[m]])) args[[m]], list(cores = 1L))
       a <- a[!duplicated(names(a), fromLast = TRUE)]
       t0 <- proc.time()[["elapsed"]]
       err <- NA_character_
@@ -210,8 +216,8 @@ benchmark_methods <- function(methods = c("granger", "cmi", "te"), scenarios = c
 
 #' @export
 print.causbench <- function(x, digits = 2, ...) {
-  cat(sprintf("Rcausality benchmark: simulator %s, n = %d, %d replications per scenario\n", x$simulator, x$n, x$reps))
-  cat("  accuracy (fraction of runs with the true class):\n")
+  .out(sprintf("Rcausality benchmark: simulator %s, n = %d, %d replications per scenario\n", x$simulator, x$n, x$reps))
+  .out("  accuracy (fraction of runs with the true class):\n")
   A <- cbind(round(x$accuracy, digits), overall = round(x$overall, digits), `sec/run` = round(x$time, 2))
   print(A)
   invisible(x)

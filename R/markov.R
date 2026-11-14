@@ -253,9 +253,10 @@ markov_test <- function(x, m = "auto", k_nn = NULL, n_bins = 2L, n_perm = 99L, k
   mx <- pm(Ex); my <- pm(Ey); mj <- pm(cbind(Ex, Ey))
   p_jm1 <- pm(cbind(Ex[1:(N - 1), , drop = FALSE], Ey[2:N, , drop = FALSE]))$p_value  # x earlier
   p_jp1 <- pm(cbind(Ex[2:N, , drop = FALSE], Ey[1:(N - 1), , drop = FALSE]))$p_value  # x later
-  xy <- .cmi_pair(y, x, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores)
-  yx <- .cmi_pair(x, y, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores)
-  i0 <- .cmi_instant(x, y, NULL, m, k, k_perm, n_perm, cores = cores)
+  # the directed and the contemporaneous tests of "cmi_lag" at lag 1, with its default reference distribution
+  xy <- .cmi_pair(y, x, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores, reference = "shift")
+  yx <- .cmi_pair(x, y, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores, reference = "shift")
+  i0 <- .cmi_instant(x, y, NULL, m, k, k_perm, n_perm, cores = cores, reference = "shift")
   list(m = m, p_x = mx$p_value, p_y = my$p_value, p_j = mj$p_value, p_jm1 = p_jm1, p_jp1 = p_jp1,
        xy = xy, yx = yx, i0 = i0,
        null = list(x = list(statistic = mx$statistic, null = mx$null, alternative = "less"),

@@ -39,7 +39,8 @@ optional, through Python).
 \section{Panel data and one explained variable}{
 
 \code{\link[=panel_causality]{panel_causality()}} (every method at the level of the units, of the group
-of units and of the pooled units, with Bayesian variants;
+of units and of the pooled units, with Bayesian variants of all methods
+but the random forest;
 \code{\link[=panel_control]{panel_control()}}, \code{\link[=plot.causpanel]{plot.causpanel()}}, \code{\link[=sim_panel]{sim_panel()}}, \code{\link[=panel_long]{panel_long()}}) and
 \code{\link[=causal_drivers]{causal_drivers()}} (drivers of a target with lags, importance, direct and
 indirect links and the causal graph of the explanatory variables, for
@@ -72,23 +73,18 @@ nonlinear and Bayesian tests, robustness and forecasting) and
 }
 
 \references{
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 }
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/kzst/rcausality}
-  \item Report bugs at \url{https://github.com/kzst/rcausality/issues}
+  \item \url{https://github.com/kzst/Rcausality}
+  \item Report bugs at \url{https://github.com/kzst/Rcausality/issues}
 }
 
 }
 \author{
 \strong{Maintainer}: Zsolt T. Kosztyán \email{kosztyan.zsolt@gtk.uni-pannon.hu} [copyright holder]
-
-Authors:
-\itemize{
-  \item Zsolt T. Kosztyán \email{kosztyan.zsolt@gtk.uni-pannon.hu} [copyright holder]
-}
 
 }
 \keyword{internal}

@@ -111,23 +111,37 @@ correlations are weak:
 ```{r dp}
 lg <- sim_logistic(500, "x_to_y", seed = 1)
 rcausality(lg, method = "granger")$classes[, c("var1", "var2", "class")]
-r_dp <- rcausality(lg, method = "diks_panchenko")
+r_dp <- rcausality(lg, method = "diks_panchenko", seed = 1)
 r_dp$pairs[, c("cause", "effect", "statistic", "effect_size", "p_value", "significant")]
 ```
 
-`effect_size` is the standardised statistic `sqrt(n) T_n / S_n`. With
-`method_args = list(filter = "var")` the test is applied to the residuals
-of a VAR, so that only the nonlinear part of the dependence is tested.
+The statistic is referred to conditional shifts of the cause: surrogates
+that keep the location and the scale of the cause's past given the effect's
+past and shift the residuals circularly. `effect_size` is the statistic
+standardised by the mean and the standard deviation of its surrogate
+values. `method_args = list(reference = "normal")` gives the asymptotic
+test of Diks and Panchenko (2006), which needs no surrogates; it rejects
+too often when the cause's past depends on the past of an autocorrelated
+effect, as in the reverse direction of a link whose driver is persistent,
+because a kernel window of 1.5 standard deviations does not resolve that
+past. With `method_args = list(filter = "var")` the test is applied to the
+residuals of a VAR, so that only the nonlinear part of the dependence is
+tested.
 
 ## Random-forest Granger-like causality
 
 The approach of Kosztyán, Mátrai and Kiss (2026) keeps Granger's
 predictive definition but replaces the linear regression by a random
 forest. The out-of-bag gain `1 - MSE(own + cause) / MSE(own)` is tested
-against circular-shift surrogates of the cause; the honest rolling-origin
+against conditional shifts of the cause (its location and scale given the
+own past of the effect and the controls are kept, the residuals are shifted
+circularly); the honest rolling-origin
 out-of-sample gain, the permutation importance of the cause's lags and a
 shadow-feature rule (the cause must beat a shifted copy of itself) are
-reported with it.
+reported with it. The minimal node size of the trees is selected by the
+out-of-bag error of the forest on the own past (`min_node_size = "auto"`):
+with only a few lags as features, fully grown trees interpolate the noise,
+and any added series then seems to improve the prediction.
 
 ```{r rf, eval = has_ranger}
 r_rf <- .pre("ext-rf", rcausality(lg, method = "rf_granger", lag = 1, n_perm = 99, seed = 1,
@@ -140,6 +154,15 @@ A non-positive gain gives `p = 1`: in coupled deterministic systems the
 driven series carries information about its driver, and a test of
 *dependence* would also flag the reverse direction; Granger's definition
 asks for an *improvement* of the prediction.
+
+The same property limits the test in noise-free deterministic systems.
+With one lag, as here, a single past value of `y` does not determine `x`,
+and `x` improves the prediction of `y`. With two lags the past of `y`
+determines `x` exactly (`x[t]` is a quadratic polynomial of `y[t]` and
+`y[t-1]` in these maps): no surrogate of the cause then differs from it,
+the test is not carried out (`p = 1`), and a warning names the state-space
+methods and `"te"` as the tools for such systems. For stochastic series
+with a nonlinear link (`sim_nonlinear()`) no such limit exists.
 
 # Short series: the hierarchical Minnesota prior
 
@@ -211,9 +234,12 @@ par(op)
 ```
 
 The Minnesota Bayes factor keeps the false-positive rate near the nominal
-level of the F-test while its power for the shortest series is about twice
-that of the F-test; the BIC approximation, by contrast, declares spurious
-links in short samples.
+level of the F-test. Its power equals that of the F-test for the shortest
+series and exceeds it from about 30 observations (0.52 against 0.38 at
+`n = 30`); the BIC approximation, by contrast, declares spurious links in
+the shortest samples (10% at `n = 15`) and loses power in longer ones. The
+Minnesota Bayes factor is also available when the F-test is not, as in the
+example above.
 
 # Panels of short series
 
@@ -320,7 +346,7 @@ Giannone, D., Lenza, M. and Primiceri, G. E. (2015). Prior selection for vector 
 
 Haufe, S., Nikulin, V. V., Müller, K.-R. and Nolte, G. (2013). A critical assessment of connectivity measures for EEG data: a simulation study. *NeuroImage*, 64, 120-133.
 
-Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. doi:10.1111/twec.70148
+Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. doi:10.1111/twec.70148
 
 Litterman, R. B. (1986). Forecasting with Bayesian vector autoregressions: five years of experience. *Journal of Business & Economic Statistics*, 4(1), 25-38.
 

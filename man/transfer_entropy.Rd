@@ -12,7 +12,8 @@ transfer_entropy(
   bins = 4L,
   n_surr = 100L,
   seed = NULL,
-  cores = getOption("Rcausality.cores", 1L)
+  cores = getOption("Rcausality.cores", 1L),
+  reference = c("circular", "conditional")
 )
 }
 \arguments{
@@ -27,9 +28,13 @@ transfer_entropy(
 \item{seed}{optional RNG seed.}
 
 \item{cores}{CPU cores for the surrogates (see \link{Rcausality-parallel}).}
+
+\item{reference}{\code{"circular"} or \code{"conditional"}: see the section on the
+reference distribution.}
 }
 \value{
-A list with \code{te}, \code{te_eff} (effective TE), \code{p_value}, \code{null}.
+A list with \code{te}, \code{te_eff} (effective TE), \code{p_value}, \code{null},
+\code{settings}.
 }
 \description{
 Schreiber's transfer entropy \verb{TE(x -> y) = H(y[t] | y[t-1..t-l]) - H(y[t] | y[t-1..t-l], x[t-1..t-k])} in bits, estimated from the
@@ -39,6 +44,25 @@ destroyed); the \emph{effective} transfer entropy is \verb{TE - mean(TE of the s
 entropy is available as \code{rcausality(method = "cmi")}, since the transfer
 entropy is the conditional mutual information \verb{I(x past; y[t] | y past)}.
 }
+\section{Reference distribution}{
+
+Circular shifts of \code{x} (\code{reference = "circular"}) generate the hypothesis
+that the two series are independent. In the reverse direction of a link
+that hypothesis is false, and the test keeps its level only as far as the
+statistic conditions on the past of \code{y}. A few symbols do not resolve a
+strongly autocorrelated past: when \code{x} is driven by \code{y} and \code{y} is
+persistent, the coded past of \code{x} keeps information about \code{y[t]}, and the
+test of \code{x -> y} rejects too often in long series (the simulation study
+of the accompanying paper gives the rates). \code{reference = "conditional"}
+uses conditional shifts of \code{x} given the past of \code{y} (location and scale
+of the lags of \code{x} as functions of that past, standardized residuals
+shifted circularly, see \code{\link[=rcausality]{rcausality()}}), coded after the shift: the
+surrogates keep the dependence of \code{x} on the past of \code{y}. They need
+series on a continuous scale; symbolic series (at most \code{bins} distinct
+values) are shifted circularly. More bins or a longer history \code{l} also
+reduce the effect, at a cost in power.
+}
+
 \examples{
 # x drives y in the simulated VAR.  The transfer entropy x -> y exceeds
 # its circular-shift surrogates (small p-value); the reverse direction sits

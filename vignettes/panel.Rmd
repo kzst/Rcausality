@@ -169,10 +169,14 @@ For the Granger family (`"granger"`, `"bayes_granger"`,
   the pooled statistic are therefore compared with a bootstrap under the
   null hypothesis, as Dumitrescu and Hurlin (2012) recommend for their panel
   test: in every unit the effect is regenerated from its own estimated
-  autoregression with resampled residuals, the cause is kept. The bootstrap
-  sample is the null sample of the group test, and it calibrates the unit
-  p-values and the pooled p-value (an *empirical null*, Efron 2004); the
-  calibration can only make a test more conservative.
+  autoregression with resampled residuals, and the cause from its own past,
+  the past of the bootstrap effect and the residuals of the same resampled
+  periods, so that feedback from the effect to the cause is part of the
+  bootstrap panels (`panel_control(bootstrap = "joint")`, the default since
+  version 0.0.5; `bootstrap = "effect"` keeps the cause as observed). The
+  bootstrap sample is the null sample of the group test, and it calibrates
+  the unit p-values and the pooled p-value (an *empirical null*, Efron
+  2004); the calibration can only make a test more conservative.
 
 The following experiment shows why this matters. The null hypothesis is
 true in every case; a test at the 5% level should reject in 5% of the
@@ -214,22 +218,36 @@ The Dumitrescu-Hurlin test with its normal approximation is far from its
 nominal level in short panels, the more so the more persistent the series
 are, and the fixed-effects test of the reverse direction rejects a true
 null hypothesis in almost half of the wide panels. The tests of the package
-stay between 2.5% and 8%.
+stay between 1.5% and 7.5%.
 
 For the model-free methods the pooled statistic is computed from the
 stacked delay vectors of all units, standardised within the units, and its
 null distribution from surrogate panels in which the cause is delayed
 circularly within every unit. In short units a shifted series is not
 independent of the original one, which makes these tests conservative.
-The units are treated as independent throughout; with common shocks,
-`panel_control(time_effects = TRUE)` centres every variable across the
-units within each period first.
+The units are treated as independent by default. When they share shocks
+or factors, two options exist for the Granger family:
+`panel_control(time_effects = TRUE)` standardizes every variable within
+its unit and centres it across the units within each period, which removes
+shocks that move all units alike; and
+`panel_control(resample = "periods")` resamples the same periods in all
+units of a balanced panel, which keeps the dependence between the units in
+the reference distribution, whatever its form (the bootstrap of Dumitrescu
+and Hurlin 2012, Section 6.2). Without one of the two options every panel
+analysis checks the assumption. For each variable it computes the CD
+statistic of Pesaran (2021), the scaled sum of the correlations between
+the units of the residuals of first-order autoregressions with trend,
+refers it to a chi-square approximation that holds for short units, and
+warns below p = 0.001 that the units move together (`$dependence` holds
+the statistics). The statistic adds the correlations up, so that it does
+not see a factor whose loadings have both signs; `placebo_test()` shows
+how many links an analysis declares between series of different units.
 
 ## Choosing the method
 
 The method is an option, as for time series. In the next panel `x` acts
-on `y` through its square, a dependence that leaves no linear trace; the
-units have 20 periods.
+on `y` through its square, a dependence whose linear projection is zero;
+the units have 20 periods.
 
 ```{r nonlinear}
 pn <- sim_panel(n_units = 40, n_time = 20, scenario = "x_to_y", nonlinear = TRUE,
@@ -241,8 +259,12 @@ cmp
 sapply(cmp$results, function(r) r$pairs$p_adj[r$pairs$cause == "x"])   # adjusted p-values of x -> y
 ```
 
-The linear test finds nothing; the conditional mutual information and the
-random forest find `x -> y`. Units of 20 periods are too short for a kNN
+The linear test does not declare the link here; the conditional mutual
+information and the random forest find `x -> y`. (In simulations of such
+panels the group level of the linear test often rejects, because the errors
+of the misspecified unit regressions are heteroskedastic in the cause; its
+pooled level, which estimates one common coefficient, does not. A link at
+the group level alone is a reason to try a nonlinear method.) Units of 20 periods are too short for a kNN
 estimate of the conditional mutual information or for a random forest, so
 these two methods are run at the pooled level only, where the delay vectors
 of all 40 units are used together.
@@ -250,7 +272,8 @@ of all 40 units are used together.
 ## The Bayesian variants
 
 `bayes = TRUE` gives the Bayesian variant of the panel analysis of every
-method.
+method except the random forest (`"rf_granger"`), which is tested with
+surrogates only.
 
 ```{r bayes}
 pb <- rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = "hyper_g", seed = 1)
@@ -411,10 +434,12 @@ Juodis, A., Karavias, Y. and Sarafidis, V. (2021). A homogeneous approach to tes
 
 Kilian, L. (1998). Small-sample confidence intervals for impulse response functions. *The Review of Economics and Statistics*, 80(2), 218-230.
 
-Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. doi:10.1111/twec.70148
+Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. doi:10.1111/twec.70148
 
 Newton, M. A., Noueiry, A., Sarkar, D. and Ahlquist, P. (2004). Detecting differential gene expression with a semiparametric hierarchical mixture method. *Biostatistics*, 5(2), 155-176.
 
 Nickell, S. (1981). Biases in dynamic models with fixed effects. *Econometrica*, 49(6), 1417-1426.
+
+Pesaran, M. H. (2021). General diagnostic tests for cross-sectional dependence in panels. *Empirical Economics*, 60(1), 13-50.
 
 Pesarin, F. and Salmaso, L. (2010). *Permutation Tests for Complex Data: Theory, Applications and Software*. Wiley, Chichester.

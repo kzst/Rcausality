@@ -11,14 +11,17 @@ diks_panchenko(
   eps = NULL,
   C = 8,
   filter = c("none", "var"),
-  filter_lag = 1L
+  filter_lag = 1L,
+  n_perm = 199L,
+  seed = NULL,
+  reference = c("conditional", "normal")
 )
 }
 \arguments{
 \item{x, y}{numeric vectors (both directions are tested).}
 
-\item{lag}{length of the two pasts (\code{lX = lY}; the theory and the
-bandwidth rule are for \code{lag = 1}, larger lags give a conservative test).}
+\item{lag}{length of the two pasts (\code{lX = lY}; the bandwidth rule is for
+\code{lag = 1}).}
 
 \item{eps}{bandwidth in standard deviations; \code{NULL} = \code{min(1.5, C * n^(-2/7))}, the rule of Diks and Panchenko (2006, Sect. 4).}
 
@@ -30,11 +33,21 @@ of the dependence is tested (the usual practice after a linear Granger
 test).}
 
 \item{filter_lag}{lag order of the filtering VAR.}
+
+\item{n_perm, seed}{number of conditional shifts and their seed
+(\code{n_perm = 0} gives the normal reference).}
+
+\item{reference}{\code{"conditional"} (default) or \code{"normal"}: see the section
+on the reference distribution. Diks and Wolski (2016) discuss the
+failure of the normal reference with more than one lag or with further
+conditioning variables.}
 }
 \value{
 An object of class \code{diks_panchenko}: a data frame \code{tests} (one
-row per direction: statistic \code{T_n}, z-score, one-sided p-value,
-bandwidth, effective sample size) and the settings. Method: \code{print}.
+row per direction: statistic \code{T_n}, z-score (with conditional shifts:
+the statistic standardized by mean and standard deviation of its
+surrogate values), one-sided p-value, bandwidth, effective sample size,
+reference) and the settings. Method: \code{print}.
 }
 \description{
 Tests the conditional independence \verb{y[t] _||_ (x[t-1], ..., x[t-lag]) | (y[t-1], ..., y[t-lag])} without a model for the dependence, so that
@@ -49,6 +62,33 @@ long-run variance. The test is one-sided. Unlike the Hiemstra-Jones
 test, it is consistent because the kernel is weighted by the density of
 the conditioning variable.
 }
+\section{Reference distribution}{
+
+By default the statistic is referred to conditional shifts of the cause
+(\code{reference = "conditional"}): the lags of the cause are split into a
+location and a scale, both estimated as functions of the conditioning
+vector, and standardized residuals, which are shifted circularly (see
+\code{\link[=rcausality]{rcausality()}}). The surrogates keep the dependence of the cause's past
+on the effect's past, which the null hypothesis allows. When the
+conditioning vector determines the cause (99\% of its variance or more,
+as in noise-free deterministic systems), no test is carried out and the
+p-value is 1.
+
+\code{reference = "normal"} is the asymptotic test of Diks and Panchenko
+(2006), which needs no surrogates. Its normal limit is proved for one
+lag of each series, and it presupposes that the bias of the kernel
+estimates is negligible beside the standard error of the statistic. At
+the bandwidths of the rule this fails when the cause's past depends on
+the effect's past and the effect is autocorrelated, as in the reverse
+direction of a link whose driver is persistent: a window of 1.5 standard
+deviations does not resolve the effect's past, the cause is a function of
+that past and keeps information about the effect's present, and the
+normal reference rejects a true null hypothesis in a large share of the
+cases (the simulation study of the accompanying paper gives the rates).
+Use it for series whose pasts are at most weakly dependent, for example
+after \code{filter = "var"} when the dependence is linear, and with one lag.
+}
+
 \examples{
 # x drives y through a nonlinear (logistic-map) coupling: the test rejects
 # x -> y and keeps y -> x

@@ -53,7 +53,9 @@ p-value, Bayes factor, \code{nominal} decision of the unit, \code{q_value},
 Granger family also the uncalibrated \code{p_ftest} and \code{bf10_raw}), \code{panel}
 (the group- and pooled-level tests, with a \code{detail} text), \code{prevalence}
 (share of units with the link: observed, and the posterior under the
-prevalence model), \code{id}, \code{time}. Methods: \code{print}, \code{summary}, \code{plot}
+prevalence model), \code{dependence} (the CD statistic, its p-value and the
+mean correlation between the units for every variable; \code{NULL} when the
+settings account for the dependence), \code{id}, \code{time}. Methods: \code{print}, \code{summary}, \code{plot}
 (see \code{\link[=plot.causpanel]{plot.causpanel()}}), \code{as.matrix}, \code{predict}.
 }
 \description{
@@ -75,12 +77,34 @@ in addition, a prevalence model on the unit Bayes factors \code{BF_i} (the
 share of the units with the link has a Beta prior; the Bayes factor of
 "share > 0" is the prior mean of \code{prod_i (1 - share + share * BF_i)})
 gives the posterior of the share and partially pooled posterior
-probabilities of the link in every unit;
+probabilities of the link in every unit. The posterior of the share is
+a cautious description, not a sharp estimate: a unit that is too short
+to show its link counts mostly as a unit without it (in simulations
+with 20 periods a true share of 0.5 had a posterior mean of 0.36), and
+a unit without the link is never excluded (0.6 with 50 or 100
+periods). Under \code{prior = "minnesota"} the unit Bayes factors of short
+units without a link stay near one and the posterior of the share near
+its prior; the BIC form or the spike-and-slab prior describe the share
+better;
 \item \strong{pooled}: one estimate from all units, for the methods with a pooled
 estimator.
 }
 }
 \details{
+\strong{Dependence between the units.} All levels treat the units as
+independent given their own dynamics. Units that share shocks or trends
+violate this, and links are then declared between unrelated series. The
+analysis therefore computes the CD statistic of Pesaran (2021) for
+every variable (the scaled sum of the correlations between the units of
+the residuals of first-order autoregressions with trend, referred to a
+chi-square approximation that holds for short units; slot \code{dependence})
+and warns below p = 0.001, unless \code{panel_control(time_effects = TRUE)}
+removes the common shocks or, for the Granger family in balanced panels,
+\code{panel_control(resample = "periods")} keeps the dependence in the
+reference distributions. \code{\link[=placebo_test]{placebo_test()}} measures what remains. (The
+statistic adds the correlations up: it does not see a dependence whose
+correlations cancel, such as a factor with loadings of both signs.)
+
 \strong{Granger family} (\code{"granger"}, \code{"bayes_granger"}, \code{"toda_yamamoto"}).
 The pooled test is that of Juodis, Karavias and Sarafidis (2021): the
 cause's lags have common coefficients (under the null hypothesis they are
@@ -92,14 +116,23 @@ half-panel jackknife of Dhaene and Jochmans (2015). In short series the F
 distribution is only an approximation, so the unit statistics and the
 pooled statistic are referred to a bootstrap under the null hypothesis
 (in every unit the effect is regenerated from its own estimated
-autoregression with resampled residuals, the cause is kept; the
+autoregression with resampled residuals, and the cause from its own lags,
+the lags of the bootstrap effect and the residuals of the same resampled
+periods, which keeps the feedback from the effect to the cause; the
 small-sample bias of the estimated persistence is corrected first, Kendall
-1954, Kilian 1998): the
+1954, Kilian 1998; \code{panel_control(bootstrap = "effect")} keeps the cause
+as observed, and \code{resample = "periods"} uses the same resampled periods
+in all units, which keeps the dependence between the units): the
 bootstrap sample is the null sample of the group test, and it gives the
-empirical null (Efron 2004) with which the unit p-values and the pooled
-p-value are calibrated -- the calibration can only make a test more
-conservative. The Bayes factors use the prior of \code{\link[=bayes_control]{bayes_control()}}: the
-unit Bayes factors as in \code{\link[=rcausality]{rcausality()}}, the pooled Bayes factor from the
+empirical null (a normal location-scale fit to the bootstrap scores) with
+which the unit p-values and the pooled p-value are calibrated -- the
+calibration can only make a test more conservative. The Bayes factors use
+the prior of \code{\link[=bayes_control]{bayes_control()}}: the unit Bayes factors as in
+\code{\link[=rcausality]{rcausality()}}, except that the BIC form is replaced by the exact Bayes
+factor of the prior that it approximates (the unit-information prior,
+i.e. the g prior with g equal to the number of usable periods), because
+the BIC approximation overstates the evidence of regressions with few
+residual degrees of freedom; the pooled Bayes factor from the
 pooled estimate and its covariance (BIC, g, hyper-g, normal /
 spike-and-slab or Minnesota prior on the pooled coefficients); both are
 lowered by the change of the likelihood ratio that the calibration
@@ -115,7 +148,8 @@ mutual information (\code{"cmi"}, \code{"cmi_lag"}), the binned transfer entropy
 (\code{"te"}) and multispatial convergent cross mapping (\code{"ccm"}, Clark et al.
 2015). Their null distribution comes from surrogate panels in which the
 cause is delayed circularly within every unit; with \code{bayes = TRUE} the
-statistic is compared with its surrogates by \code{\link[=surrogate_bf]{surrogate_bf()}}. These
+statistic is compared with its surrogates by \code{\link[=surrogate_bf]{surrogate_bf()}} (the
+random forest has no Bayesian panel variant). These
 estimators use all \verb{units x periods} delay vectors, so they work with
 units that are far too short for a unit-by-unit analysis (see
 \code{min_length} in \code{\link[=causal_methods]{causal_methods()}}); within short units the shifted
@@ -156,7 +190,7 @@ Dhaene, G. and Jochmans, K. (2015). Split-panel jackknife estimation of fixed-ef
 
 Dumitrescu, E.-I. and Hurlin, C. (2012). Testing for Granger non-causality in heterogeneous panels. \emph{Economic Modelling}, 29(4), 1450-1460. \doi{10.1016/j.econmod.2012.02.014}
 
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 
 Efron, B. (2004). Large-scale simultaneous hypothesis testing: the choice of a null hypothesis. \emph{Journal of the American Statistical Association}, 99(465), 96-104. \doi{10.1198/016214504000000089}
 
@@ -165,6 +199,8 @@ Benjamini, Y. and Hochberg, Y. (1995). Controlling the false discovery rate: a p
 Newton, M. A., Noueiry, A., Sarkar, D. and Ahlquist, P. (2004). Detecting differential gene expression with a semiparametric hierarchical mixture method. \emph{Biostatistics}, 5(2), 155-176. \doi{10.1093/biostatistics/5.2.155}
 
 Ince, R. A. A., Paton, A. T., Kay, J. W. and Schyns, P. G. (2021). Bayesian inference of population prevalence. \emph{eLife}, 10, e62461. \doi{10.7554/eLife.62461}
+
+Pesaran, M. H. (2021). General diagnostic tests for cross-sectional dependence in panels. \emph{Empirical Economics}, 60(1), 13-50. \doi{10.1007/s00181-020-01875-7}
 
 Pesarin, F. and Salmaso, L. (2010). \emph{Permutation Tests for Complex Data: Theory, Applications and Software}. Wiley, Chichester. \doi{10.1002/9780470689516}
 

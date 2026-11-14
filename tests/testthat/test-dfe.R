@@ -21,7 +21,7 @@ test_that("dfe_train / dfe_classify recover simulated Markov classes", {
   expect_output(print(r), "class scores")
   pdf(NULL); on.exit(dev.off()); expect_no_error(plot(r))
   d2 <- sim_var(1500, "x_to_y", seed = 1)
-  rc <- rcausality(d2, method = "dfe", model = m)
+  expect_warning(rc <- rcausality(d2, method = "dfe", model = m), "not binary")   # continuous series: outside the domain
   expect_s3_class(rc, "causres"); expect_true(all(is.na(rc$pairs$p_value)))
   expect_output(print(rc), "class scores")
 })

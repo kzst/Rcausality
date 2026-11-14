@@ -23,7 +23,8 @@ forecast_causal(
 \item{model}{forecast model: \code{"var"}, \code{"bvar"} or \code{"rf"} (see
 \code{\link[=predict.causres]{predict.causres()}}).}
 
-\item{...}{further arguments to \code{\link[=rcausality]{rcausality()}} (e.g. \code{seed}; \code{id} and
+\item{...}{further arguments to \code{\link[=rcausality]{rcausality()}} (e.g. \code{seed}, which also
+seeds the forecast models; \code{id} and
 \code{time} for panel data) and to \code{\link[=predict.causres]{predict.causres()}} /
 \code{\link[=predict.causpanel]{predict.causpanel()}} (\code{p}, \code{holdout}, \code{level}, \code{refit}, \code{control},
 \code{rf_settings}, \code{n_sim}).}

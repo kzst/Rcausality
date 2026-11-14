@@ -23,7 +23,8 @@ bayes_control(
   cross = 1,
   own_mean = 0,
   lambda_hyper = c(mode = 0.2, sd = 0.4),
-  decision = c("bf", "posterior")
+  decision = c("bf", "posterior"),
+  effect_scale = c("local", "unit")
 )
 }
 \arguments{
@@ -62,7 +63,12 @@ Bayes factor with the half-normal prior).}
 \item{case_prior}{prior probabilities of the five causal cases
 (\code{x_to_y}, \code{y_to_x}, \code{bidirectional}, \code{common_cause}, \code{independent}) for
 the dimensional-causality and df-entropy methods and for the Bayesian
-Markov decision table; \code{NULL} = uniform.}
+Markov decision table. It replaces the prior of the method, which is
+used when \code{case_prior = NULL}: uniform over the five cases for the
+df-entropy classifier, uniform over the nine elementary events of Benko
+et al. (2024) for dimensional causality (weights 1 : 1 : 1 : 3 : 3 of
+the five cases), and the prior implied by equally probable outcomes of
+the six tests for the Markov table (2 : 2 : 2 : 1 : 1).}
 
 \item{n_iter, burnin, thin, chains}{MCMC settings of the regression family:
 posterior draws of the coefficients, of \code{sigma} and of Geweke's measure
@@ -95,6 +101,15 @@ tightness that the data support.}
 \item{decision}{how a link is declared: \code{"bf"} (Bayes factor above
 \code{bf_threshold} of \code{\link[=rcausality]{rcausality()}}) or \code{"posterior"} (posterior probability
 above \code{prob_threshold}).}
+
+\item{effect_scale}{unit of the scale of the effect prior of the surrogate
+Bayes factor: \code{"local"} (default; \code{scale} null standard deviations of the
+statistic) or \code{"unit"} (\code{scale} null standard deviations of the
+statistic times the root of the number of observations, the scale of a
+unit-information prior for a statistic whose null standard deviation
+falls with the root of the length; see \code{\link[=surrogate_bf]{surrogate_bf()}}). With \code{"unit"}
+the evidence for the absence of a link grows with the length of the
+series.}
 }
 \value{
 A list of class \code{bayes_control}.

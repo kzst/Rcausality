@@ -26,21 +26,21 @@
 .panel_header <- function(x) {
   s <- x$settings; ps <- s$panel
   bal <- if (ps$n_range[1] == ps$n_range[2]) sprintf("%d periods", ps$n_range[1]) else sprintf("%d-%d periods", ps$n_range[1], ps$n_range[2])
-  cat(sprintf("Panel causality analysis: %s%s\n", .method_info(s$base_method)$short, if (isTRUE(s$bayes)) ", Bayesian variant" else ""))
-  cat(sprintf("  %d units x %s, %d series%s%s\n", ps$n_units, bal, length(x$series),
+  .out(sprintf("Panel causality analysis: %s%s\n", .method_info(s$base_method)$short, if (isTRUE(s$bayes)) ", Bayesian variant" else ""))
+  .out(sprintf("  %d units x %s, %d series%s%s\n", ps$n_units, bal, length(x$series),
               if (isTRUE(s$conditional)) ", conditional on the other series" else "",
               if (identical(ps$lag_rule, "pooled BIC")) "; lag order of every link by the BIC of its pooled regression"
               else if (identical(ps$lag_rule, "first")) "; first significant lag order" else ""))
   lv <- c(group = "group level (the unit results combined)", pooled = "pooled level (stacked units)",
           both = if (ps$use_bf) "group or pooled level (average of the two Bayes factors)" else "group or pooled level (smaller p-value, doubled)")
-  cat(sprintf("  decision: %s; link if %s\n", lv[[ps$decision]],
+  .out(sprintf("  decision: %s; link if %s\n", lv[[ps$decision]],
               if (ps$use_bf) sprintf("BF10 > %g", s$bf_threshold) else sprintf("adj. p < %g (%s)", s$alpha, s$adjust)))
   if (ps$units_analysed > 0)
-    cat(sprintf("  unit level: %d of %d units analysed%s; error control over the unit x link cells: %s\n", ps$units_analysed, ps$n_units,
+    .out(sprintf("  unit level: %d of %d units analysed%s; error control over the unit x link cells: %s\n", ps$units_analysed, ps$n_units,
                 if (ps$units_short > 0) sprintf(" (%d shorter than %d periods)", ps$units_short, ps$min_length) else "",
                 if (ps$use_bf) "Bayesian FDR" else sprintf("%s", ps$unit_adjust)))
-  else cat(sprintf("  unit level: not available (units shorter than %d periods, see panel_control(min_length = ))\n", ps$min_length))
-  if (ps$units_failed > 0) cat(sprintf("  note: the unit-level analysis failed in %d unit(s): %s\n", ps$units_failed, x$unit_errors[[1]]))
+  else .out(sprintf("  unit level: not available (units shorter than %d periods, see panel_control(min_length = ))\n", ps$min_length))
+  if (ps$units_failed > 0) .out(sprintf("  note: the unit-level analysis failed in %d unit(s): %s\n", ps$units_failed, x$unit_errors[[1]]))
 }
 
 #' @export
@@ -56,18 +56,18 @@ print.causpanel <- function(x, digits = 3, ...) {
     ifelse(is.na(x$pairs$p_adj), "-", .fmt_p(x$pairs$p_adj)), ifelse(tb$significant, " *", ""))
   if (any(is.finite(tb$prevalence)))
     show$prevalence <- ifelse(is.finite(tb$prevalence), sprintf("%.2f [%.2f, %.2f]", tb$prevalence, tb$prevalence_lower, tb$prevalence_upper), "-")
-  cat("\n"); print(show, row.names = FALSE, right = FALSE)
-  cat("\n")
-  if (ps$units_analysed > 0) cat("  units: units with the link / units analysed (after the error control over all cells)\n")
-  cat(sprintf("  %s\n", if (ps$use_bf) "group: Bayes factor of 'some units have the link'; pooled: Bayes factor of the stacked units"
+  .out("\n"); print(show, row.names = FALSE, right = FALSE)
+  .out("\n")
+  if (ps$units_analysed > 0) .out("  units: units with the link / units analysed (after the error control over all cells)\n")
+  .out(sprintf("  %s\n", if (ps$use_bf) "group: Bayes factor of 'some units have the link'; pooled: Bayes factor of the stacked units"
                          else "group, pooled: p-values of the two panel-level tests"))
-  cat(sprintf("  panel: the decision -- %s; * = link\n",
+  .out(sprintf("  panel: the decision -- %s; * = link\n",
               if (ps$decision == "both") { if (ps$use_bf) "average of the two Bayes factors" else sprintf("the smaller p-value doubled, %s-adjusted over the links", x$settings$adjust) }
               else if (ps$use_bf) sprintf("the Bayes factor of the %s level", ps$decision) else sprintf("the %s-adjusted p-value of the %s level", x$settings$adjust, ps$decision)))
-  if (any(is.finite(tb$prevalence))) cat("  prevalence: posterior share of the units with the link [credible interval]\n")
+  if (any(is.finite(tb$prevalence))) .out("  prevalence: model-based share of the units with a detectable link, posterior mean [credible interval]\n")
   C <- x$classes
-  cat("\nRelations in the panel:\n")
-  for (i in seq_len(nrow(C))) cat(sprintf("  %s\n", C$relation[i]))
+  .out("\nRelations in the panel:\n")
+  for (i in seq_len(nrow(C))) .out(sprintf("  %s\n", C$relation[i]))
   invisible(x)
 }
 
@@ -93,19 +93,19 @@ summary.causpanel <- function(object, ...) {
 #' @export
 print.summary.causpanel <- function(x, digits = 3, ...) {
   .panel_header(x$object)
-  cat("\nLinks (three levels):\n")
+  .out("\nLinks (three levels):\n")
   tb <- x$links; num <- vapply(tb, is.numeric, TRUE)
   tb[num] <- lapply(tb[num], function(v) signif(v, digits))
   print(tb, row.names = FALSE)
-  cat("\nPanel-level tests:\n")
+  .out("\nPanel-level tests:\n")
   PT <- x$panel[, c("cause", "effect", "level", "test", "lag", "statistic", "p_freq", "bf10", "significant", "detail")]
   PT$statistic <- signif(PT$statistic, digits); PT$p_freq <- signif(PT$p_freq, digits); PT$bf10 <- signif(PT$bf10, digits)
   print(PT, row.names = FALSE, right = FALSE)
   if (!is.null(x$units)) {
-    cat(sprintf("\nUnits with a link after the error control: %d cell(s)\n", nrow(x$units)))
+    .out(sprintf("\nUnits with a link after the error control: %d cell(s)\n", nrow(x$units)))
     if (nrow(x$units)) {
       tu <- table(.link_key(x$units$cause, x$units$effect))
-      for (k in names(tu)) cat(sprintf("  %s: %s\n", k, paste(utils::head(x$units$unit[.link_key(x$units$cause, x$units$effect) == k], 12), collapse = ", ")))
+      for (k in names(tu)) .out(sprintf("  %s: %s\n", k, paste(utils::head(x$units$unit[.link_key(x$units$cause, x$units$effect) == k], 12), collapse = ", ")))
     }
   }
   invisible(x)
@@ -176,7 +176,7 @@ as.matrix.causpanel <- function(x, what = if (by == "pairs") "p_adj" else "first
 #' @param ... passed on to [plot.causres()].
 #' @return Invisibly, `x`.
 #' @references
-#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. \doi{10.1111/twec.70148}
+#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 #' @export
 #' @examples
 #' pd <- sim_panel(n_units = 20, n_time = 25, prevalence = 0.5, coupling = 0.6, seed = 1)
@@ -276,7 +276,9 @@ plot.causpanel <- function(x, type = c("heatmap", "units", "prevalence", "networ
     }
   }
   graphics::text(-0.3, seq_len(nl) - 0.5, sel, adj = 1, cex = 0.8)
-  if (nu && nu <= 60) graphics::text(seq_len(nu) - 0.5, nl + 0.15, ids[ord], srt = 90, adj = 1, cex = min(0.7, 28 / nu + 0.25))
+  # unit labels are written vertically: their size follows the width of a cell, so that neighbouring labels do not overlap
+  ucex <- min(0.7, cell_in / (1.3 * graphics::strheight("M", units = "inches", cex = 1)))
+  if (nu && nu <= 60 && ucex >= 0.28) graphics::text(seq_len(nu) - 0.5, nl + 0.15, ids[ord], srt = 90, adj = 1, cex = ucex)
   if (nu) graphics::text(nu / 2, -0.25, sprintf("units (%d)", nu), cex = 0.75, col = "grey30", adj = c(0.5, 0))
   for (q in seq_len(np)) graphics::text(nu + gap + (q - 1) * (pw + pgap) + pw / 2, -0.25, c(group = "Group", pooled = "Pooled")[[lv[q]]], cex = 0.75,
                                         font = if (ps$decision %in% c(lv[q], "both")) 2 else 1, adj = c(0.5, 0))

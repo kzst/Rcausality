@@ -78,10 +78,10 @@ hirata_rp <- function(x, y, E = 3L, tau = 1L, rate = 0.05, theiler = NULL, n_sur
   obs <- stats_of(0L)
   lo <- max(2L * E * tau + 1L, floor(ne / 10)); hi <- ne - lo
   if (hi <= lo) stop("Series too short.", call. = FALSE)
-  S <- do.call(rbind, .plapply(seq_len(n_surr), function(b) stats_of(sample(lo:hi, 1L)), cores = cores))
-  pv <- c(x_to_y = (1 + sum(S[, "cov_xy"] >= obs[["cov_xy"]])) / (n_surr + 1),
-          y_to_x = (1 + sum(S[, "cov_yx"] >= obs[["cov_yx"]])) / (n_surr + 1),
-          excess = (1 + sum(S[, "excess"] >= obs[["excess"]])) / (n_surr + 1))
+  S <- do.call(rbind, .plapply(.shift_draws(lo, hi, n_surr), function(s) stats_of(s), cores = cores))
+  pv <- c(x_to_y = (1 + sum(S[, "cov_xy"] >= obs[["cov_xy"]])) / (nrow(S) + 1),
+          y_to_x = (1 + sum(S[, "cov_yx"] >= obs[["cov_yx"]])) / (nrow(S) + 1),
+          excess = (1 + sum(S[, "excess"] >= obs[["excess"]])) / (nrow(S) + 1))
   index <- c(x_to_y = (obs[["cov_xy"]] - obs[["rate_x"]]) / (1 - obs[["rate_x"]]),
              y_to_x = (obs[["cov_yx"]] - obs[["rate_y"]]) / (1 - obs[["rate_y"]]))
   dx <- pv[["x_to_y"]] < alpha && index[["x_to_y"]] >= theta
@@ -131,8 +131,8 @@ plot.hirata <- function(x, max_points = 500L, main = NULL, ...) {
 #' @export
 print.hirata <- function(x, digits = 3, ...) {
   s <- x$settings
-  cat("Recurrence-plot causality (Hirata & Aihara, 2010)\n")
-  cat(sprintf("  embedding E = %d, tau = %d, recurrence rate %.2f, Theiler window %d, n = %d, %d surrogates\n",
+  .out("Recurrence-plot causality (Hirata & Aihara, 2010)\n")
+  .out(sprintf("  embedding E = %d, tau = %d, recurrence rate %.2f, Theiler window %d, n = %d, %d surrogates\n",
               s$E, s$tau, s$rate, s$theiler, x$n, s$n_surr))
   tb <- data.frame(criterion = c("x -> y: P(R_X | R_Y) (X covers Y's recurrences)", "y -> x: P(R_Y | R_X)",
                                  "simultaneous recurrences: joint rate / (rate_x rate_y)"),
@@ -140,7 +140,7 @@ print.hirata <- function(x, digits = 3, ...) {
                    index = c(round(x$index, digits), NA),
                    p.surr = .fmt_p(x$p_values))
   print(tb, row.names = FALSE, right = FALSE)
-  cat(sprintf("  verdict: %s   (index >= %g and p < %g => directed link; excess significant without a link => common cause)\n",
+  .out(sprintf("  verdict: %s   (index >= %g and p < %g => directed link; excess significant without a link => common cause)\n",
               x$verdict, s$theta, s$alpha))
   invisible(x)
 }
@@ -256,13 +256,13 @@ krakovska_cd <- function(x, y, E = 3L, tau = 1L, alpha = 0.05, tol = 0.1, n_boot
 
 #' @export
 print.krakovska <- function(x, digits = 2, ...) {
-  cat("Correlation-dimension causality (Krakovska, 2019)\n")
-  cat(sprintf("  embedding E = %d, tau = %d\n", x$settings$E, x$settings$tau))
+  .out("Correlation-dimension causality (Krakovska, 2019)\n")
+  .out(sprintf("  embedding E = %d, tau = %d\n", x$settings$E, x$settings$tau))
   print(data.frame(manifold = c("X", "Y", "joint (a x + y)", "independent joint"), D2 = round(x$d2, digits), se = round(x$se, digits)),
         row.names = FALSE, right = FALSE)
-  cat(sprintf("  relations (z-tests): joint = X: %s, joint = Y: %s, X = Y: %s, joint = independent joint: %s\n",
+  .out(sprintf("  relations (z-tests): joint = X: %s, joint = Y: %s, X = Y: %s, joint = independent joint: %s\n",
               x$tests[["joint_eq_x"]], x$tests[["joint_eq_y"]], x$tests[["x_eq_y"]], x$tests[["joint_eq_indep"]]))
-  cat(sprintf("  verdict: %s\n", x$verdict))
+  .out(sprintf("  verdict: %s\n", x$verdict))
   invisible(x)
 }
 

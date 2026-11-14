@@ -67,5 +67,5 @@ plot(pg, "network")
 }
 }
 \references{
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 }

@@ -5,6 +5,28 @@
 #' @useDynLib Rcausality, .registration = TRUE
 NULL
 
+# ---- console text ---------------------------------------------------------------
+# cat() for the print methods: a line that is longer than the console is
+# wrapped at spaces and keeps its indentation, so that the output fits narrow
+# consoles and printed pages (getOption("width")).  Tables are printed by
+# print.data.frame(), which wraps its columns itself.
+.out <- function(..., sep = " ") {
+  x <- list(...)
+  if (!all(vapply(x, is.character, logical(1)))) return(cat(..., sep = sep))
+  txt <- paste(unlist(x), collapse = sep)
+  if (!nzchar(txt)) return(invisible(NULL))
+  w <- getOption("width", 80L)
+  nl <- endsWith(txt, "\n")
+  lines <- strsplit(txt, "\n", fixed = TRUE)[[1]]
+  lines <- unlist(lapply(lines, function(l) {
+    if (nchar(l, "width") <= w) return(l)
+    ind <- attr(regexpr("^ *", l), "match.length")
+    strwrap(l, width = w, indent = ind, exdent = ind + 1L)
+  }))
+  cat(paste(lines, collapse = "\n"), if (nl) "\n", sep = "")
+  invisible(NULL)
+}
+
 # ---- parallel execution -------------------------------------------------------
 # Every unit of work (a permutation, a surrogate, a series pair, an MCMC
 # chain, a benchmark run) gets its own L'Ecuyer-CMRG random stream, derived
@@ -51,8 +73,8 @@ NULL
     if (nzchar(chk) && !identical(chk, "false")) cores <- min(cores, 2L)
   }
   cores <- suppressWarnings(as.integer(cores)[1])
-  if (is.na(cores)) stop("`cores` must be a positive integer, \"auto\" or a cluster from parallel::makeCluster().", call. = FALSE)
-  max(1L, cores)
+  if (is.na(cores) || cores < 1L) stop("`cores` must be a positive integer, \"auto\" or a cluster from parallel::makeCluster().", call. = FALSE)
+  cores
 }
 
 # snapshot / restore of the session's generator: the kind (as RNGkind() reports
@@ -139,8 +161,15 @@ NULL
 
 # seed handling of the top-level functions: the seed (when given) applies to
 # the call only; the caller's generator is restored by .rng_restore()
+# Arguments of the calling function that are still promises are evaluated before a seed is set: an argument such as
+# data.frame(x = rnorm(60)) would otherwise be generated from the seed of the analysis, the same data in every call.
+.force_args <- function(env) {
+  for (nm in ls(env)) tryCatch(force(get(nm, envir = env, inherits = FALSE)), error = function(e) NULL)
+  invisible(NULL)
+}
 .rng_setup <- function(seed) {
   if (is.null(seed)) return(NULL)
+  .force_args(parent.frame())
   old <- .rng_get()
   set.seed(seed)
   old
@@ -224,6 +253,7 @@ NULL
 # of the caller)
 .local_seed <- function(seed) {
   if (is.null(seed)) return(invisible(NULL))
+  .force_args(parent.frame())
   old <- .rng_get()
   set.seed(seed)
   do.call(on.exit, list(bquote(.rng_put(.(old))), add = TRUE), envir = parent.frame())

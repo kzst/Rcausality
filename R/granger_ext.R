@@ -10,7 +10,7 @@
 
 # ---- Toda-Yamamoto -------------------------------------------------------------
 
-.ty_pair <- function(effect, cause, controls = NULL, lag, d_max = 1L, prior = "bic") {
+.ty_pair <- function(effect, cause, controls = NULL, lag, d_max = 1L, prior = "bic", prior_par = NULL, vcov = "classical") {
   L <- lag + d_max; n <- length(effect); N <- n - L
   yd <- effect[(L + 1):n]
   own <- .lagmat(effect, L)
@@ -24,15 +24,18 @@
     return(list(statistic = NA_real_, df1 = lag, df2 = df2, p_value = NA_real_, bf10 = NA_real_, effect_size = NA_real_,
                 r2_gain = NA_real_, sign = NA_real_, n_eff = N))
   Fst <- ((rss_r - rss_u) / lag) / (rss_u / df2)
+  hc <- .hc_wald(yd, Xu, ncol(Xu) - L + seq_len(lag), hac = identical(vcov, "hac"))
+  het_p <- if (is.null(hc)) NA_real_ else .het_test(hc$residuals, Xu)
+  if (vcov %in% c("hc3", "hac") && !is.null(hc) && is.finite(hc$statistic)) Fst <- hc$statistic
   log_bf <- if (prior == "bic") (N * log(rss_r / rss_u) - lag * log(N)) / 2 else {
     rss_0 <- sum((yd - mean(yd))^2)
-    .log_bf_nested(N, ncol(Xr), ncol(Xu), 1 - rss_r / rss_0, 1 - rss_u / rss_0, prior)
+    .log_bf_nested(N, ncol(Xr), ncol(Xu), 1 - rss_r / rss_0, 1 - rss_u / rss_0, prior, prior_par)
   }
   cf <- stats::lm.fit(cbind(1, Xu), yd)$coefficients
   cc <- cf[ncol(Xu) - L + 1L + seq_len(lag)]
   list(statistic = Fst, df1 = lag, df2 = df2, p_value = stats::pf(Fst, lag, df2, lower.tail = FALSE),
        bf10 = exp(min(log_bf, 700)), effect_size = log(rss_r / rss_u), r2_gain = 1 - rss_u / rss_r,
-       sign = sign(sum(cc, na.rm = TRUE)), n_eff = N)
+       sign = sign(sum(cc, na.rm = TRUE)), n_eff = N, het_p = het_p)
 }
 
 # ---- Diks-Panchenko ------------------------------------------------------------
@@ -47,7 +50,137 @@
 # the test statistic of Diks and Panchenko (2006, eq. 13) and its asymptotic
 # standard error from the projection of the third-order U-statistic kernel;
 # the long-run variance of the projection uses Bartlett weights
-.dp_stat <- function(effect, cause, controls = NULL, lag = 1L, eps = NULL, C = 8) {
+# Reference distribution.  The asymptotic normality of the statistic is proved for the bivariate first-order case
+# (one lag of the cause, one of the effect).  With controls or more lags the bias of the kernel estimates does not
+# vanish fast enough (Diks and Wolski 2016), and with the wide bandwidths of short series the conditioning is coarse,
+# on a control and on the past of the effect alike.  The reference distribution therefore comes from conditional
+# shifts of the cause (.cond_split()) in all cases; the normal reference is an option (see .dp_stat()).
+
+# ---- conditional shifts ----------------------------------------------------------------------------------------------
+# A surrogate of the cause for a conditional null hypothesis must depend on the conditioning vector w as the cause
+# itself does: the statistics condition coarsely (kernel windows, nearest-neighbour balls, trees), so that a surrogate
+# that is a worse proxy of a function of w than the cause is makes the cause look informative.  The lags of the cause
+# are therefore written as
+#     c = g(w) + s(w) e,
+# location g, scale s and a standardized residual e; a surrogate keeps g and s and shifts e circularly (all lags by the
+# same offset), which keeps the serial dependence of e.  The surrogate has the conditional distribution of the cause
+# when e is independent of w (a location-scale model) and g and s are estimated well.  Both are estimated flexibly:
+#   location: least squares on the polynomial basis in w (linear, quadratic with and without products, cubic) with the
+#     smallest leave-one-out error, plus the mean of its residuals over the nearest neighbours in w (the point itself
+#     excluded) when that mean predicts the residuals out of sample, with the number of neighbours that does it best;
+#   scale: the same for the absolute residuals a = |c - g(w)|, starting from a constant (which gives the plain location
+#     model), with two changes (.scale_bases(), .scale_fit()).  The candidate bases include the absolute values of w:
+#     a scale often depends on the size of a conditioning variable and not on its sign, a V shape that a polynomial
+#     of low order follows badly.  And the selected basis is refitted twice by weighted least squares with the
+#     weights 1 / s^2: a = s |e| has a standard deviation proportional to s, so that an unweighted fit is imprecise
+#     where the scale is small, and a scale that is too small there gives standardized residuals that are too large
+#     everywhere they are shifted to.  The scale is bounded from below by a tenth of the mean absolute residual.
+#     (With a cause x = z * noise and the control z, series of 100, 300 and 1000 time points, the kernel test
+#     rejected a true conditional null hypothesis in 10% to 12% of the series at the 5% level with the unweighted
+#     polynomial fit, in 7% to 9% of the same series with the two changes, and in 3% with the true scale.  A
+#     multiplicative model, the fit of the logarithm of the absolute residuals, was much worse: 10% to 25%.)
+# A dependence of the shape of the cause on w beyond location and scale is not reproduced; no test of conditional
+# independence is valid for all null distributions (Shah and Peters 2020).
+.poly_bases <- function(W) {
+  N <- nrow(W); d <- ncol(W); one <- matrix(1, N, 1L)
+  if (d == 0L) return(list(one))
+  out <- list(one, cbind(one, W), cbind(one, W, W^2))
+  if (d > 1L) { ij <- utils::combn(d, 2L); out[[4L]] <- cbind(out[[3L]], W[, ij[1L, ], drop = FALSE] * W[, ij[2L, ], drop = FALSE]) }
+  out[[length(out) + 1L]] <- cbind(out[[length(out)]], W^3)
+  out[vapply(out, ncol, 0L) <= max(2L, N %/% 8L)]
+}
+# the candidate bases of the scale: those of the location and, after the constant, the absolute values of w without
+# and with w itself
+.scale_bases <- function(W, bases) {
+  if (!ncol(W)) return(bases)
+  A <- abs(W); add <- list(cbind(1, A), cbind(1, A, W))
+  c(bases[1L], add[vapply(add, ncol, 0L) <= max(2L, nrow(W) %/% 8L)], bases[-1L])
+}
+.scale_floor <- 0.1
+# the least-squares fit with the smallest leave-one-out error (PRESS) among the bases from number `from` on
+# (.press_best(): the fit, its error and the number of its basis; NULL when no basis has full rank)
+.press_best <- function(bases, y, from = 1L) {
+  best <- NULL
+  for (b in seq_along(bases)) {
+    if (b < from) next
+    q <- qr(bases[[b]]); if (q$rank < ncol(bases[[b]])) next
+    Q <- qr.Q(q); fit <- as.numeric(Q %*% crossprod(Q, y)); h <- pmin(rowSums(Q^2), 1 - 1e-8)
+    press <- sum(((y - fit) / (1 - h))^2)
+    if (is.null(best) || press < best$press) best <- list(fit = fit, press = press, basis = b)
+  }
+  best
+}
+.press_fit <- function(bases, y, from = 1L) {
+  best <- .press_best(bases, y, from)
+  if (is.null(best)) rep(mean(y), length(y)) else best$fit
+}
+# the fitted scale: the candidate basis with the smallest leave-one-out error for the absolute residuals `a`, refitted
+# twice with the weights 1 / s^2 (s bounded from below by `lo`); a constant scale needs no weights
+.scale_fit <- function(sbases, a, lo) {
+  best <- .press_best(sbases, a)
+  if (is.null(best)) return(rep(mean(a), length(a)))
+  s <- best$fit; B <- sbases[[best$basis]]
+  if (ncol(B) > 1L) for (i in 1:2) {
+    s2 <- tryCatch(stats::lm.wfit(B, a, 1 / pmax(s, lo)^2)$fitted.values, error = function(e) NULL)
+    if (is.null(s2) || any(!is.finite(s2))) break
+    s <- as.numeric(s2)
+  }
+  s
+}
+# the nearest-neighbour mean of r (nn: neighbours without the point itself) with the number of neighbours that
+# predicts r best; zero when no mean predicts r better than zero does
+.knn_smooth <- function(nn, r, ks) {
+  best <- numeric(length(r)); err <- sum(r^2)
+  for (k in ks) {
+    f <- rowMeans(matrix(r[nn[, seq_len(k), drop = FALSE]], nrow(nn))); e <- sum((r - f)^2)
+    if (e < err) { best <- f; err <- e }
+  }
+  best
+}
+.cond_split <- function(W, X) {
+  X <- as.matrix(X); N <- nrow(X); W <- .std_mat(W)
+  bases <- .poly_bases(W); sbases <- .scale_bases(W, bases)
+  k1 <- max(5L, as.integer(floor(sqrt(N)))); ks <- unique(pmax(1L, pmin(c(k1, 2L * k1, 4L * k1), (N - 1L) %/% 4L)))
+  nn <- if (ncol(W) && N > 8L) knn_idx_cpp(.jit(W), max(ks)) else NULL
+  fit <- X; sc <- X
+  for (j in seq_len(ncol(X))) {
+    f <- .press_fit(bases, X[, j], from = min(2L, length(bases)))
+    if (!is.null(nn)) f <- f + .knn_smooth(nn, X[, j] - f, ks)
+    a <- abs(X[, j] - f); lo <- .scale_floor * mean(a)
+    s <- .scale_fit(sbases, a, lo)
+    if (!is.null(nn)) s <- s + .knn_smooth(nn, a - s, ks)
+    fit[, j] <- f; sc[, j] <- pmax(s, lo, 1e-12)
+  }
+  list(fit = fit, scale = sc, res = (X - fit) / sc, r2 = .cond_r2(X, fit))
+}
+# the share of the variance of the lags of the cause that the conditioning vector explains (the largest over the lags).
+# A share near one means that the past of the cause is a function of the conditioning past: the cause is redundant,
+# or the series behave as a deterministic system in which the driver is reconstructed from the driven series
+# (Takens 1981).  The surrogates then equal the cause, and the conditional test is not informative: see
+# .determined_check().
+.cond_r2 <- function(X, fit) {
+  v <- colSums((X - rep(colMeans(X), each = nrow(X)))^2)
+  max(ifelse(v > 0, 1 - colSums((X - fit)^2) / v, NA_real_), na.rm = TRUE)
+}
+# A cause that the conditioning vector determines (99% of the variance of a lag or more) has no surrogates that differ
+# from it by more than the error of the fitted location: what a test would measure is that error, not a property of
+# the data.  No test is carried out then (p-value 1, Bayes factor 1) and a warning explains it.
+.determined <- function(r2) isTRUE(is.finite(r2) && r2 > 0.99)
+# the surrogate of the cause for the rows `rows` of the standardized residuals
+.cond_surr <- function(sp, rows) sp$fit + sp$scale * sp$res[rows, , drop = FALSE]
+
+# Reference distribution (`reference`): "conditional", conditional shifts of the cause (see .cond_split()); "normal",
+# the asymptotic distribution of Diks and Panchenko (2006).  The normal reference presupposes that the bias of the
+# kernel estimates is negligible beside the standard error of the statistic.  At the bandwidths of the rule (1.5
+# standard deviations up to about 350 observations) it is not when the past of the cause depends on the conditioning
+# past and the effect is persistent, as in the reverse direction of a link whose driver is autocorrelated: the window
+# of the kernel does not resolve the past of the effect, and the cause, which is a function of that past, keeps
+# information about the present of the effect.  A surrogate that keeps the dependence of the cause on the conditioning
+# past has the same bias, which is why the conditional shifts are the default reference (the normal reference is used
+# on request and when n_perm = 0).  Rejection rates of true null hypotheses for both references are in the simulation
+# study of the accompanying paper.
+.dp_stat <- function(effect, cause, controls = NULL, lag = 1L, eps = NULL, C = 8, n_perm = 0L, cores = 1L,
+                     reference = "conditional") {
   e <- .std(effect); x <- .std(cause); n <- length(e); L <- max(1L, as.integer(lag))
   X <- .lagmat(x, L); Y <- .lagmat(e, L)
   if (!is.null(controls)) Y <- cbind(Y, do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lagmat(.std(controls[, j]), L))))
@@ -61,15 +194,35 @@
   lrv <- mean(r^2) + 2 * sum(vapply(seq_len(K), function(k) (1 - k / (K + 1)) * sum(r[seq_len(N - k)] * r[(k + 1):N]) / (N - k), 0))
   S <- sqrt(9 * max(lrv, .Machine$double.eps))
   z <- sqrt(N) * Tn / S
-  list(statistic = Tn, z = z, p_value = stats::pnorm(z, lower.tail = FALSE), eps = eps, n_eff = N)
+  if (n_perm >= 1L && reference != "normal") {
+    sp <- .cond_split(Y, X); lo <- max(L + 1L, floor(0.1 * N))
+    Ts <- unlist(.plapply(.shift_draws(lo, N - lo, n_perm), function(s) {
+      c2 <- dp_counts_cpp(.cond_surr(sp, ((seq_len(N) + s - 1L) %% N) + 1L), Y, Z, eps)
+      (N - 1) / (N * (N - 2)) * sum(c2$cxyz * c2$cy - c2$cxy * c2$cyz)
+    }, cores = cores))
+    sdT <- stats::sd(Ts)
+    return(list(statistic = Tn, z = if (is.finite(sdT) && sdT > 0) (Tn - mean(Ts)) / sdT else NA_real_,
+                p_value = if (.determined(sp$r2)) 1 else (1 + sum(Ts >= Tn)) / (length(Ts) + 1), eps = eps, n_eff = N, null = Ts,
+                reference = "conditional shifts",
+                cond_r2 = sp$r2))
+  }
+  list(statistic = Tn, z = z, p_value = stats::pnorm(z, lower.tail = FALSE), eps = eps, n_eff = N, null = NULL,
+       reference = "normal", cond_r2 = NA_real_)
 }
 
-.dp_pair <- function(effect, cause, controls = NULL, lag = 1L, eps = NULL, C = 8, filter = "none", filter_lag = 1L) {
+.dp_ref_arg <- function(v) {
+  v <- tolower(if (is.null(v)) "conditional" else as.character(v)[1L])
+  if (!v %in% c("conditional", "normal")) stop("`reference` must be \"conditional\" or \"normal\".", call. = FALSE)
+  v
+}
+
+.dp_pair <- function(effect, cause, controls = NULL, lag = 1L, eps = NULL, C = 8, filter = "none", filter_lag = 1L,
+                     n_perm = 0L, cores = 1L, reference = "conditional") {
   if (filter == "var") {
     R <- .var_filter(cbind(effect, cause, controls), filter_lag)
     effect <- R[, 1]; cause <- R[, 2]; controls <- if (ncol(R) > 2) R[, -(1:2), drop = FALSE] else NULL
   }
-  .dp_stat(effect, cause, controls, lag, eps, C)
+  .dp_stat(effect, cause, controls, lag, eps, C, n_perm, cores, reference)
 }
 
 #' Diks-Panchenko nonparametric Granger causality test
@@ -87,9 +240,34 @@
 #' test, it is consistent because the kernel is weighted by the density of
 #' the conditioning variable.
 #'
+#' @section Reference distribution:
+#' By default the statistic is referred to conditional shifts of the cause
+#' (`reference = "conditional"`): the lags of the cause are split into a
+#' location and a scale, both estimated as functions of the conditioning
+#' vector, and standardized residuals, which are shifted circularly (see
+#' [rcausality()]). The surrogates keep the dependence of the cause's past
+#' on the effect's past, which the null hypothesis allows. When the
+#' conditioning vector determines the cause (99% of its variance or more,
+#' as in noise-free deterministic systems), no test is carried out and the
+#' p-value is 1.
+#'
+#' `reference = "normal"` is the asymptotic test of Diks and Panchenko
+#' (2006), which needs no surrogates. Its normal limit is proved for one
+#' lag of each series, and it presupposes that the bias of the kernel
+#' estimates is negligible beside the standard error of the statistic. At
+#' the bandwidths of the rule this fails when the cause's past depends on
+#' the effect's past and the effect is autocorrelated, as in the reverse
+#' direction of a link whose driver is persistent: a window of 1.5 standard
+#' deviations does not resolve the effect's past, the cause is a function of
+#' that past and keeps information about the effect's present, and the
+#' normal reference rejects a true null hypothesis in a large share of the
+#' cases (the simulation study of the accompanying paper gives the rates).
+#' Use it for series whose pasts are at most weakly dependent, for example
+#' after `filter = "var"` when the dependence is linear, and with one lag.
+#'
 #' @param x,y numeric vectors (both directions are tested).
-#' @param lag length of the two pasts (`lX = lY`; the theory and the
-#'   bandwidth rule are for `lag = 1`, larger lags give a conservative test).
+#' @param lag length of the two pasts (`lX = lY`; the bandwidth rule is for
+#'   `lag = 1`).
 #' @param eps bandwidth in standard deviations; `NULL` = `min(1.5, C *
 #'   n^(-2/7))`, the rule of Diks and Panchenko (2006, Sect. 4).
 #' @param C constant of the bandwidth rule (about 8 for ARCH-type dynamics).
@@ -98,9 +276,17 @@
 #'   of the dependence is tested (the usual practice after a linear Granger
 #'   test).
 #' @param filter_lag lag order of the filtering VAR.
+#' @param n_perm,seed number of conditional shifts and their seed
+#'   (`n_perm = 0` gives the normal reference).
+#' @param reference `"conditional"` (default) or `"normal"`: see the section
+#'   on the reference distribution. Diks and Wolski (2016) discuss the
+#'   failure of the normal reference with more than one lag or with further
+#'   conditioning variables.
 #' @return An object of class `diks_panchenko`: a data frame `tests` (one
-#'   row per direction: statistic `T_n`, z-score, one-sided p-value,
-#'   bandwidth, effective sample size) and the settings. Method: `print`.
+#'   row per direction: statistic `T_n`, z-score (with conditional shifts:
+#'   the statistic standardized by mean and standard deviation of its
+#'   surrogate values), one-sided p-value, bandwidth, effective sample size,
+#'   reference) and the settings. Method: `print`.
 #' @references
 #' Diks, C. and Panchenko, V. (2006). A new statistic and practical guidelines for nonparametric Granger causality testing. *Journal of Economic Dynamics and Control*, 30(9-10), 1647-1669. \doi{10.1016/j.jedc.2005.08.008}
 #'
@@ -115,28 +301,32 @@
 #' # only the nonlinear part: the VAR(2) residuals are tested
 #' diks_panchenko(d$x, d$y, filter = "var", filter_lag = 2)
 #' }
-diks_panchenko <- function(x, y, lag = 1L, eps = NULL, C = 8, filter = c("none", "var"), filter_lag = 1L) {
-  filter <- match.arg(filter)
+diks_panchenko <- function(x, y, lag = 1L, eps = NULL, C = 8, filter = c("none", "var"), filter_lag = 1L,
+                           n_perm = 199L, seed = NULL, reference = c("conditional", "normal")) {
+  filter <- match.arg(filter); reference <- match.arg(reference)
+  .local_seed(seed)
   x <- .prep_na(x); y <- .prep_na(y)
   if (length(x) != length(y)) stop("x and y must have the same length.", call. = FALSE)
   if (length(x) < 30L) stop("At least 30 observations are needed.", call. = FALSE)
-  a <- .dp_pair(y, x, NULL, lag, eps, C, filter, filter_lag)
-  b <- .dp_pair(x, y, NULL, lag, eps, C, filter, filter_lag)
+  a <- .dp_pair(y, x, NULL, lag, eps, C, filter, filter_lag, n_perm, reference = reference)
+  b <- .dp_pair(x, y, NULL, lag, eps, C, filter, filter_lag, n_perm, reference = reference)
   tests <- data.frame(direction = c("x -> y", "y -> x"), statistic = c(a$statistic, b$statistic), z = c(a$z, b$z),
                       p_value = c(a$p_value, b$p_value), eps = c(a$eps, b$eps), n_eff = c(a$n_eff, b$n_eff),
-                      stringsAsFactors = FALSE)
-  structure(list(tests = tests, lag = as.integer(lag), filter = filter, filter_lag = filter_lag), class = "diks_panchenko")
+                      reference = c(a$reference, b$reference), stringsAsFactors = FALSE)
+  structure(list(tests = tests, lag = as.integer(lag), filter = filter, filter_lag = filter_lag, reference = a$reference),
+            class = "diks_panchenko")
 }
 
 #' @export
 print.diks_panchenko <- function(x, digits = 3, ...) {
-  cat(sprintf("Diks-Panchenko nonparametric Granger causality test (lag %d, bandwidth %.3g sd%s)\n", x$lag, x$tests$eps[1],
+  .out(sprintf("Diks-Panchenko nonparametric Granger causality test (lag %d, bandwidth %.3g sd%s)\n", x$lag, x$tests$eps[1],
               if (x$filter == "var") sprintf(", VAR(%d) residuals", x$filter_lag) else ""))
+  if (!is.null(x$reference)) .out(sprintf("  reference distribution: %s\n", if (x$reference == "normal") "normal (asymptotic)" else x$reference))
   t <- x$tests
   print(data.frame(direction = t$direction, T.n = formatC(t$statistic, digits = digits, format = "g"),
                    z = formatC(t$z, digits = digits, format = "f"), p = .fmt_p(t$p_value), n = t$n_eff), row.names = FALSE,
         right = FALSE)
-  cat("  one-sided test of H0: the cause's past adds no information about the effect's present\n")
+  .out("  one-sided test of H0: the cause's past adds no information about the effect's present\n")
   invisible(x)
 }
 
@@ -247,15 +437,15 @@ granger_spectral <- function(x, y, lag = "auto", max_lag = 8L, lag_criterion = c
 
 #' @export
 print.granger_spectral <- function(x, digits = 3, ...) {
-  cat(sprintf("Granger causality in the frequency domain (bivariate VAR(%d), n = %d)\n", x$lag, x$n))
+  .out(sprintf("Granger causality in the frequency domain (bivariate VAR(%d), n = %d)\n", x$lag, x$n))
   td <- x$time_domain
   sp <- x$spectrum
   mean_ge <- vapply(td$direction, function(d) mean(sp$geweke[sp$direction == d]), 0)
   print(data.frame(direction = td$direction, geweke.time = round(td$geweke, 4), geweke.mean.spectrum = round(mean_ge, 4),
                    F = round(td$F, 2), p = .fmt_p(td$p_value)), row.names = FALSE, right = FALSE)
-  cat(sprintf("  frequency bands with causality (Breitung-Candelon, pointwise level %g), in cycles per time unit:\n", x$alpha))
-  if (is.null(x$bands)) cat("    none\n") else
-    for (i in seq_len(nrow(x$bands))) cat(sprintf("    %s: %.3f - %.3f (periods %s - %s)\n", x$bands$direction[i], x$bands$from[i],
+  .out(sprintf("  frequency bands with causality (Breitung-Candelon, pointwise level %g), in cycles per time unit:\n", x$alpha))
+  if (is.null(x$bands)) .out("    none\n") else
+    for (i in seq_len(nrow(x$bands))) .out(sprintf("    %s: %.3f - %.3f (periods %s - %s)\n", x$bands$direction[i], x$bands$from[i],
                                                   x$bands$to[i], if (x$bands$to[i] > 0) formatC(1 / x$bands$to[i], digits = 3, format = "g") else "Inf",
                                                   if (x$bands$from[i] > 0) formatC(1 / x$bands$from[i], digits = 3, format = "g") else "Inf"))
   invisible(x)
@@ -325,12 +515,13 @@ plot.granger_spectral <- function(x, main = NULL, ...) {
   list(lag = l, p_value = p_min, bf10 = if (any(is.finite(bf))) mean(bf[is.finite(bf)]) else NA_real_, n_orders = nl)
 }
 
-.ty_pair_fun <- function(fixed_lag, max_lag, lag_criterion, d_max, prior, first = FALSE, alpha = 0.05) {
+.ty_pair_fun <- function(fixed_lag, max_lag, lag_criterion, d_max, prior, first = FALSE, alpha = 0.05, prior_par = NULL,
+                         vcov = "classical") {
   function(effect, cause, ctrl, cores = 1L) {
     inv <- cbind(effect, cause, ctrl); n <- nrow(inv)
     cap <- .cap_lag(n, ncol(inv), d_max)
     lags <- seq_len(max(1L, min(as.integer(max_lag), cap)))
-    scan <- lapply(lags, function(l) .ty_pair(effect, cause, ctrl, l, d_max, prior))
+    scan <- lapply(lags, function(l) .ty_pair(effect, cause, ctrl, l, d_max, prior, prior_par, vcov))
     bl <- data.frame(lag = lags, statistic = vapply(scan, `[[`, 0, "statistic"), p = vapply(scan, `[[`, 0, "p_value"))
     if (first) {
       fs <- .first_lag(lags, bl$p, vapply(scan, `[[`, 0, "bf10"), alpha, 3)
@@ -338,25 +529,24 @@ plot.granger_spectral <- function(x, main = NULL, ...) {
     } else {
       p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
       p <- max(1L, min(p, cap))
-      g <- if (p %in% lags) scan[[match(p, lags)]] else .ty_pair(effect, cause, ctrl, p, d_max, prior)
+      g <- if (p %in% lags) scan[[match(p, lags)]] else .ty_pair(effect, cause, ctrl, p, d_max, prior, prior_par, vcov)
     }
     list(row = c(list(lag = p), g[c("statistic", "df1", "df2", "p_value", "bf10", "effect_size", "r2_gain", "sign", "n_eff")]),
-         by_lag = bl)
+         by_lag = bl, extra = data.frame(het_p = g$het_p, vcov = vcov, stringsAsFactors = FALSE))
   }
 }
 
-.dp_pair_fun <- function(fixed_lag, max_lag, lag_criterion, eps, C, filter) {
+.dp_pair_fun <- function(fixed_lag, max_lag, lag_criterion, eps, C, filter, n_perm = 200L, reference = "conditional") {
   function(effect, cause, ctrl, cores = 1L) {
     L <- if (is.null(fixed_lag)) 1L else max(1L, fixed_lag)
     fl <- if (filter == "var") max(1L, select_lag(cbind(effect, cause, ctrl), max_lag, lag_criterion)) else 1L
-    g <- .dp_pair(effect, cause, ctrl, L, eps, C, filter, fl)
-    lags <- if (is.null(fixed_lag)) seq_len(max(1L, min(3L, as.integer(max_lag)))) else L
-    bl <- do.call(rbind, lapply(lags, function(l) {
-      gl <- if (l == L) g else .dp_pair(effect, cause, ctrl, l, eps, C, filter, fl)
-      data.frame(lag = l, statistic = gl$z, p = gl$p_value)
-    }))
+    g <- .dp_pair(effect, cause, ctrl, L, eps, C, filter, fl, n_perm, cores, reference)
+    # (No profile over further lags: every lag needs its own surrogate test.  A numeric `lag` tests longer pasts.)
+    bl <- data.frame(lag = L, statistic = g$z, p = g$p_value)
     list(row = list(lag = L, statistic = g$statistic, p_value = g$p_value, effect_size = g$z, n_eff = g$n_eff),
-         by_lag = bl, null = list(statistic = g$z, null = list(mean = 0, sd = 1), alternative = "greater"),
-         extra = data.frame(z = g$z, eps = g$eps, filter = filter))
+         by_lag = bl,
+         null = if (is.null(g$null)) list(statistic = g$z, null = list(mean = 0, sd = 1), alternative = "greater")
+                else list(statistic = g$statistic, null = g$null, alternative = "greater", cond_r2 = g$cond_r2),
+         extra = data.frame(z = g$z, eps = g$eps, filter = filter, reference = g$reference, cond_r2 = g$cond_r2))
   }
 }

@@ -12,7 +12,10 @@ marpid(
   k_source = 2L,
   n_surr = 0L,
   seed = NULL,
-  cores = getOption("Rcausality.cores", 1L)
+  cores = getOption("Rcausality.cores", 1L),
+  .perms = NULL,
+  .first_only = FALSE,
+  .surr1 = NULL
 )
 }
 \arguments{
@@ -21,14 +24,20 @@ length; the rows are the joint observations.}
 
 \item{k_target, k_source}{binarisation depths (1 bit = median split).}
 
-\item{n_surr}{number of surrogates (rows of \code{s1} and \code{s2} permuted
-independently) for the p-values of the unique and synergistic atoms and
-of the "novel" information of each source (unique + synergistic, i.e.
-what the source adds beyond the other one); 0 = no test.}
+\item{n_surr}{number of permutation replicates for the p-values. The
+replicates for the atoms of source 1 (\code{unique_1}, \code{synergy} and the novel
+information \verb{novel_1 = unique_1 + synergy = I(target; s1 | s2)}) permute
+\code{s1} within the levels of the coded \code{s2}, which generates the null
+hypothesis that \code{s1} is independent of the target \emph{given} \code{s2}; those of
+source 2 (\code{unique_2}, \code{novel_2}) exchange the roles; 0 = no test.}
 
 \item{seed}{optional RNG seed.}
 
 \item{cores}{CPU cores for the surrogates (see \link{Rcausality-parallel}).}
+
+\item{.perms, .first_only, .surr1}{internal (shared permutations of a lag
+scan; replicates for source 1 only; surrogate values of source 1 that
+replace the permutations).}
 }
 \value{
 An object of class \code{marpid}: \code{atoms} (named vector in bits,

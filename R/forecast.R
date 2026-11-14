@@ -122,9 +122,13 @@
 #' @param control a [bayes_control()] list for `model = "bvar"` (its Minnesota
 #'   settings are used).
 #' @param rf_settings forest settings for `model = "rf"` (`num_trees`, `mtry`,
-#'   `min_node_size`).
+#'   `min_node_size`; the default node size `"auto"` is chosen for every
+#'   forest by its out-of-bag error, see [rf_granger()]).
 #' @param n_sim number of simulated paths for the intervals of `"bvar"` and
 #'   `"rf"`.
+#' @param seed optional RNG seed of the forecast stage (the forests of
+#'   `model = "rf"` and the simulated paths behind the intervals); the random
+#'   number stream of the session is restored afterwards.
 #' @param ... unused.
 #' @return An object of class `causfc`: `forecasts` (series, horizon, point,
 #'   lower, upper, se), `evaluation` (per series: RMSE and MAE of the baseline
@@ -157,15 +161,17 @@
 #' }
 predict.causres <- function(object, h = 10L, p = NULL, holdout = 0.2, level = 0.95, refit = TRUE,
                             model = c("var", "bvar", "rf"), control = bayes_control(prior = "minnesota"),
-                            rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = 5L), n_sim = 500L, ...) {
+                            rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = "auto"), n_sim = 500L,
+                            seed = NULL, ...) {
   model <- match.arg(model)
+  .local_seed(seed)
   if (model == "rf") .need_ranger("predict(model = \"rf\")")
   .check_number(h, "h", lower = 1, integer = TRUE); .check_number(level, "level", lower = 0, upper = 1, strict = TRUE)
   D0 <- as.data.frame(object$data); vars <- names(D0); n <- nrow(D0)
   # the Minnesota model works on standardised series (back-transformed at the end)
   mu <- vapply(D0, mean, 0); sdv <- vapply(D0, stats::sd, 0); sdv[!is.finite(sdv) | sdv <= 0] <- 1
   D <- if (model == "bvar") as.data.frame(Map(function(v, m, s) (v - m) / s, D0, mu, sdv)) else D0
-  settings <- list(control = control, rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+  settings <- list(control = control, rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = "auto"),
                                                              rf_settings, keep.null = TRUE))
   links_of <- function(r) {                        # significant causes of every series in a causres
     Pr <- r$pairs[r$pairs$significant %in% TRUE, , drop = FALSE]
@@ -288,18 +294,18 @@ predict.causres <- function(object, h = 10L, p = NULL, holdout = 0.2, level = 0.
 #' @export
 print.causfc <- function(x, digits = 3, ...) {
   mdl <- c(var = "restricted VAR", bvar = "restricted Bayesian VAR, Minnesota prior", rf = "random forests")[[if (is.null(x$model)) "var" else x$model]]
-  cat(sprintf("Causality-informed forecasts (%s from the '%s' links; p = %d lags, h = %d)\n", mdl, x$method, x$p, x$h))
-  if (is.null(x$evaluation)) cat("  no hold-out evaluation (holdout = 0)\n") else {
-    cat(sprintf("  hold-out evaluation (last %.0f%% of the sample, rolling one-step forecasts; links selected on the %s):\n",
+  .out(sprintf("Causality-informed forecasts (%s from the '%s' links; p = %d lags, h = %d)\n", mdl, x$method, x$p, x$h))
+  if (is.null(x$evaluation)) .out("  no hold-out evaluation (holdout = 0)\n") else {
+    .out(sprintf("  hold-out evaluation (last %.0f%% of the sample, rolling one-step forecasts; links selected on the %s):\n",
                 100 * x$holdout, x$evaluation_source))
     E <- x$evaluation
     print(data.frame(series = E$series, causes = ifelse(E$causes == "", "-", E$causes),
                      RMSE.own = round(E$rmse_baseline, digits), RMSE.causal = round(E$rmse_causal, digits),
                      improvement = sprintf("%+.1f%%", 100 * E$improvement)), row.names = FALSE, right = FALSE)
   }
-  cat("  forecast model: links of the full-sample analysis; causes per series:",
+  .out("  forecast model: links of the full-sample analysis; causes per series:",
       paste(sprintf("%s <- {%s}", names(x$fitted_causes), vapply(x$fitted_causes, function(v) paste(v, collapse = ","), "")), collapse = "; "), "\n")
-  cat(sprintf("\n  forecasts: point [%d%% interval], one column per series (first %d horizons; all in $forecasts):\n",
+  .out(sprintf("\n  forecasts: point [%d%% interval], one column per series (first %d horizons; all in $forecasts):\n",
               round(100 * x$level), min(x$h, 10L)))
   Fc <- x$forecasts; vars <- names(x$fitted_causes)
   W <- do.call(cbind, lapply(vars, function(v) {
@@ -321,9 +327,9 @@ summary.causfc <- function(object, ...) {
 
 #' @export
 print.summary.causfc <- function(x, ...) {
-  cat(sprintf("Causal forecasting summary: p = %d, h = %d\n", x$p, x$h))
-  if (is.null(x$evaluation)) { cat("  no hold-out evaluation\n"); return(invisible(x)) }
-  cat(sprintf("  mean RMSE improvement of the causal model over own lags: %+.1f%% (largest for %s)\n",
+  .out(sprintf("Causal forecasting summary: p = %d, h = %d\n", x$p, x$h))
+  if (is.null(x$evaluation)) { .out("  no hold-out evaluation\n"); return(invisible(x)) }
+  .out(sprintf("  mean RMSE improvement of the causal model over own lags: %+.1f%% (largest for %s)\n",
               100 * x$mean_improvement, x$best))
   print(data.frame(series = x$evaluation$series, causes = ifelse(x$evaluation$causes == "", "-", x$evaluation$causes),
                    improvement = sprintf("%+.1f%%", 100 * x$evaluation$improvement)), row.names = FALSE, right = FALSE)
@@ -376,7 +382,8 @@ plot.causfc <- function(x, n_last = 60L, main = NULL, ...) {
 #' @param h forecast horizon.
 #' @param model forecast model: `"var"`, `"bvar"` or `"rf"` (see
 #'   [predict.causres()]).
-#' @param ... further arguments to [rcausality()] (e.g. `seed`; `id` and
+#' @param ... further arguments to [rcausality()] (e.g. `seed`, which also
+#'   seeds the forecast models; `id` and
 #'   `time` for panel data) and to [predict.causres()] /
 #'   [predict.causpanel()] (`p`, `holdout`, `level`, `refit`, `control`,
 #'   `rf_settings`, `n_sim`).
@@ -397,7 +404,7 @@ forecast_causal <- function(x, y = NULL, method = "granger", h = 10L, model = c(
   ra <- dots[setdiff(names(dots), pa)]
   if ("control" %in% names(dots) && isTRUE(dots$bayes)) ra$control <- dots$control
   r <- do.call(rcausality, c(list(x = x, y = y, method = method), ra))
-  do.call(stats::predict, c(list(object = r, h = h, model = model), dots[pa]))
+  do.call(stats::predict, c(list(object = r, h = h, model = model), dots[pa], if (!is.null(dots$seed)) list(seed = dots$seed)))
 }
 
 # Diebold-Mariano test of equal accuracy (squared-error loss) of two series
@@ -436,7 +443,8 @@ forecast_causal <- function(x, y = NULL, method = "granger", h = 10L, model = c(
 #'   [rcausality()].
 #' @param cores CPU cores: the methods run in parallel (see
 #'   [Rcausality-parallel]).
-#' @param ... arguments to every [rcausality()] call (e.g. `seed`, `n_perm`)
+#' @param ... arguments to every [rcausality()] call (e.g. `n_perm`, and
+#'   `seed`, which also seeds the forecast models)
 #'   and to [predict.causres()] (`control`, `rf_settings`). With `id` (and
 #'   `time`) the comparison is made on panel data: the links are those of
 #'   the panel analysis of the training periods, the forecast equations are
@@ -467,6 +475,7 @@ forecast_compare <- function(x, y = NULL, methods = c("granger", "bayes_granger"
   methods <- match.arg(methods, .method_names, several.ok = TRUE)
   .check_number(holdout, "holdout", lower = 0.05, upper = 0.5)
   dots <- list(...)
+  .local_seed(dots$seed)                                 # the forecast models (forests, simulated paths) are seeded too
   pa <- intersect(names(dots), c("control", "rf_settings", "n_sim"))
   ra <- dots[setdiff(names(dots), pa)]
   if (!is.null(dots$id)) return(.forecast_compare_panel(x, methods, model, holdout, p, args, cores, dots, ra))
@@ -474,7 +483,7 @@ forecast_compare <- function(x, y = NULL, methods = c("granger", "bayes_granger"
   D[] <- lapply(D, .prep_na); n <- nrow(D); n_train <- floor(n * (1 - holdout)); tr <- seq_len(n_train); tt <- (n_train + 1):n
   vars <- names(D)
   settings <- list(control = if (is.null(dots$control)) bayes_control(prior = "minnesota") else dots$control,
-                   rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+                   rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = "auto"),
                                           if (is.null(dots$rf_settings)) list() else dots$rf_settings, keep.null = TRUE))
   Ds <- if (model == "bvar") as.data.frame(lapply(D, function(v) (v - mean(v[tr])) / stats::sd(v[tr]))) else D
   back <- function(v, z) if (model == "bvar") z * stats::sd(D[[v]][tr]) + mean(D[[v]][tr]) else z
@@ -516,14 +525,14 @@ forecast_compare <- function(x, y = NULL, methods = c("granger", "bayes_granger"
 #' @export
 print.causfcomp <- function(x, ...) {
   mdl <- c(var = "restricted VAR", bvar = "Minnesota-prior VAR", rf = "random forests")[[x$model]]
-  cat(sprintf("Forecast comparison of causality methods (%s, p = %d; hold-out = last %.0f%% of %s, one-step forecasts)\n",
+  .out(sprintf("Forecast comparison of causality methods (%s, p = %d; hold-out = last %.0f%% of %s, one-step forecasts)\n",
               mdl, x$p, 100 * x$holdout, if (is.null(x$n_units)) sprintf("n = %d", x$n) else sprintf("the periods of %d units", x$n_units)))
   T <- x$table
   print(data.frame(method = T$method, series = T$series, causes = T$causes, RMSE = signif(T$rmse, 4),
                    gain = sprintf("%+.1f%%", 100 * T$gain), DM = ifelse(is.na(T$dm), "-", sprintf("%.2f", T$dm)),
                    p.DM = ifelse(is.na(T$p_dm), "-", .fmt_p(T$p_dm))), row.names = FALSE, right = FALSE)
-  cat("  gain = RMSE reduction against the own-lags model ('none'); DM = Diebold-Mariano statistic (positive: more accurate)\n")
-  cat("  mean gain per method: ", paste(sprintf("%s %+.1f%%", x$summary$method, 100 * x$summary$gain), collapse = ", "), "\n", sep = "")
+  .out("  gain = RMSE reduction against the own-lags model ('none'); DM = Diebold-Mariano statistic (positive: more accurate)\n")
+  .out("  mean gain per method: ", paste(sprintf("%s %+.1f%%", x$summary$method, 100 * x$summary$gain), collapse = ", "), "\n", sep = "")
   invisible(x)
 }
 

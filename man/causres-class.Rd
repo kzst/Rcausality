@@ -25,6 +25,10 @@ p-value of every directed pair at every candidate lag);
 Methods: \code{print}, \code{summary}, \code{plot}, \code{as.data.frame}, \code{as.matrix},
 \code{coef}-style accessors via \code{\link[=as.matrix.causres]{as.matrix.causres()}}.
 
+The explanatory lines of the \code{print} methods are wrapped to the width of
+the console (\code{getOption("width")}); \code{options(Rcausality.guide = FALSE)}
+hides the reading guide that \code{print} appends to a result.
+
 Two subclasses add slots and methods: \code{causpanel} (panel data, see
 \code{\link[=panel_causality]{panel_causality()}}: \code{units}, \code{panel}, \code{prevalence}) and \code{causdrivers}
 (the drivers of one explained variable, see \code{\link[=causal_drivers]{causal_drivers()}}: \code{drivers},

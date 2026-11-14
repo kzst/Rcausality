@@ -179,17 +179,17 @@ df_variance <- function(x, max_constr = 6L, k = NULL, widths = NULL, alpha = 0.0
 
 #' @export
 print.dfvar <- function(x, digits = 3, ...) {
-  cat("Degrees of freedom by conditional-variance analysis (Telcs, Kurbucz & Jakovac, 2025)\n")
-  cat(sprintf("  series: %s, n = %d, k = %d, alpha = %g, tol = %g\n", x$series, x$n, x$k, x$alpha, x$tol))
-  cat("  constraints on the past vs conditional sd of the present value:\n")
+  .out("Degrees of freedom by conditional-variance analysis (Telcs, Kurbucz & Jakovac, 2025)\n")
+  .out(sprintf("  series: %s, n = %d, k = %d, alpha = %g, tol = %g\n", x$series, x$n, x$k, x$alpha, x$tol))
+  .out("  constraints on the past vs conditional sd of the present value:\n")
   S <- x$steps
   print(data.frame(n_constr = S$n_constr, cond.sd = round(S$sigma, digits),
                    reduction = ifelse(is.na(S$reduction), "", sprintf("%.1f%%", 100 * S$reduction)),
                    p = ifelse(is.na(S$p_value), "", .fmt_p(S$p_value)),
                    accepted = ifelse(is.na(S$p_value), "", ifelse(S$n_constr <= x$df, "yes", "no"))),
         row.names = FALSE)
-  cat(sprintf("  estimated df (past lags that significantly reduce the sd, adaptive windows): %d\n", x$df))
-  cat(sprintf("  profile reading (first line proportional to the width, else distinct saturated levels): %d\n",
+  .out(sprintf("  estimated df (past lags that significantly reduce the sd, adaptive windows): %d\n", x$df))
+  .out(sprintf("  profile reading (first line proportional to the width, else distinct saturated levels): %d\n",
               x$df_profile))
   invisible(x)
 }

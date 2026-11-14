@@ -35,7 +35,8 @@
   xs <- if (blocks) data[, object$causes, drop = FALSE] else data
   ys <- if (blocks) data[, setdiff(object$effects, object$causes), drop = FALSE] else NULL
   if (!is.null(ys) && !ncol(ys)) ys <- NULL
-  suppressMessages(do.call(rcausality, c(list(x = xs, y = ys), a)))
+  # (the warnings and messages of a rerun concern placebo data or an alternative setting, not the analysis of the user)
+  suppressWarnings(suppressMessages(do.call(rcausality, c(list(x = xs, y = ys), a))))
 }
 
 # apply `f` to every series: over the whole data for time series, within
@@ -45,6 +46,31 @@
   vars <- object$series; g <- as.character(D[[object$id]])
   for (v in vars) D[[v]] <- stats::ave(as.numeric(D[[v]]), g, FUN = f)
   D
+}
+
+# Circular offsets of K series of length n whose pairwise differences are at least m (mod n): independent offsets
+# leave small relative offsets between two series the most likely ones, and a link then survives in the placebo data
+# at a neighbouring lag.  The gaps between neighbouring offsets on the circle are m plus a random share of the
+# remaining length; rotation and assignment to the series are random.
+.spaced_offsets <- function(K, n, m) {
+  if (K < 2L) return(sample.int(n, K) - 1L)
+  m <- max(1L, min(as.integer(m), n %/% K)); slack <- n - K * m
+  g <- if (slack > 0L) tabulate(sample.int(K, slack, replace = TRUE), K) else integer(K)
+  pos <- cumsum(c(0L, (m + g)[-K]))
+  ((pos + sample.int(n, 1L))[sample.int(K)]) %% n
+}
+.rot <- function(v, s) { n <- length(v); if (!s) v else v[((seq_len(n) + s - 1L) %% n) + 1L] }
+.placebo_series <- function(D, min_shift, rel = NULL) {
+  n <- nrow(D)
+  # two series with a given relative offset (and a random common rotation)
+  off <- if (is.null(rel)) .spaced_offsets(ncol(D), n, floor(min_shift * n)) else (sample.int(n, 1L) + c(0L, rel)) %% n
+  D[] <- lapply(seq_along(D), function(k) .rot(D[[k]], off[k])); D
+}
+# Two series have only n - 2 m + 1 relative circular offsets of at least m; more placebo data sets than that repeat
+# them, and a placebo p-value below 1 / (number of offsets + 1) would state a resolution that the data do not have.
+.placebo_offsets <- function(K, n, min_shift) {
+  if (K != 2L) return(NULL)
+  m <- max(1L, min(as.integer(floor(min_shift * n)), n %/% 2L)); if (n - m < m) NULL else m:(n - m)
 }
 
 # A placebo panel: every variable is reassigned across the units, so that a
@@ -66,7 +92,8 @@
         src <- pm[((seq_len(N) - 1L + off[k]) %% N) + 1L]
         for (i in seq_len(N)) out[[vars[k]]][idx[[pm[i]]]] <- D[[vars[k]]][idx[[src[i]]]]
       }
-    } else for (u in grp) for (v in vars) out[[v]][idx[[u]]] <- .circ_shift(as.numeric(D[[v]][idx[[u]]]), max(1L, floor(min_shift * L)))
+    } else for (u in grp) { off <- .spaced_offsets(K, L, floor(min_shift * L))
+      for (k in seq_len(K)) out[[vars[k]]][idx[[u]]] <- .rot(as.numeric(D[[vars[k]]][idx[[u]]]), off[k]) }
   }
   out
 }
@@ -84,9 +111,10 @@
 #' Placebo test of a causality analysis
 #'
 #' Repeats the analysis of a [`causres`][causres-class] object on `n_placebo`
-#' placebo data sets in which every series is circularly shifted by an
-#' independent random offset (at least `min_shift` of the length from both
-#' ends). The shift keeps the autocorrelation and the marginal distribution
+#' placebo data sets in which every series is circularly shifted by a
+#' random offset; the offsets of any two series differ by at least
+#' `min_shift` of the length (on the circle), so that no link survives at a
+#' neighbouring lag. The shift keeps the autocorrelation and the marginal distribution
 #' of every series and destroys the lead-lag relations between them, so the
 #' placebo runs show what the method finds when there is nothing to find:
 #' * the global placebo p-value compares the number of links of the
@@ -100,9 +128,12 @@
 #' Winkler et al. (2016) is reported: the net directed score `s(x -> y) -
 #' s(y -> x)` (with `s` the effect size of the method, e.g. Geweke's measure)
 #' of the data minus the same net score of the reversed data. Reversal turns
-#' a genuine lead-lag relation around, so a positive difference supports the
-#' direction `x -> y`, whereas a link produced by symmetric dependence (for
-#' instance a common driver observed with noise) does not change sign.
+#' a genuine lead-lag relation around, whereas a link produced by symmetric
+#' dependence (for instance a common driver observed with noise) does not
+#' change sign. The check is one-sided: a score that is not positive speaks
+#' against the direction `x -> y`; a positive score does not confirm it
+#' (about half of the false links of simulated common-driver data have
+#' one).
 #'
 #' For panel analyses ([panel_causality()]) a placebo panel reassigns every
 #' variable across the units: each unit gets each of its variables from a
@@ -116,8 +147,12 @@
 #'
 #' @param object a `causres` object from [rcausality()] (time series, panel
 #'   or target analysis).
-#' @param n_placebo number of placebo data sets.
-#' @param min_shift smallest shift as a fraction of the series length.
+#' @param n_placebo number of placebo data sets. Two series have only
+#'   `n - 2 * floor(min_shift * n) + 1` relative offsets; when `n_placebo`
+#'   reaches that number every offset is used once (with a message), since
+#'   more placebo data sets would repeat them.
+#' @param min_shift smallest circular distance between the offsets of two
+#'   series, as a fraction of the series length.
 #' @param reverse logical; add the time-reversal check.
 #' @param seed optional RNG seed.
 #' @param cores CPU cores: the placebo runs are distributed over the cores
@@ -135,7 +170,7 @@
 #'
 #' Winkler, I., Panknin, D., Bartz, D., Mueller, K.-R. and Haufe, S. (2016). Validity of time reversal for testing Granger causality. *IEEE Transactions on Signal Processing*, 64(11), 2746-2760. \doi{10.1109/TSP.2016.2531628}
 #'
-#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. \doi{10.1111/twec.70148}
+#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 #' @export
 #' @examples
 #' # Granger analysis of three series and its placebo distribution: in data
@@ -154,15 +189,22 @@ placebo_test <- function(object, n_placebo = 99L, min_shift = 0.1, reverse = FAL
   if (!inherits(object, "causres")) stop("`object` must be a causres object.", call. = FALSE)
   .check_number(n_placebo, "n_placebo", lower = 1, integer = TRUE)
   .check_number(min_shift, "min_shift", lower = 0, upper = 0.5, strict = TRUE)
+  n_placebo <- as.integer(n_placebo)
   .local_seed(seed)
   D <- as.data.frame(object$data); n <- nrow(D)
   P <- object$pairs; key <- paste(P$cause, "->", P$effect)
   is_bayes <- function(r) isTRUE(r$settings$bayes) || identical(r$settings$method, "bayes_granger")
   obs_ev <- .evidence_of(P, is_bayes(object))
-  shift <- function(v) .circ_shift(v, max(1L, floor(min_shift * length(v))))
   panel <- inherits(object, "causpanel")
+  rel <- if (panel) NULL else .placebo_offsets(ncol(D), n, min_shift)
+  if (!is.null(rel) && n_placebo >= length(rel)) {
+    message(sprintf(paste0("placebo_test: two series of length %d have %d relative circular offsets of at least %.0f%% of the length; each of ",
+                           "them is used once (n_placebo = %d would repeat them), and the smallest placebo p-value is %s."),
+                    n, length(rel), 100 * min_shift, as.integer(n_placebo), .fmt_p(1 / (1 + length(rel)))))
+    n_placebo <- length(rel)
+  } else rel <- NULL
   runs <- .plapply(seq_len(n_placebo), function(b) {
-    rb <- .rerun(object, if (panel) .placebo_panel(object, D, min_shift) else .by_series(object, D, shift))
+    rb <- .rerun(object, if (panel) .placebo_panel(object, D, min_shift) else .placebo_series(D, min_shift, rel = rel[b]))
     Pb <- rb$pairs; k <- match(key, paste(Pb$cause, "->", Pb$effect))
     list(sig = Pb$significant[k] %in% TRUE, ev = .evidence_of(Pb, is_bayes(rb))[k])
   }, cores = cores)
@@ -188,29 +230,32 @@ placebo_test <- function(object, n_placebo = 99L, min_shift = 0.1, reverse = FAL
   structure(list(links = links, counts = counts, observed = n_obs,
                  p_global = (1 + sum(counts >= n_obs)) / (1 + n_placebo),
                  settings = list(method = object$settings$method, n_placebo = n_placebo, min_shift = min_shift,
-                                 reverse = reverse, n = n, panel = inherits(object, "causpanel"))), class = "causplacebo")
+                                 reverse = reverse, n = n, panel = inherits(object, "causpanel"),
+                                 all_offsets = !is.null(rel))), class = "causplacebo")
 }
 
 #' @export
 print.causplacebo <- function(x, ...) {
   s <- x$settings
-  if (isTRUE(s$panel)) cat(sprintf("Placebo test of the '%s' panel analysis: %d placebo panels (variables reassigned across the units)\n", s$method, s$n_placebo))
-  else cat(sprintf("Placebo test of the '%s' analysis: %d placebo data sets (independent circular shifts, at least %.0f%% of n)\n",
-                   s$method, s$n_placebo, 100 * s$min_shift))
-  cat(sprintf("  links found: %d in the data; in the placebo data mean %.2f, 95%% quantile %g; global placebo p = %s\n",
+  if (isTRUE(s$panel)) .out(sprintf("Placebo test of the '%s' panel analysis: %d placebo panels (variables reassigned across the units)\n", s$method, s$n_placebo))
+  else .out(sprintf("Placebo test of the '%s' analysis: %d placebo data sets (%s, at least %.0f%% of n)\n", s$method, s$n_placebo,
+                   if (isTRUE(s$all_offsets)) "all relative circular offsets of the two series" else "circular shifts with spaced offsets",
+                   100 * s$min_shift))
+  .out(sprintf("  links found: %d in the data; in the placebo data mean %.2f, 95%% quantile %g; global placebo p = %s\n",
               x$observed, mean(x$counts), stats::quantile(x$counts, 0.95), .fmt_p(x$p_global)))
   L <- x$links
   tb <- data.frame(link = L$link, significant = ifelse(L$significant, "yes", "no"), evidence = round(L$evidence, 2),
                    placebo.rate = sprintf("%.2f", L$placebo_rate), p.placebo = .fmt_p(L$p_placebo), stringsAsFactors = FALSE)
   if (isTRUE(s$reverse)) {
     tb$TRGC <- ifelse(is.na(L$trgc), "-", sprintf("%+.3g", L$trgc))
-    tb$time.reversal <- ifelse(is.na(L$trgc), "-", ifelse(L$trgc > 0, "supports the direction", "does not support"))
+    tb$time.reversal <- ifelse(is.na(L$trgc), "-", ifelse(L$trgc > 0, "positive", "not positive: speaks against the link"))
   }
   print(tb, row.names = FALSE, right = FALSE)
-  cat("  evidence = -log10 adjusted p (or log10 BF10); placebo.rate = share of placebo runs declaring the link;\n",
+  .out("  evidence = -log10 adjusted p (or log10 BF10); placebo.rate = share of placebo runs declaring the link;\n",
       " p.placebo = share of placebo runs with at least the observed evidence", if (isTRUE(s$reverse))
         paste0(";\n TRGC = net score s(cause->effect) - s(effect->cause) in the data minus the same in the time-reversed data",
-               "\n (s = effect size of the method; positive: the temporal order supports the direction)") else "", "\n", sep = "")
+               "\n (s = effect size of the method; a genuine lead gives a positive score, but so do about half of the links that an",
+               "\n asymmetry without a lead produces: only a score that is not positive is informative)") else "", "\n", sep = "")
   invisible(x)
 }
 
@@ -353,13 +398,13 @@ robustness <- function(object, lags = 1:3, adjust = c("holm", "BH", "none"), n_s
 #' @export
 print.causrob <- function(x, ...) {
   s <- x$settings
-  cat(sprintf("Robustness of the '%s' analysis: %d alternative settings\n", s$method, sum(x$grid$type != "original") / nrow(x$summary)))
+  .out(sprintf("Robustness of the '%s' analysis: %d alternative settings\n", s$method, sum(x$grid$type != "original") / nrow(x$summary)))
   S <- x$summary
   tb <- data.frame(link = S$link, original = ifelse(S$original, "yes", "no"), all = sprintf("%.0f%%", 100 * S$share),
                    stringsAsFactors = FALSE)
   for (nm in grep("^share_", names(S), value = TRUE)) tb[[sub("^share_", "", nm)]] <- sprintf("%.0f%%", 100 * S[[nm]])
   print(tb, row.names = FALSE, right = FALSE)
-  cat("  share of the alternative settings (all / by type) in which the link is declared\n")
+  .out("  share of the alternative settings (all / by type) in which the link is declared\n")
   invisible(x)
 }
 

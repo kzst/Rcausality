@@ -63,7 +63,7 @@ decision, and classifies each unordered pair into one of five cases:
 | `x_to_y` | $x$ drives $y$ |
 | `y_to_x` | $y$ drives $x$ |
 | `bidirectional` | mutual coupling |
-| `common_cause` | no directed link, but a hidden common driver (only for methods able to detect it) |
+| `common_cause` | no directed link, but the common-cause criterion of the method holds: contemporaneous dependence (`cmi_lag`, `markov`) or the signature of a hidden driver (state-space methods) |
 | `independent` | no relation found |
 
 This vignette shows the everyday use. The companion vignette
@@ -177,7 +177,54 @@ rcausality(net, conditional = TRUE)$classes[, c("var1", "var2", "relation")]
 # Non-linear coupling: model-free methods
 
 Linear Granger causality tests a linear regression and can miss
-non-linear coupling. `sim_logistic()` couples two logistic maps,
+non-linear coupling. Two kinds of systems must be told apart, because
+they call for different methods.
+
+## A stochastic system
+
+In a stochastic system the cause carries information that the past of the
+effect does not have, and a test of conditional independence is the tool.
+`sim_nonlinear()` generates such series with a link that leaves no linear
+trace: the past of $x$ sets the autoregressive coefficient of $y$,
+$y_t = \phi(x_{t-1})\, y_{t-1} + \varepsilon_t$.
+`method = "cmi"` estimates the conditional mutual information
+$I(x_{t-\text{lag}};\, y_t \mid y_{t-1}, \dots)$ with the Frenzel-Pompe
+(2007) k-nearest-neighbour estimator and tests it against conditional shifts of
+the cause, surrogates that keep its location and scale given the
+conditioning past (Runge's (2018) local permutations
+are an option); `method = "te"` is the binned transfer entropy of
+Schreiber (2000), tested against circular shifts of the coded cause
+(`method_args = list(reference = "conditional")` uses conditional shifts,
+which matter in the reverse direction of a strong link whose driver is
+persistent); `method = "rf_granger"` replaces the regression by a
+random forest. The verdicts of several methods can be compared in one
+call:
+
+```{r compare, eval = FALSE}
+nl <- sim_nonlinear(500, "x_to_y", seed = 2)
+cm <- compare_methods(nl, methods = c("granger", "cmi", "te", "rf_granger"), seed = 1)
+cm
+plot(cm)
+```
+
+```{r compare-run, echo = FALSE, fig.height = 3.2, fig.cap = "compare_methods(): verdict of every method per pair with the majority consensus."}
+nl <- sim_nonlinear(500, "x_to_y", seed = 2)
+cm <- .pre("compare", suppressWarnings(compare_methods(nl, methods = c("granger", "cmi", "te", "rf_granger"), seed = 1)))
+cm
+plot(cm)
+```
+
+The three model-free methods find the link; the regression test does not,
+because the linear projection of the link is zero. It issues a warning
+instead: the errors of the regression are heteroskedastic, and the
+classical F test can then reject for the wrong reason
+(`method_args = list(vcov = "HC3")` gives the heteroskedasticity-consistent
+form of the test, and `vcov = "HAC"` the form that also allows for serially
+dependent errors).
+
+## A deterministic system
+
+`sim_logistic()` couples two logistic maps,
 $x_{t+1} = r x_t (1 - x_t)$, with $x$ driving $y$ through a non-linear
 term. The time series look like noise, but the delay embedding reveals the
 deterministic structure.
@@ -191,28 +238,25 @@ plot_series(lg, n_last = 120)
 op <- par(mfrow = c(1, 2)); plot_embedding(lg$x, m = 2); plot_embedding(lg$x, lg$y); par(op)
 ```
 
-`method = "cmi"` estimates the conditional mutual information
-$I(x_{t-\text{lag}};\, y_t \mid y_{t-1}, \dots)$ with the Frenzel-Pompe
-(2007) k-nearest-neighbour estimator and tests it with Runge's (2018)
-local-permutation null; `method = "te"` is the binned transfer entropy of
-Schreiber (2000); `method = "ccm"` is Sugihara et al.'s (2012) convergent
-cross mapping. The verdicts of several methods can be compared in one
-call:
+Without noise the driven series contains its driver: here $x_t$ is a
+quadratic polynomial of $y_t$ and $y_{t-1}$ (Takens' theorem in its
+simplest form). Given the past of $y$, the past of $x$ then has nothing to
+add, and a test of conditional independence is not informative:
+`method = "cmi"` and `method = "rf_granger"` notice that the past of the
+effect determines the cause, carry out no test and say so in a warning.
+The state-space methods use exactly this reconstruction -- `method = "ccm"`
+is Sugihara et al.'s (2012) convergent cross mapping -- and the transfer
+entropy with plain circular shifts tests dependence as such:
 
-```{r compare, eval = FALSE}
-cm <- compare_methods(lg, methods = c("granger", "cmi", "te", "ccm"), seed = 1)
-cm
-plot(cm)
+```{r compare-det}
+cd <- compare_methods(lg, methods = c("granger", "te", "ccm"), seed = 1)
+cd$table
 ```
 
-```{r compare-run, echo = FALSE, fig.height = 3.2, fig.cap = "compare_methods(): verdict of every method per pair with the majority consensus."}
-cm <- .pre("compare", compare_methods(lg, methods = c("granger", "cmi", "te", "ccm"), seed = 1))
-cm
-plot(cm)
-```
-
-Granger misses the non-linear link here while the three model-free
-methods find it. The CCM result can be inspected through the cross-map
+All three find the link here; this coupling of the two maps also leaves a
+linear trace. With observational noise the conditional tests are
+informative again (`sim_logistic(noise = 0.05)`).
+The CCM result can be inspected through the cross-map
 skill against the library size (`plot(r, "lags")` for a `ccm` result):
 
 ```{r ccm, fig.height = 4.2, fig.cap = "Convergent cross mapping: the skill of predicting x from the embedding of y rises with the library size (y 'knows' x because x drives it)."}
@@ -220,17 +264,24 @@ rc <- rcausality(lg, method = "ccm", seed = 1)
 plot(rc, "lags")
 ```
 
-# Hidden common drivers
+# Dependence without a directed link
 
-Two series can be correlated without either driving the other, because
-a third, unobserved process drives both. Zlatniczki et al. (2021) show
-that the contemporaneous dependence of $x_t$ and $y_t$ *given both pasts*
-reveals such a common driver when no lagged dependence exists;
-`method = "cmi_lag"` implements this and returns the `common_cause` class.
+Two series can be related without either driving the other, for example
+because a third, unobserved process acts on both within the same period.
+Zlatniczki et al. (2021) show that, when no instantaneous effects exist
+and the noises are independent, the contemporaneous dependence of $x_t$
+and $y_t$ *given both pasts* reveals such a common driver;
+`method = "cmi_lag"` tests it and returns the `common_cause` class. In
+data the same pattern is produced by an instantaneous link, by a link
+that acts within the sampling interval and by correlated innovations, so
+that the class reads "contemporaneous dependence without a directed
+link". A hidden driver *with memory* is not detected in this way: its
+past predicts both series, and every method that uses the two series
+alone then reports directed links.
 
 ```{r common, eval = FALSE}
 set.seed(5); n <- 400
-e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # shared innovation = hidden common driver
+e1 <- rnorm(n); e2 <- 0.8 * e1 + 0.6 * rnorm(n)        # correlated innovations: a common shock within the period
 cc <- data.frame(x = as.numeric(stats::filter(e1, 0.5, "recursive")),
                  y = as.numeric(stats::filter(e2, 0.5, "recursive")))
 rcc <- rcausality(cc, method = "cmi_lag", seed = 1)
@@ -247,7 +298,7 @@ rcc
 ```
 
 The `instant` table holds the contemporaneous test; the network plot
-draws a dashed orange edge for common-driver evidence:
+draws a dashed orange edge for the contemporaneous dependence:
 
 ```{r common-plot, fig.height = 4, fig.cap = "Common driver: no directed link, but contemporaneous dependence given both pasts."}
 plot(rcc, "both")
@@ -259,7 +310,7 @@ plot(rcc, "both")
 
 A quick way to see where methods agree is to run `compare_methods()` on
 data sets with different kinds of coupling. Here: a linear VAR link, a
-non-linear logistic link and the common-driver pair above.
+non-linear logistic link and the pair with correlated innovations above.
 
 ```{r compare-table, eval = FALSE}
 sets <- list(VAR = sim_var(400, "x_to_y", seed = 1), logistic = lg, common_driver = cc)
@@ -279,9 +330,9 @@ tab
 ```
 
 (`lag = 1` fixes the coupling lag, which is known here, and saves the lag
-search.) Only `cmi_lag` can name the common driver; the others report
-(correctly) that neither series Granger-causes the other, which the
-classification calls `independent`.
+search.) Only `cmi_lag` reports the contemporaneous dependence; the others
+report (correctly) that neither series Granger-causes the other, which the
+classification calls `independent`, that is, no relation detected.
 
 ## Benchmark with known truth
 
@@ -305,19 +356,19 @@ bm
 plot(bm)
 ```
 
-The same on coupled logistic maps, where the linear test is at a
-disadvantage:
+The same on stochastic series with a link that has no linear trace, where
+the linear test is at a disadvantage:
 
 ```{r benchmark2, eval = FALSE}
-bm2 <- benchmark_methods(methods = c("granger", "cmi", "te", "ccm"), scenarios = c("x_to_y", "independent"),
-                         simulator = sim_logistic, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+bm2 <- benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "independent"),
+                         simulator = sim_nonlinear, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
 plot(bm2)
 ```
 
-```{r benchmark2-run, echo = FALSE, fig.height = 4, fig.cap = "Accuracy per scenario on coupled logistic maps."}
-bm2 <- .pre("benchmark2", benchmark_methods(methods = c("granger", "cmi", "te", "ccm"), scenarios = c("x_to_y", "independent"),
-                         simulator = sim_logistic, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1))))
-bm2$simulator <- "sim_logistic"
+```{r benchmark2-run, echo = FALSE, fig.height = 4, fig.cap = "Accuracy per scenario on stochastic series with a nonlinear link."}
+bm2 <- .pre("benchmark2", benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "independent"),
+                         simulator = sim_nonlinear, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1))))
+bm2$simulator <- "sim_nonlinear"
 plot(bm2)
 ```
 
@@ -462,8 +513,9 @@ compare_methods(my, methods = c("granger", "cmi", "te"), seed = 1)
 
 * Linear, stochastic series: `"granger"` / `"bayes_granger"`, with
   `conditional = TRUE` for several series.
-* Non-linear stochastic coupling: `"cmi"`, `"te"`, `"pid"`; `"cmi_lag"`
-  when a hidden common driver is suspected; `"markov"` for the
+* Non-linear stochastic coupling: `"cmi"`, `"te"`, `"pid"`, `"rf_granger"`,
+  `"diks_panchenko"`; `"cmi_lag"` when dependence within the sampling
+  interval (common shocks) is of interest; `"markov"` for the
   Markov-property reading.
 * Deterministic (chaotic) systems observed with little noise: `"dc"`,
   `"ccdh"`, `"ccm"`, `"hirata"`, `"cd"`; `"df"` for the

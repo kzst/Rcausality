@@ -20,9 +20,13 @@ placebo_test(
 \item{object}{a \code{causres} object from \code{\link[=rcausality]{rcausality()}} (time series, panel
 or target analysis).}
 
-\item{n_placebo}{number of placebo data sets.}
+\item{n_placebo}{number of placebo data sets. Two series have only
+\code{n - 2 * floor(min_shift * n) + 1} relative offsets; when \code{n_placebo}
+reaches that number every offset is used once (with a message), since
+more placebo data sets would repeat them.}
 
-\item{min_shift}{smallest shift as a fraction of the series length.}
+\item{min_shift}{smallest circular distance between the offsets of two
+series, as a fraction of the series length.}
 
 \item{reverse}{logical; add the time-reversal check.}
 
@@ -47,9 +51,10 @@ original analysis), \code{p_global}, \code{settings}. Methods: \code{print}, \co
 }
 \description{
 Repeats the analysis of a \code{\link[=causres-class]{causres}} object on \code{n_placebo}
-placebo data sets in which every series is circularly shifted by an
-independent random offset (at least \code{min_shift} of the length from both
-ends). The shift keeps the autocorrelation and the marginal distribution
+placebo data sets in which every series is circularly shifted by a
+random offset; the offsets of any two series differ by at least
+\code{min_shift} of the length (on the circle), so that no link survives at a
+neighbouring lag. The shift keeps the autocorrelation and the marginal distribution
 of every series and destroys the lead-lag relations between them, so the
 placebo runs show what the method finds when there is nothing to find:
 \itemize{
@@ -63,9 +68,12 @@ With \code{reverse = TRUE} the analysis is also repeated on the time-reversed
 series and the time-reversed Granger score of Haufe et al. (2013) and
 Winkler et al. (2016) is reported: the net directed score \code{s(x -> y) - s(y -> x)} (with \code{s} the effect size of the method, e.g. Geweke's measure)
 of the data minus the same net score of the reversed data. Reversal turns
-a genuine lead-lag relation around, so a positive difference supports the
-direction \code{x -> y}, whereas a link produced by symmetric dependence (for
-instance a common driver observed with noise) does not change sign.
+a genuine lead-lag relation around, whereas a link produced by symmetric
+dependence (for instance a common driver observed with noise) does not
+change sign. The check is one-sided: a score that is not positive speaks
+against the direction \code{x -> y}; a positive score does not confirm it
+(about half of the false links of simulated common-driver data have
+one).
 }
 }
 \details{
@@ -99,5 +107,5 @@ Haufe, S., Nikulin, V. V., Mueller, K.-R. and Nolte, G. (2013). A critical asses
 
 Winkler, I., Panknin, D., Bartz, D., Mueller, K.-R. and Haufe, S. (2016). Validity of time reversal for testing Granger causality. \emph{IEEE Transactions on Signal Processing}, 64(11), 2746-2760. \doi{10.1109/TSP.2016.2531628}
 
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 }

@@ -14,7 +14,9 @@ surrogate_bf(
   prior_prob = 0.5,
   n_draws = 4000L,
   credible = 0.95,
-  seed = NULL
+  seed = NULL,
+  effect_scale = c("local", "unit"),
+  n_eff = NULL
 )
 }
 \arguments{
@@ -32,12 +34,35 @@ is larger under coupling), \code{"less"} or \code{"two.sided"}.}
 \item{prior_prob}{prior probability of \code{H1}.}
 
 \item{seed}{optional RNG seed for the Monte Carlo integration.}
+
+\item{effect_scale, n_eff}{the unit of the prior scale of the effect:
+\code{"local"} (default), \code{scale} null standard deviations of the statistic,
+or \code{"unit"}, \code{scale * sd0 * sqrt(n_eff)}, where \code{n_eff} is the number
+of observations behind the statistic. For a statistic whose null
+standard deviation falls like \code{1 / sqrt(n_eff)} this is the scale of a
+unit-information prior (Kass and Wasserman 1995); the plug-in statistics
+of the nonlinear methods need not have that rate, and the option is
+then a wider prior scale that grows with the length, not a
+unit-information prior in the strict sense. With the
+local scale the test is most sensitive, but the evidence it can give for
+\code{H0} is bounded (about \code{BF10 = 0.5} at the centre of the null
+distribution, whatever the length of the series); with the unit scale
+the Bayes factor in favour of \code{H0} grows like \code{sqrt(n_eff)} when \code{H0}
+holds, as for the BIC, at the price of a later detection of weak effects.}
 }
 \value{
 An object of class \code{surrogate_bf}: \code{bf10}, \code{post_prob},
 \code{effect} (posterior mean and credible interval of the effect under \code{H1},
 in the units of the statistic), \code{z} (the statistic in surrogate standard
-deviations), \code{settings}. Method: \code{print}.
+deviations), \code{statistic}, \code{null_mean} and \code{null_sd} (mean and standard
+deviation of the surrogate statistics), \code{extrapolated} (\code{TRUE} when the
+statistic lies outside the range of the surrogate statistics, where the
+density of the null distribution is the normal tail and not an estimate
+from them), \code{bound} (the Bayes factor at the most extreme surrogate
+statistic on the side of the observed one: with \code{extrapolated = TRUE}
+the surrogates support \code{bf10 > bound} and no more; \code{NA} otherwise), and
+\code{settings}. Method: \code{print}, which shows an extrapolated Bayes factor as
+the bound.
 }
 \description{
 A Bayesian version of the surrogate test used by the model-free causality
@@ -50,6 +75,15 @@ alternative, Cauchy or normal for a two-sided one. The Bayes factor is \code{f1(
 \code{f1(T) = E_delta[f0(T - delta)]}, integrated by Monte Carlo (closed form for
 the normal null with the half-normal prior). The posterior of the effect
 under \code{H1} is summarised from the importance-weighted prior draws.
+}
+\details{
+The construction is a Bayes factor based on a test statistic (Johnson,
+2005): it conditions on the statistic and not on the data, and it assumes
+that the effect shifts the null distribution without changing its shape.
+Outside the range of the surrogate statistics the kernel density is
+continued by a normal tail (the element \code{extrapolated} of the result is
+then \code{TRUE}): the replicates carry no information about the null density
+there, so that such Bayes factors rest on the normal tail.
 }
 \examples{
 # A statistic observed 3.2 surrogate standard deviations above a standard
@@ -65,4 +99,8 @@ surrogate_bf(0.3, rnorm(200), scale = 0.5)
 Rouder, J. N., Speckman, P. L., Sun, D., Morey, R. D. and Iverson, G. (2009). Bayesian t tests for accepting and rejecting the null hypothesis. \emph{Psychonomic Bulletin & Review}, 16, 225-237. \doi{10.3758/PBR.16.2.225}
 
 Kass, R. E. and Raftery, A. E. (1995). Bayes factors. \emph{Journal of the American Statistical Association}, 90(430), 773-795. \doi{10.1080/01621459.1995.10476572}
+
+Kass, R. E. and Wasserman, L. (1995). A reference Bayesian test for nested hypotheses and its relationship to the Schwarz criterion. \emph{Journal of the American Statistical Association}, 90(431), 928-934. \doi{10.1080/01621459.1995.10476592}
+
+Johnson, V. E. (2005). Bayes factors based on test statistics. \emph{Journal of the Royal Statistical Society B}, 67(5), 689-701. \doi{10.1111/j.1467-9868.2005.00521.x}
 }

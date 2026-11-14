@@ -38,7 +38,8 @@ largest lag of its links).}
 \item{cores}{CPU cores: the methods run in parallel (see
 \link{Rcausality-parallel}).}
 
-\item{...}{arguments to every \code{\link[=rcausality]{rcausality()}} call (e.g. \code{seed}, \code{n_perm})
+\item{...}{arguments to every \code{\link[=rcausality]{rcausality()}} call (e.g. \code{n_perm}, and
+\code{seed}, which also seeds the forecast models)
 and to \code{\link[=predict.causres]{predict.causres()}} (\code{control}, \code{rf_settings}). With \code{id} (and
 \code{time}) the comparison is made on panel data: the links are those of
 the panel analysis of the training periods, the forecast equations are

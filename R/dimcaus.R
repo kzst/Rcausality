@@ -166,11 +166,11 @@ dimensional_causality <- function(x, y, m = 3L, tau = 1L, k_range = seq(10L, 40L
 #' @export
 print.dimcaus <- function(x, digits = 3, ...) {
   s <- x$settings
-  cat("Bayesian dimensional causality (Benko et al., 2024)\n")
-  cat(sprintf("  embedding m = %d, tau = %d, %s normalisation, n = %d points, k = %s\n",
+  .out("Bayesian dimensional causality (Benko et al., 2024)\n")
+  .out(sprintf("  embedding m = %d, tau = %d, %s normalisation, n = %d points, k = %s\n",
               s$m, s$tau, s$prep, s$n, paste(range(s$k_range), collapse = "-")))
-  cat("  mean intrinsic dimensions:  "); cat(sprintf("D_%s = %.2f", c("X", "Y", "J", "Z"), x$dims), sep = "  "); cat("\n")
-  cat("  posterior probabilities of the causal cases (averaged over k):\n")
+  .out("  mean intrinsic dimensions:  "); .out(sprintf("D_%s = %.2f", c("X", "Y", "J", "Z"), x$dims), sep = "  "); .out("\n")
+  .out("  posterior probabilities of the causal cases (averaged over k):\n")
   lab <- c(x_to_y = "X -> Y", y_to_x = "X <- Y", bidirectional = "X <-> Y",
            common_cause = "hidden common cause", independent = "independent")
   print(data.frame(case = lab[names(x$probs)], probability = round(x$probs, digits),

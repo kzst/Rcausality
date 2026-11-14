@@ -31,7 +31,7 @@ test_that("bf_from_p is the Sellke-Bayarri-Berger bound", {
 
 test_that("bayes = TRUE calibrates the model-free methods and decides by BF", {
   skip_on_cran()      # long-running; run by devtools::test() / NOT_CRAN=true
-  lg <- sim_logistic(500, "x_to_y", seed = 2)
+  lg <- nl_pair(500, 2)
   r <- rcausality(lg, method = "cmi", bayes = TRUE, seed = 1, n_perm = 100)
   P <- r$pairs
   expect_true(all(!is.na(P$bf10)))
@@ -129,4 +129,69 @@ test_that("rcausality(bayes = TRUE) runs every family and fills the Bayesian col
   rm <- rcausality(w, method = "markov", bayes = TRUE, memory = 1, n_perm = 49, n_markov = 49, seed = 1)
   expect_equal(rm$classes$relation, "alice -> bob"); expect_match(rm$bayes$model[1], "decision table")
   pdf(NULL); on.exit(dev.off()); expect_no_error(plot(r, "posterior")); expect_no_error(plot(rt, "posterior"))
+})
+
+test_that("the g-prior scale and the hyper-g parameter of bayes_control() take effect", {
+  d <- sim_var(200, "x_to_y", seed = 1)
+  bf <- function(...) bayes_granger(d$y, d$x, lag = 2, control = bayes_control(...))$bf10
+  # g = scale * N: the closed form against its definition
+  n <- 200; L <- 2; yd <- d$y[(L + 1):n]; N <- length(yd)
+  lags <- function(v) sapply(1:L, function(l) v[(L + 1 - l):(n - l)])
+  # the restricted regression is the base model: flat priors on its coefficients, the g prior on the lags of the cause
+  # after the common regressors are projected out, so that the Bayes factor is a function of F and its degrees of
+  # freedom only: BF10 = (1 + g)^((nu0 - p) / 2) (1 + g (1 - R2p))^(-nu0 / 2), R2p = p F / (p F + nu1)
+  Xr <- lags(d$y); Xu <- cbind(Xr, lags(d$x))
+  rss <- function(X) sum(stats::resid(stats::lm(yd ~ X))^2)
+  nu0 <- N - 1 - 2; nu1 <- nu0 - 2; Fst <- ((rss(Xr) - rss(Xu)) / 2) / (rss(Xu) / nu1); R2p <- 2 * Fst / (2 * Fst + nu1)
+  expect_equal(R2p, 1 - rss(Xu) / rss(Xr))
+  for (s in c(1, 10))
+    expect_equal(log(bf(prior = "g", scale = s)), (nu0 - 2) / 2 * log1p(s * N) - nu0 / 2 * log1p(s * N * (1 - R2p)), tolerance = 1e-8)
+  # ... and against its definition: the marginal likelihoods integrated numerically over sigma^2 (the coefficients
+  # are integrated in closed form for a given sigma^2)
+  g <- N; S0 <- rss(Xr); S1 <- S0 - g / (1 + g) * (S0 - rss(Xu))
+  m <- function(S, const) { u0 <- log(S / nu0)          # integration over u = log(sigma^2) around the mode
+    stats::integrate(function(u) exp(const - nu0 / 2 * u - S * exp(-u) / 2 + nu0 / 2 * log(S0 / nu0) + nu0 / 2),
+                     u0 - 3, u0 + 3, rel.tol = 1e-10, subdivisions = 400L)$value }
+  expect_equal(bf(prior = "g"), m(S1, -log1p(g)) / m(S0, 0), tolerance = 1e-6)
+  # the evidence does not depend on how well the own past predicts: the Bayes factor is the same for two data sets
+  # with the same F statistic and degrees of freedom
+  expect_equal(bf(prior = "g"), exp(Rcausality:::.log_bf_nested(N, 2, 4, 0.999, 1 - 0.001 * rss(Xu) / rss(Xr), "g")), tolerance = 1e-8)
+  expect_false(isTRUE(all.equal(bf(prior = "hyper_g", hyper_a = 3), bf(prior = "hyper_g", hyper_a = 4))))
+  # the same through rcausality(): Granger and Toda-Yamamoto regressions
+  r1 <- rcausality(d$x, d$y, method = "bayes_granger", lag = 2, control = bayes_control(prior = "g"))
+  r2 <- rcausality(d$x, d$y, method = "bayes_granger", lag = 2, control = bayes_control(prior = "g", scale = 10))
+  expect_equal(r1$pairs$bf10[1], bf(prior = "g")); expect_equal(r2$pairs$bf10[1], bf(prior = "g", scale = 10))
+  expect_output(print(r2), "g = 10 n")
+  t1 <- rcausality(d$x, d$y, method = "toda_yamamoto", bayes = TRUE, lag = 2, control = bayes_control(prior = "hyper_g"))
+  t2 <- rcausality(d$x, d$y, method = "toda_yamamoto", bayes = TRUE, lag = 2,
+                   control = bayes_control(prior = "hyper_g", hyper_a = 4))
+  expect_false(isTRUE(all.equal(t1$pairs$bf10, t2$pairs$bf10)))
+  # a prior without a closed form for the lag-augmented regressions falls back to (and records) the BIC one
+  expect_identical(rcausality(d$x, d$y, method = "toda_yamamoto", bayes = TRUE, lag = 2)$settings$prior, "bic")
+  # panels: unit and pooled Bayes factors
+  pd <- sim_panel(n_units = 8, n_time = 30, scenario = "x_to_y", seed = 1)
+  p1 <- panel_causality(pd, id = "unit", time = "time", bayes = TRUE, lag = 1, control = bayes_control(prior = "g"), seed = 1)
+  p2 <- panel_causality(pd, id = "unit", time = "time", bayes = TRUE, lag = 1, control = bayes_control(prior = "g", scale = 10),
+                        seed = 1)
+  expect_false(isTRUE(all.equal(p1$units$bf10_raw, p2$units$bf10_raw)))
+  expect_false(isTRUE(all.equal(p1$panel$bf10[p1$panel$level == "pooled"], p2$panel$bf10[p2$panel$level == "pooled"])))
+})
+
+test_that("case_prior replaces the prior of the method over the causal cases", {
+  p <- c(x_to_y = 0.5, y_to_x = 0.1, bidirectional = 0.1, common_cause = 0.2, independent = 0.1)
+  base9 <- Rcausality:::.dc_case_base
+  # the method's own prior as case_prior leaves the posterior unchanged
+  expect_equal(Rcausality:::.bayes_cases(p, base9, base9), p)
+  expect_equal(Rcausality:::.bayes_cases(p, rep(0.2, 5) |> stats::setNames(names(p))), p)
+  # a uniform prior over the five cases removes the 1:1:1:3:3 weights of the nine events
+  q <- Rcausality:::.bayes_cases(p, stats::setNames(rep(0.2, 5), names(p)), base9)
+  expect_equal(unname(q), unname((p / base9) / sum(p / base9)))
+  # Markov table: implied prior 2:2:2:1:1; giving it as case_prior changes nothing
+  pM <- c(MA = 0.8, MB = 0.3, MJ = 0.9); pD <- c(sAB = 0.9, sBA = 0.2, sI0 = 0.1)
+  b0 <- Rcausality:::.bayes_markov(pM, pD, "allowed")
+  imp <- c(x_to_y = 2, y_to_x = 2, bidirectional = 2, common_cause = 1, independent = 1) / 8
+  b1 <- Rcausality:::.bayes_markov(pM, pD, "allowed", imp)
+  expect_equal(b1$cases, b0$cases); expect_equal(b1$p_ab, b0$p_ab)
+  b2 <- Rcausality:::.bayes_markov(pM, pD, "allowed", stats::setNames(rep(0.2, 5), names(imp)))
+  expect_equal(sum(b2$cases), 1); expect_false(isTRUE(all.equal(b2$cases, b0$cases)))
 })

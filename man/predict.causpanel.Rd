@@ -14,8 +14,9 @@
   refit = TRUE,
   model = c("var", "bvar", "rf"),
   control = bayes_control(prior = "minnesota"),
-  rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+  rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = "auto"),
   n_sim = 200L,
+  seed = NULL,
   ...
 )
 
@@ -41,6 +42,10 @@ out-of-sample evaluation (\code{0} = none).}
 
 \item{control, rf_settings, n_sim}{as in \code{\link[=predict.causres]{predict.causres()}} (\code{n_sim} paths
 per unit).}
+
+\item{seed}{optional RNG seed of the forecast stage (the forests of
+\code{model = "rf"} and the simulated paths behind the intervals); the random
+number stream of the session is restored afterwards.}
 
 \item{...}{unused.}
 

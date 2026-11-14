@@ -10,8 +10,8 @@ rf_granger(
   lag = 2L,
   n_surr = 99L,
   num_trees = 200L,
-  mtry = NULL,
-  min_node_size = 5L,
+  mtry = "all",
+  min_node_size = "auto",
   folds = 5L,
   shadow = TRUE,
   seed = NULL,
@@ -23,10 +23,27 @@ rf_granger(
 
 \item{lag}{number of past values of each series.}
 
-\item{n_surr}{number of circular-shift surrogates.}
+\item{n_surr}{number of surrogates (conditional circular shifts, see
+above; at most the number of admissible shifts, about 0.8 times the
+length of the series).}
 
-\item{num_trees, mtry, min_node_size}{forest settings (passed to
-\code{\link[ranger:ranger]{ranger::ranger()}}; \code{mtry = NULL} = the ranger default).}
+\item{num_trees, mtry}{forest settings (passed to \code{\link[ranger:ranger]{ranger::ranger()}}).
+\code{mtry = "all"} (default): every split considers all features (bagged
+trees); \code{NULL} is the default of ranger, a random subset of about the
+square root of the number of features. With a random subset of a handful
+of lags, a redundant or even an irrelevant feature improves a forest
+because it adds diversity to the trees, which would count as a gain of
+the cause; bagged trees do not have this artefact.}
+
+\item{min_node_size}{minimal node size of the trees: a number, or
+\code{"auto"} (default): the size with the smallest out-of-bag error of the
+forest on the own past of the effect, from the grid 5 and 2\%, 5\%, 10\%,
+20\% of the observations; it is then used for all forests of the
+out-of-bag statistic and its surrogates, while every forest of the
+rolling-origin evaluation selects its size on its own training part.
+With only a few lags as features, fully grown trees (node size 5)
+interpolate the noise, the own-past forest predicts poorly, and any added
+series appears to improve it.}
 
 \item{folds}{number of rolling-origin forecast blocks (\code{0} = none).}
 
@@ -49,11 +66,23 @@ A nonlinear, model-free reading of Granger's predictive definition: a
 random forest (package \pkg{ranger}) predicts \code{y[t]} from the own past
 \verb{y[t-1..t-lag]} with and without the past of \code{x}. The out-of-bag gain
 \deqn{G = 1 - \mathrm{MSE}_{oob}(\text{own} + x) / \mathrm{MSE}_{oob}(\text{own})}{G = 1 - MSE_oob(own + x) / MSE_oob(own)}
-is tested against \code{n_surr} circular-shift surrogates of \code{x} (which keep the
-autocorrelation of \code{x} and of \code{y} and destroy their coupling, so that the
-optimism of out-of-bag errors on dependent data cancels); a non-positive
+is tested against \code{n_surr} conditional shifts of \code{x}, surrogates that
+keep what the null hypothesis allows: the lags of \code{x} are split into a location given
+the own past of \code{y} (the polynomial with the smallest leave-one-out error,
+plus the out-of-bag predictions of a forest for its residuals), a scale
+(a weighted least-squares fit of the absolute residuals on a polynomial
+of the own past or on its absolute values) and standardized residuals,
+and the residuals are shifted circularly. The surrogates keep
+the autocorrelation of both series and the dependence of \code{x} on the past
+of \code{y} (which exists in the reverse direction of a link) and destroy the
+coupling, so that the optimism of out-of-bag errors on dependent data
+cancels; for a cause that is unrelated to the past of \code{y} they are
+circular shifts of \code{x}. A non-positive
 gain gives \code{p = 1}, since Granger's definition asks for an improvement of
-the prediction (not merely a dependence). Reported with
+the prediction (not merely a dependence); so does a cause that the past
+of \code{y} determines (99\% of the variance of a lag or more, as in noise-free
+deterministic systems), for which no surrogate differs from the cause and
+no test is carried out. Reported with
 it: the rolling-origin (expanding-window) out-of-sample gain over \code{folds}
 forecast blocks, the permutation importance of the lags of \code{x}, and the
 shadow-feature rule of Kosztyan, Matrai and Kiss (2026): a link is
@@ -63,16 +92,16 @@ circularly shifted copy of \code{x} added as a shadow.
 \examples{
 \donttest{
 if (requireNamespace("ranger", quietly = TRUE)) {
-  # a nonlinear coupling x -> y (logistic maps): the forest gains from the
-  # past of x (small surrogate p-value, positive out-of-sample gain), not
-  # the other way round
-  d <- sim_logistic(300, "x_to_y", seed = 1)
+  # a nonlinear link x -> y without a linear trace: the forest gains from
+  # the past of x (small surrogate p-value, positive out-of-sample gain),
+  # not the other way round
+  d <- sim_nonlinear(300, "x_to_y", seed = 1)
   rf_granger(d$x, d$y, lag = 1, n_surr = 49, num_trees = 100, seed = 1)
 }
 }
 }
 \references{
-Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}. \doi{10.1111/twec.70148}
+Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. \emph{The World Economy}, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 
 Breiman, L. (2001). Random forests. \emph{Machine Learning}, 45(1), 5-32. \doi{10.1023/A:1010933404324}
 

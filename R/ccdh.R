@@ -115,13 +115,13 @@ ccdh <- function(x, y, m = 3L, tau = 1L, K = 10L, lag = 0L, n_surr = 50L, theta 
   lo <- max(2L * m * tau + 1L, floor(n / 10)); hi <- n - lo
   if (hi <= lo) stop("Series too short for the surrogates.", call. = FALSE)
   shift <- function(v, s) v[((seq_len(n) + s - 1L) %% n) + 1L]
-  surr <- do.call(rbind, .plapply(seq_len(n_surr), function(b) {
-    s1 <- sample(lo:hi, 1L); s2 <- sample(lo:hi, 1L)
-    c(x = mean(.cr_curve(joint(x, shift(y, s1)), K) - cr[, "X"]),
-      y = mean(.cr_curve(joint(y, shift(x, s2)), K) - cr[, "Y"]))
+  sh <- cbind(.shift_draws(lo, hi, n_surr), .shift_draws(lo, hi, n_surr))     # distinct shifts for either direction
+  surr <- do.call(rbind, .plapply(seq_len(nrow(sh)), function(b) {
+    c(x = mean(.cr_curve(joint(x, shift(y, sh[b, 1L])), K) - cr[, "X"]),
+      y = mean(.cr_curve(joint(y, shift(x, sh[b, 2L])), K) - cr[, "Y"]))
   }, cores = cores))
-  p_share <- c(x = (1 + sum(surr[, "x"] <= delta[["x"]])) / (n_surr + 1),
-               y = (1 + sum(surr[, "y"] <= delta[["y"]])) / (n_surr + 1))
+  p_share <- c(x = (1 + sum(surr[, "x"] <= delta[["x"]])) / (nrow(surr) + 1),
+               y = (1 + sum(surr[, "y"] <= delta[["y"]])) / (nrow(surr) + 1))
   ds <- colMeans(surr)
   index <- pmax(delta / pmax(ds, 1e-12), 0)
   rec_x <- p_share[["x"]] < alpha && index[["x"]] <= theta       # y reconstructible from X: y -> x
@@ -138,16 +138,16 @@ ccdh <- function(x, y, m = 3L, tau = 1L, K = 10L, lag = 0L, n_surr = 50L, theta 
 #' @export
 print.ccdh <- function(x, digits = 3, ...) {
   s <- x$settings
-  cat("CCDH: complexity-based causal discovery (Stippinger et al.)\n")
-  cat(sprintf("  embedding m = %d, tau = %d, %d NSRPS steps, lag = %d, n = %d, %d surrogates\n",
+  .out("CCDH: complexity-based causal discovery (Stippinger et al.)\n")
+  .out(sprintf("  embedding m = %d, tau = %d, %d NSRPS steps, lag = %d, n = %d, %d surrogates\n",
               s$m, s$tau, s$K, s$lag, x$n, s$n_surr))
-  cat("  mean compression rates:  "); cat(sprintf("%s = %.3f", colnames(x$cr), colMeans(x$cr)), sep = "  "); cat("\n")
+  .out("  mean compression rates:  "); .out(sprintf("%s = %.3f", colnames(x$cr), colMeans(x$cr)), sep = "  "); .out("\n")
   tab <- data.frame(joint = c("J_xxy vs X  (y reconstructible from X: y -> x)", "J_yyx vs Y  (x reconstructible from Y: x -> y)"),
                     excess = round(x$delta, digits), surrogate = round(x$delta_surr, digits),
                     index = round(x$index, digits), p.share = .fmt_p(x$p_share),
                     reconstructible = ifelse(x$p_share < s$alpha & x$index <= s$theta, "yes", "no"))
   print(tab, row.names = FALSE, right = FALSE)
-  cat(sprintf("  verdict: %s   (index <= %g and p.share < %g => reconstructible)\n", x$verdict, s$theta, s$alpha))
+  .out(sprintf("  verdict: %s   (index <= %g and p.share < %g => reconstructible)\n", x$verdict, s$theta, s$alpha))
   invisible(x)
 }
 

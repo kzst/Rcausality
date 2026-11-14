@@ -6,22 +6,25 @@ bibentry(
   author  = person("Zsolt T.", "Kosztyán"),
   year    = "2026",
   note    = sprintf("R package version %s", meta$Version),
-  url     = "https://github.com/kzst/rcausality",
+  url     = "https://github.com/kzst/Rcausality",
   textVersion = paste0("Kosztyán, Z. T. (2026). Rcausality: Causality Analysis for Time Series and Panel Data. ",
-                       "R package version ", meta$Version, ". https://github.com/kzst/rcausality")
+                       "R package version ", meta$Version, ". https://github.com/kzst/Rcausality")
 )
 
 bibentry(
   bibtype = "Article",
   header  = "The panel analysis and the explanatory analysis of one target follow:",
   title   = "Is the World Getting Smaller? Network-Driven Heterogeneity in Gravity-Model Elasticities",
-  author  = c(person("Zsolt T.", "Kosztyán"), person("R.", "Mátrai"), person("D.", "Kiss")),
+  author  = c(person("Zsolt T.", "Kosztyán"), person("Rita", "Mátrai"), person("Dénes", "Kiss")),
   journal = "The World Economy",
   year    = "2026",
+  volume  = "49",
+  number  = "11",
+  pages   = "2478--2525",
   doi     = "10.1111/twec.70148",
   textVersion = paste0("Kosztyán, Z. T., Mátrai, R. and Kiss, D. (2026). Is the World Getting Smaller? ",
-                       "Network-Driven Heterogeneity in Gravity-Model Elasticities. The World Economy. ",
-                       "https://doi.org/10.1111/twec.70148")
+                       "Network-Driven Heterogeneity in Gravity-Model Elasticities. The World Economy, ",
+                       "49(11), 2478-2525. https://doi.org/10.1111/twec.70148")
 )
 
 citFooter("Please also cite the papers whose methods you use; see ?rcausality and the vignettes.")

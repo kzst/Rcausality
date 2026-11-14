@@ -16,10 +16,22 @@
 #   the tests are referred to a bootstrap under the null hypothesis, as
 #   Dumitrescu and Hurlin (2012) recommend for their panel test: in every unit
 #   the effect is regenerated from its own estimated autoregression (with the
-#   controls) with resampled residuals, the cause is kept as it is.  The
-#   bootstrap effect has the dynamics of the observed one (with the
-#   small-sample bias of the estimated persistence corrected, Kilian 1998)
-#   and no link from the cause.  (Shifting the cause in time is not an alternative in short
+#   controls) with resampled residuals.  The bootstrap effect has the
+#   dynamics of the observed one (with the small-sample bias of the estimated
+#   persistence corrected, Kilian 1998) and no link from the cause.
+#   The cause is regenerated together with the effect (`joint`, the default):
+#   from its own lags and the lags of the bootstrap effect, with the
+#   residuals of the same resampled periods.  The null hypothesis leaves the
+#   dependence of the cause on the past of the effect free, and this
+#   feedback is what biases the pooled estimator (order 1/T, after the
+#   jackknife 1/T^2); a bootstrap that keeps the cause fixed generates
+#   panels without that bias, and the pooled test then rejects the reverse
+#   direction of a link too often when the units are many and short.
+#   With `periods` the same resampled periods are used in all units, which
+#   keeps the dependence between the units (common shocks, common factors
+#   with any loadings) in the reference distribution, as in the bootstrap of
+#   Dumitrescu and Hurlin (2012, Section 6.2).
+#   (Shifting the cause in time is not an alternative in short
 #   panels: within a short, demeaned series, values far apart are negatively
 #   correlated, about -(1 + rho) / ((1 - rho) T), so that a shifted cause still
 #   carries a true link and the surrogate distribution is contaminated.)
@@ -27,27 +39,48 @@
 # per-unit cross-products from which the unit F statistics and the pooled
 # statistic follow.
 
-# bootstrap effect series of one unit under H0: n x B matrix; the first p0
-# values are the observed ones (conditioning on the initial values)
-.boot_effect <- function(e, Zfix, p0, B) {
-  n <- length(e); m <- n - p0; kf <- ncol(Zfix)
-  f <- stats::lm.fit(cbind(Zfix, .lagmat(e, p0)), e[(p0 + 1L):n]); cf <- f$coefficients; cf[is.na(cf)] <- 0
-  r <- f$residuals - mean(f$residuals); r <- r * sqrt(m / max(1, m - f$rank))
-  fx <- as.numeric(Zfix %*% cf[seq_len(kf)]); phi <- cf[kf + seq_len(p0)]
-  # Least squares underestimates the persistence of a short series, E(rho_hat) - rho ~ -(1 + 3 rho) / T (Kendall
-  # 1954), and a bootstrap process that is less persistent than the data understates the null variability of the
-  # tests (Kilian 1998): the sum of the autoregressive coefficients is corrected before the series are generated
+# correction of estimated autoregressive coefficients for their small-sample bias.  Least squares underestimates
+# the persistence of a short series, E(rho_hat) - rho ~ -(1 + 3 rho) / T (Kendall 1954), and a bootstrap process that
+# is less persistent than the data understates the null variability of the tests (Kilian 1998): the sum of the
+# coefficients is corrected before the series are generated, and the bootstrap process is kept stable
+.ar_correct <- function(phi, m) {
   rho <- sum(phi)
   if (m > 8L && rho > 0.05) phi <- phi * min(0.98, rho + (1 + 3 * rho) / m) / rho
-  sp <- sum(abs(phi)); if (sp >= 0.99) phi <- phi * 0.98 / sp          # keep the bootstrap process stable
+  sp <- sum(abs(phi)); if (sp >= 0.99) phi <- phi * 0.98 / sp
+  phi
+}
+
+# bootstrap series of one unit under H0: `y`, the n x B matrix of the effect, and `x`, that of the cause (NULL when
+# the cause is kept fixed); the first p0 values are the observed ones (conditioning on the initial values).
+# `idx`: resampled periods (m * B indices) that are common to all units; NULL draws them for this unit.
+.boot_pair <- function(e, x, Zfix, p0, B, joint = TRUE, idx = NULL) {
+  n <- length(e); m <- n - p0; kf <- ncol(Zfix); Le <- .lagmat(e, p0)
+  f <- stats::lm.fit(cbind(Zfix, Le), e[(p0 + 1L):n]); cf <- f$coefficients; cf[is.na(cf)] <- 0
+  r <- f$residuals - mean(f$residuals); r <- r * sqrt(m / max(1, m - f$rank))
+  fx <- as.numeric(Zfix %*% cf[seq_len(kf)]); phi <- .ar_correct(cf[kf + seq_len(p0)], m)
+  S <- if (is.null(idx) || length(idx) != m * B) sample.int(m, m * B, replace = TRUE) else idx
   out <- matrix(0, n, B); out[seq_len(p0), ] <- e[seq_len(p0)]
-  R <- matrix(r[sample.int(m, m * B, replace = TRUE)], m, B)
+  R <- matrix(r[S], m, B)
   for (t in seq_len(m)) {
     v <- fx[t] + R[t, ]
     for (l in seq_len(p0)) v <- v + phi[l] * out[p0 + t - l, ]
     out[p0 + t, ] <- v
   }
-  out
+  if (!joint) return(list(y = out, x = NULL))
+  # the cause: its own lags, the lags of the effect (feedback) and the fixed regressors
+  g <- stats::lm.fit(cbind(Zfix, .lagmat(x, p0), Le), x[(p0 + 1L):n]); cg <- g$coefficients; cg[is.na(cg)] <- 0
+  if (m - g$rank < 2L) return(list(y = out, x = NULL))
+  u <- g$residuals - mean(g$residuals); u <- u * sqrt(m / max(1, m - g$rank))
+  gx <- as.numeric(Zfix %*% cg[seq_len(kf)]); al <- .ar_correct(cg[kf + seq_len(p0)], m); ga <- cg[kf + p0 + seq_len(p0)]
+  ox <- matrix(0, n, B); ox[seq_len(p0), ] <- x[seq_len(p0)]
+  U <- matrix(u[S], m, B)                                  # the residuals of the same periods as those of the effect
+  for (t in seq_len(m)) {
+    v <- gx[t] + U[t, ]
+    for (l in seq_len(p0)) v <- v + al[l] * ox[p0 + t - l, ] + ga[l] * out[p0 + t - l, ]
+    ox[p0 + t, ] <- v
+  }
+  if (any(!is.finite(ox)) || max(abs(ox)) > 1e6 * max(1, max(abs(x)))) return(list(y = out, x = NULL))
+  list(y = out, x = ox)
 }
 
 # cross-products of one unit for the lag order l and every column of E (the
@@ -59,30 +92,43 @@
 .reg_unit_contrib <- function(E, x, Zc, l, aug = 0L) {
   n <- nrow(E); nb <- ncol(E); LL <- l + aug; m <- n - LL
   if (m < 4L) return(NULL)
-  Xc <- .lagmat(x, LL); X <- Xc[, seq_len(l), drop = FALSE]
-  Zf <- matrix(1, m, 1L)
-  if (!is.null(Zc)) for (j in seq_len(ncol(Zc))) Zf <- cbind(Zf, .lagmat(Zc[, j], LL))
-  if (aug > 0L) Zf <- cbind(Zf, Xc[, (l + 1L):LL, drop = FALSE])
+  xm <- is.matrix(x) && nb > 1L && ncol(x) == nb         # bootstrap copies of the cause, one per column of E
+  x1 <- if (is.matrix(x)) x[, 1L] else x
+  Xc <- .lagmat(x1, LL); X <- Xc[, seq_len(l), drop = FALSE]
+  Zb <- matrix(1, m, 1L)
+  if (!is.null(Zc)) for (j in seq_len(ncol(Zc))) Zb <- cbind(Zb, .lagmat(Zc[, j], LL))
+  Zf <- if (aug > 0L) cbind(Zb, Xc[, (l + 1L):LL, drop = FALSE]) else Zb
   kz <- ncol(Zf) + LL
   if (m < kz + l + 2L) return(NULL)
   half <- floor(m / 2) >= kz + l + 1L
   sets <- list(full = seq_len(m)); if (half) { sets$h1 <- seq_len(floor(m / 2)); sets$h2 <- (floor(m / 2) + 1L):m }
   if (LL == 1L) {                                        # one own lag: all columns at once (Frisch-Waugh)
     G0 <- E[seq_len(m), , drop = FALSE]; Y0 <- E[2:n, , drop = FALSE]
+    X0 <- if (xm) x[seq_len(m), , drop = FALSE] else NULL
     res <- lapply(sets, function(rows) {
-      q <- qr(Zf[rows, , drop = FALSE]); X1 <- qr.resid(q, X[rows, , drop = FALSE])
+      q <- qr(Zf[rows, , drop = FALSE])
       G <- qr.resid(q, G0[rows, , drop = FALSE]); Y1 <- qr.resid(q, Y0[rows, , drop = FALSE])
-      gg <- pmax(colSums(G^2), 1e-12); gx <- as.numeric(crossprod(G, X1)); gy <- colSums(G * Y1)
-      list(A = array(sum(X1^2) - gx^2 / gg, c(1L, 1L, nb)), b = matrix(as.numeric(crossprod(X1, Y1)) - gx * gy / gg, 1L, nb),
+      gg <- pmax(colSums(G^2), 1e-12); gy <- colSums(G * Y1)
+      if (xm) {
+        X1 <- qr.resid(q, X0[rows, , drop = FALSE]); gx <- colSums(G * X1); xx <- colSums(X1^2); xy <- colSums(X1 * Y1)
+      } else {
+        X1 <- qr.resid(q, X[rows, , drop = FALSE]); gx <- as.numeric(crossprod(G, X1)); xx <- sum(X1^2); xy <- as.numeric(crossprod(X1, Y1))
+      }
+      list(A = array(xx - gx^2 / gg, c(1L, 1L, nb)), b = matrix(xy - gx * gy / gg, 1L, nb),
            yy = colSums(Y1^2) - gy^2 / gg, df = length(rows) - q$rank - 1L)
     })
   } else {
     res <- lapply(sets, function(rows) list(A = array(0, c(l, l, nb)), b = matrix(0, l, nb), yy = numeric(nb), df = 0L))
     for (b in seq_len(nb)) {
-      Z <- cbind(Zf, .lagmat(E[, b], LL)); y <- E[(LL + 1L):n, b]
+      Xb <- X; Zfb <- Zf
+      if (xm && b > 1L) {
+        Xcb <- .lagmat(x[, b], LL); Xb <- Xcb[, seq_len(l), drop = FALSE]
+        if (aug > 0L) Zfb <- cbind(Zb, Xcb[, (l + 1L):LL, drop = FALSE])
+      }
+      Z <- cbind(Zfb, .lagmat(E[, b], LL)); y <- E[(LL + 1L):n, b]
       for (nm in names(sets)) {
         rows <- sets[[nm]]; q <- qr(Z[rows, , drop = FALSE])
-        Xt <- qr.resid(q, X[rows, , drop = FALSE]); yt <- qr.resid(q, y[rows])
+        Xt <- qr.resid(q, Xb[rows, , drop = FALSE]); yt <- qr.resid(q, y[rows])
         res[[nm]]$A[, , b] <- crossprod(Xt); res[[nm]]$b[, b] <- crossprod(Xt, yt); res[[nm]]$yy[b] <- sum(yt^2)
         res[[nm]]$df <- length(rows) - q$rank
       }
@@ -96,16 +142,25 @@
 # The engine: for one link and the lag orders `lags`, the unit F statistics
 # and the pooled test of the observed panel (column 1) and of B bootstrap
 # panels (columns 2..B+1).
-.reg_engine <- function(units, ef, cs, ctrl = character(0), lags = 1L, aug = 0L, B = 99L) {
+.reg_engine <- function(units, ef, cs, ctrl = character(0), lags = 1L, aug = 0L, B = 99L, joint = TRUE, periods = FALSE) {
   N <- length(units); p0 <- max(lags) + aug; nb <- B + 1L
   con <- vector("list", N)
+  idx <- NULL                                            # the same resampled periods in all units (balanced panels)
+  if (isTRUE(periods) && B > 0L) {
+    nn <- vapply(units, nrow, 0L); m0 <- nn[1L] - p0
+    if (all(nn == nn[1L]) && m0 >= 5L) idx <- sample.int(m0, m0 * B, replace = TRUE)
+  }
   for (i in seq_len(N)) {
     u <- units[[i]]; n <- nrow(u); if (n < p0 + 5L) next
     e <- .std(u[[ef]]); x <- .std(u[[cs]])
     Zc <- if (length(ctrl)) apply(as.matrix(u[, ctrl, drop = FALSE]), 2, .std) else NULL
     Zf0 <- matrix(1, n - p0, 1L); if (!is.null(Zc)) for (j in seq_len(ncol(Zc))) Zf0 <- cbind(Zf0, .lagmat(Zc[, j], p0))
-    E <- if (B > 0L) cbind(e, .boot_effect(e, Zf0, p0, B)) else matrix(e, ncol = 1L)
-    con[[i]] <- lapply(lags, function(l) .reg_unit_contrib(E, x, Zc, l, aug))
+    E <- matrix(e, ncol = 1L); Xm <- x
+    if (B > 0L) {
+      bt <- .boot_pair(e, x, Zf0, p0, B, joint = isTRUE(joint), idx = idx)
+      E <- cbind(e, bt$y); if (!is.null(bt$x)) Xm <- cbind(x, bt$x)
+    }
+    con[[i]] <- lapply(lags, function(l) .reg_unit_contrib(E, Xm, Zc, l, aug))
   }
   quad <- function(A, b) {                               # b' A^-1 b for every column
     if (dim(A)[1L] == 1L) return(b[1L, ]^2 / pmax(A[1L, 1L, ], 1e-12))
@@ -187,7 +242,7 @@
 .wald_bf <- function(h, ctl) {
   L <- h$df1; W <- h$W; prior <- ctl$prior
   lbf <- if (prior == "bic") (W - L * log(h$n_eff)) / 2
-  else if (prior %in% c("g", "hyper_g")) .log_bf_g0(h$df2 + L + 1, L, W / (W + h$df2), prior, a = ctl$hyper_a)
+  else if (prior %in% c("g", "hyper_g")) .log_bf_g0(h$df2 + L + 1, L, W / (W + h$df2), prior, g = ctl$scale * (h$df2 + L + 1), a = ctl$hyper_a)
   else {
     ln <- function(D) { S <- h$cov + D; -0.5 * (as.numeric(determinant(S, logarithm = TRUE)$modulus) + sum(h$beta * solve(S, h$beta))) }
     l0 <- ln(matrix(0, L, L))
@@ -263,9 +318,14 @@
   lags <- vapply(eng, `[[`, 0, "lag"); N <- nrow(eng[[1L]]$unitF)
   per <- lapply(seq_along(lags), function(k) {
     e <- eng[[k]]; l <- lags[k]; Fv <- e$unitF[, 1L]; d2 <- e$unit_df2; u <- e$unit
-    lbf <- if (prior %in% c("g", "hyper_g")) vapply(seq_len(N), function(i) if (!is.finite(Fv[i])) NA_real_ else
-             .log_bf_nested(u$m[i], u$kr[i], u$kr[i] + l, 1 - u$rss_r[i] / u$tss[i], 1 - u$rss_u[i] / u$tss[i], prior), 0)
-           else (u$m * log(u$rss_r / u$rss_u) - l * log(u$m)) / 2
+    # Unit regressions leave few residual degrees of freedom, for which the BIC approximation
+    # (m log(RSS_r / RSS_u) - l log m) / 2 overstates the evidence (with 14 periods and 3 residual degrees of freedom
+    # it exceeds 3 for a third of the units without a link).  The units therefore get the exact Bayes factor of the
+    # prior that the BIC approximates, the unit-information prior (the g prior with g = m; Kass & Wasserman 1995).
+    lbf <- vapply(seq_len(N), function(i) if (!is.finite(Fv[i])) NA_real_ else
+      .log_bf_nested(u$m[i], u$kr[i], u$kr[i] + l, 1 - u$rss_r[i] / u$tss[i], 1 - u$rss_u[i] / u$tss[i],
+                     if (prior == "hyper_g") "hyper_g" else "g",
+                     if (prior %in% c("g", "hyper_g")) .prior_par(A$control) else list(g_scale = 1)), 0)
     data.frame(lag = l, statistic = as.numeric(Fv), df1 = l, df2 = as.numeric(d2), p_value = as.numeric(stats::pf(Fv, l, d2, lower.tail = FALSE)),
                bf10 = as.numeric(exp(pmin(lbf, 700))), effect_size = as.numeric(log(u$rss_r / u$rss_u)), sign = as.numeric(u$sign),
                row.names = NULL)

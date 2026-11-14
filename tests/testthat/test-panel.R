@@ -50,9 +50,23 @@ test_that("building blocks of the panel tests", {
   en2 <- ns$.empirical_null(pnorm(rnorm(400, 0.8, 1.5), lower.tail = FALSE)); expect_gt(en2[["mu0"]], 0.5); expect_gt(en2[["sigma0"]], 1.2)
   expect_true(all(ns$.p_calibrate(c(0.001, 0.04, 0.5), en2) >= c(0.001, 0.04, 0.5)))
   expect_equal(ns$.p_calibrate(0.02, c(mu0 = 0, sigma0 = 1)), 0.02)
-  # the bootstrap effect keeps the initial values and has no link from the cause
-  set.seed(3); e <- as.numeric(arima.sim(list(ar = 0.6), 40)); Eb <- ns$.boot_effect(e, matrix(1, 39, 1), 1L, 50L)
-  expect_equal(dim(Eb), c(40L, 50L)); expect_true(all(Eb[1, ] == e[1])); expect_true(all(is.finite(Eb)))
+  # the bootstrap effect keeps the initial values and has no link from the cause; the cause is regenerated with it
+  # from its own past and the past of the bootstrap effect (joint = TRUE) or kept as observed (joint = FALSE)
+  set.seed(3); e <- as.numeric(arima.sim(list(ar = 0.6), 40)); x <- c(0, 0.5 * e[-40]) + rnorm(40)
+  bt <- ns$.boot_pair(e, x, matrix(1, 39, 1), 1L, 50L)
+  expect_equal(dim(bt$y), c(40L, 50L)); expect_true(all(bt$y[1, ] == e[1])); expect_true(all(is.finite(bt$y)))
+  expect_equal(dim(bt$x), c(40L, 50L)); expect_true(all(bt$x[1, ] == x[1])); expect_true(all(is.finite(bt$x)))
+  expect_gt(mean(apply(bt$x, 2, sd) > 0), 0.99); expect_false(isTRUE(all.equal(bt$x[, 1], x)))
+  # ... and keeps the dependence of the cause on the past of the effect (0.5 here; none in the observed cause when
+  # the bootstrap effect replaces the effect)
+  b1 <- vapply(1:50, function(j) coef(lm(bt$x[-1, j] ~ bt$y[-40, j]))[2], 0)
+  b0 <- vapply(1:50, function(j) coef(lm(x[-1] ~ bt$y[-40, j]))[2], 0)
+  expect_gt(mean(b1), 0.25); expect_lt(abs(mean(b0)), 0.15)
+  set.seed(3); b0 <- ns$.boot_pair(e, x, matrix(1, 39, 1), 1L, 5L, joint = FALSE)
+  expect_true(is.null(b0$x) || all(b0$x == x))
+  # common periods: the same index of residuals for every unit
+  set.seed(4); i1 <- ns$.boot_pair(e, x, matrix(1, 39, 1), 1L, 5L, joint = FALSE, idx = matrix(1L, 39, 5))
+  expect_true(all(apply(i1$y, 2, function(v) isTRUE(all.equal(v, i1$y[, 1])))))
 })
 
 test_that("the engine reproduces the unit F-tests and the pooled half-panel-jackknife estimate", {
@@ -254,4 +268,12 @@ test_that("benchmark of methods on simulated panels", {
                          n = 20, reps = 2, seed = 1, id = "unit", time = "time")
   expect_s3_class(b, "causbench"); expect_equal(dim(b$accuracy), c(2L, 2L)); expect_true(all(is.na(b$runs$error)))
   expect_gte(b$accuracy["granger", "x_to_y"], 0.5)
+})
+
+test_that("the random forest has no Bayesian panel variant", {
+  pd <- sim_panel(n_units = 6, n_time = 20, seed = 1)
+  expect_error(panel_causality(pd, id = "unit", time = "time", method = "rf_granger", bayes = TRUE),
+               "not available")
+  expect_error(causal_drivers(pd, target = "y", id = "unit", time = "time", method = "rf_granger", bayes = TRUE),
+               "not available")
 })

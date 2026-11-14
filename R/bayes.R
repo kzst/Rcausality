@@ -55,7 +55,12 @@
 #' @param case_prior prior probabilities of the five causal cases
 #'   (`x_to_y`, `y_to_x`, `bidirectional`, `common_cause`, `independent`) for
 #'   the dimensional-causality and df-entropy methods and for the Bayesian
-#'   Markov decision table; `NULL` = uniform.
+#'   Markov decision table. It replaces the prior of the method, which is
+#'   used when `case_prior = NULL`: uniform over the five cases for the
+#'   df-entropy classifier, uniform over the nine elementary events of Benko
+#'   et al. (2024) for dimensional causality (weights 1 : 1 : 1 : 3 : 3 of
+#'   the five cases), and the prior implied by equally probable outcomes of
+#'   the six tests for the Markov table (2 : 2 : 2 : 1 : 1).
 #' @param n_iter,burnin,thin,chains MCMC settings of the regression family:
 #'   posterior draws of the coefficients, of `sigma` and of Geweke's measure
 #'   (`n_iter` draws per chain after `burnin`, every `thin`-th kept; the
@@ -82,6 +87,14 @@
 #' @param decision how a link is declared: `"bf"` (Bayes factor above
 #'   `bf_threshold` of [rcausality()]) or `"posterior"` (posterior probability
 #'   above `prob_threshold`).
+#' @param effect_scale unit of the scale of the effect prior of the surrogate
+#'   Bayes factor: `"local"` (default; `scale` null standard deviations of the
+#'   statistic) or `"unit"` (`scale` null standard deviations of the
+#'   statistic times the root of the number of observations, the scale of a
+#'   unit-information prior for a statistic whose null standard deviation
+#'   falls with the root of the length; see [surrogate_bf()]). With `"unit"`
+#'   the evidence for the absence of a link grows with the length of the
+#'   series.
 #' @return A list of class `bayes_control`.
 #' @references
 #' George, E. I. and McCulloch, R. E. (1993). Variable selection via Gibbs sampling. *Journal of the American Statistical Association*, 88(423), 881-889. \doi{10.1080/01621459.1993.10476353}
@@ -115,9 +128,9 @@ bayes_control <- function(prior = c("spike_slab", "normal", "minnesota", "g", "h
                           case_prior = NULL, n_iter = 2000L, burnin = 500L, thin = 1L, chains = 2L,
                           n_draws = 4000L, hyper_a = 3, credible = 0.95,
                           lambda = "auto", decay = 1, cross = 1, own_mean = 0, lambda_hyper = c(mode = 0.2, sd = 0.4),
-                          decision = c("bf", "posterior")) {
+                          decision = c("bf", "posterior"), effect_scale = c("local", "unit")) {
   prior <- match.arg(prior); effect_prior <- match.arg(effect_prior); null_model <- match.arg(null_model)
-  decision <- match.arg(decision)
+  decision <- match.arg(decision); effect_scale <- match.arg(effect_scale)
   .check_number(scale, "scale", lower = 0, strict = TRUE)
   .check_number(inclusion_prob, "inclusion_prob", lower = 0, upper = 1, strict = TRUE)
   .check_number(credible, "credible", lower = 0, upper = 1, strict = TRUE)
@@ -132,7 +145,7 @@ bayes_control <- function(prior = c("spike_slab", "normal", "minnesota", "g", "h
     case_prior <- case_prior / sum(case_prior)
     names(case_prior) <- c("x_to_y", "y_to_x", "bidirectional", "common_cause", "independent")
   }
-  structure(list(prior = prior, effect_prior = effect_prior, scale = scale, inclusion_prob = inclusion_prob,
+  structure(list(prior = prior, effect_prior = effect_prior, scale = scale, effect_scale = effect_scale, inclusion_prob = inclusion_prob,
                  null_model = null_model, case_prior = case_prior, n_iter = as.integer(n_iter),
                  burnin = as.integer(burnin), thin = max(1L, as.integer(thin)), chains = max(1L, as.integer(chains)),
                  n_draws = as.integer(n_draws), hyper_a = hyper_a, credible = credible,
@@ -143,21 +156,24 @@ bayes_control <- function(prior = c("spike_slab", "normal", "minnesota", "g", "h
 
 #' @export
 print.bayes_control <- function(x, ...) {
-  cat("Bayesian settings of rcausality():\n")
-  cat(sprintf("  regression family: prior = %s, scale = %g, inclusion_prob = %g, hyper_a = %g\n", x$prior, x$scale, x$inclusion_prob, x$hyper_a))
+  .out("Bayesian settings of rcausality():\n")
+  .out(sprintf("  regression family: prior = %s, scale = %g, inclusion_prob = %g, hyper_a = %g\n", x$prior, x$scale, x$inclusion_prob, x$hyper_a))
   if (identical(x$prior, "minnesota"))
-    cat(sprintf("  Minnesota prior: lambda = %s, decay = %g, cross = %g, own_mean = %g\n",
+    .out(sprintf("  Minnesota prior: lambda = %s, decay = %g, cross = %g, own_mean = %g\n",
                 if (identical(x$lambda, "auto")) sprintf("auto (Gamma hyperprior, mode %g, sd %g)", x$lambda_hyper[["mode"]], x$lambda_hyper[["sd"]])
                 else format(x$lambda), x$decay, x$cross, x$own_mean))
-  cat(sprintf("  surrogate family:  effect_prior = %s (scale %g x surrogate sd), null_model = %s, n_draws = %d\n",
+  .out(sprintf("  surrogate family:  effect_prior = %s (scale %g x surrogate sd), null_model = %s, n_draws = %d\n",
               x$effect_prior, x$scale, x$null_model, x$n_draws))
-  cat(sprintf("  case prior (dc, dfe, markov): %s\n", if (is.null(x$case_prior)) "uniform" else paste(round(x$case_prior, 3), collapse = " ")))
-  cat(sprintf("  MCMC: %d chains x %d iterations, burn-in %d, thinning %d; credible level %g; decision by %s\n",
+  .out(sprintf("  case prior (dc, dfe, markov): %s\n", if (is.null(x$case_prior)) "uniform" else paste(round(x$case_prior, 3), collapse = " ")))
+  .out(sprintf("  MCMC: %d chains x %d iterations, burn-in %d, thinning %d; credible level %g; decision by %s\n",
               x$chains, x$n_iter, x$burnin, x$thin, x$credible, x$decision))
   invisible(x)
 }
 
 # ---- (2) Bayes factor of a statistic against its surrogate sample ------------
+# the unit of the effect scale of a control list and the number of observations behind a statistic
+.eff_scale <- function(control) if (is.null(control$effect_scale)) "local" else control$effect_scale
+.eff_n <- function(n_eff, n) { v <- suppressWarnings(as.numeric(n_eff)); if (length(v) == 1L && is.finite(v) && v >= 1) v else as.numeric(n) }
 
 #' Bayes factor of an observed statistic against surrogate / permutation draws
 #'
@@ -172,6 +188,14 @@ print.bayes_control <- function(x, ...) {
 #' the normal null with the half-normal prior). The posterior of the effect
 #' under `H1` is summarised from the importance-weighted prior draws.
 #'
+#' The construction is a Bayes factor based on a test statistic (Johnson,
+#' 2005): it conditions on the statistic and not on the data, and it assumes
+#' that the effect shifts the null distribution without changing its shape.
+#' Outside the range of the surrogate statistics the kernel density is
+#' continued by a normal tail (the element `extrapolated` of the result is
+#' then `TRUE`): the replicates carry no information about the null density
+#' there, so that such Bayes factors rest on the normal tail.
+#'
 #' @param statistic the observed statistic.
 #' @param null numeric vector of surrogate statistics (at least 10), or a
 #'   list `list(mean = , sd = )` describing a normal null.
@@ -181,14 +205,40 @@ print.bayes_control <- function(x, ...) {
 #'   [bayes_control()].
 #' @param prior_prob prior probability of `H1`.
 #' @param seed optional RNG seed for the Monte Carlo integration.
+#' @param effect_scale,n_eff the unit of the prior scale of the effect:
+#'   `"local"` (default), `scale` null standard deviations of the statistic,
+#'   or `"unit"`, `scale * sd0 * sqrt(n_eff)`, where `n_eff` is the number
+#'   of observations behind the statistic. For a statistic whose null
+#'   standard deviation falls like `1 / sqrt(n_eff)` this is the scale of a
+#'   unit-information prior (Kass and Wasserman 1995); the plug-in statistics
+#'   of the nonlinear methods need not have that rate, and the option is
+#'   then a wider prior scale that grows with the length, not a
+#'   unit-information prior in the strict sense. With the
+#'   local scale the test is most sensitive, but the evidence it can give for
+#'   `H0` is bounded (about `BF10 = 0.5` at the centre of the null
+#'   distribution, whatever the length of the series); with the unit scale
+#'   the Bayes factor in favour of `H0` grows like `sqrt(n_eff)` when `H0`
+#'   holds, as for the BIC, at the price of a later detection of weak effects.
 #' @return An object of class `surrogate_bf`: `bf10`, `post_prob`,
 #'   `effect` (posterior mean and credible interval of the effect under `H1`,
 #'   in the units of the statistic), `z` (the statistic in surrogate standard
-#'   deviations), `settings`. Method: `print`.
+#'   deviations), `statistic`, `null_mean` and `null_sd` (mean and standard
+#'   deviation of the surrogate statistics), `extrapolated` (`TRUE` when the
+#'   statistic lies outside the range of the surrogate statistics, where the
+#'   density of the null distribution is the normal tail and not an estimate
+#'   from them), `bound` (the Bayes factor at the most extreme surrogate
+#'   statistic on the side of the observed one: with `extrapolated = TRUE`
+#'   the surrogates support `bf10 > bound` and no more; `NA` otherwise), and
+#'   `settings`. Method: `print`, which shows an extrapolated Bayes factor as
+#'   the bound.
 #' @references
 #' Rouder, J. N., Speckman, P. L., Sun, D., Morey, R. D. and Iverson, G. (2009). Bayesian t tests for accepting and rejecting the null hypothesis. *Psychonomic Bulletin & Review*, 16, 225-237. \doi{10.3758/PBR.16.2.225}
 #'
 #' Kass, R. E. and Raftery, A. E. (1995). Bayes factors. *Journal of the American Statistical Association*, 90(430), 773-795. \doi{10.1080/01621459.1995.10476572}
+#'
+#' Kass, R. E. and Wasserman, L. (1995). A reference Bayesian test for nested hypotheses and its relationship to the Schwarz criterion. *Journal of the American Statistical Association*, 90(431), 928-934. \doi{10.1080/01621459.1995.10476592}
+#'
+#' Johnson, V. E. (2005). Bayes factors based on test statistics. *Journal of the Royal Statistical Society B*, 67(5), 689-701. \doi{10.1111/j.1467-9868.2005.00521.x}
 #' @export
 #' @examples
 #' # A statistic observed 3.2 surrogate standard deviations above a standard
@@ -202,8 +252,11 @@ print.bayes_control <- function(x, ...) {
 surrogate_bf <- function(statistic, null, alternative = c("greater", "less", "two.sided"),
                          effect_prior = c("half_cauchy", "half_normal", "normal", "cauchy"), scale = 1,
                          null_model = c("kde", "normal"), prior_prob = 0.5, n_draws = 4000L, credible = 0.95,
-                         seed = NULL) {
+                         seed = NULL, effect_scale = c("local", "unit"), n_eff = NULL) {
   alternative <- match.arg(alternative); effect_prior <- match.arg(effect_prior); null_model <- match.arg(null_model)
+  effect_scale <- match.arg(effect_scale)
+  if (effect_scale == "unit" && (is.null(n_eff) || !is.finite(n_eff) || n_eff < 1))
+    stop("effect_scale = \"unit\" needs the number of observations behind the statistic (n_eff).", call. = FALSE)
   .local_seed(seed)
   if (is.list(null)) { m0 <- null$mean; s0 <- null$sd; null_model <- "normal"; draws <- NULL }
   else {
@@ -218,11 +271,24 @@ surrogate_bf <- function(statistic, null, alternative = c("greater", "less", "tw
   sgn <- switch(alternative, greater = 1, less = -1, two.sided = 0)
   one_sided <- sgn != 0 && effect_prior %in% c("half_normal", "half_cauchy")
   if (sgn == 0 && effect_prior %in% c("half_normal", "half_cauchy")) effect_prior <- sub("half_", "", effect_prior)
-  tau <- scale * s0
-  # null density
+  # scale of the effect prior: `scale` null standard deviations ("local": alternatives of the size of the sampling
+  # error, the most sensitive choice, under which the evidence for H0 stays bounded), or `scale` null standard
+  # deviations of ONE observation, s0 * sqrt(n_eff) ("unit": a unit-information prior, under which the Bayes factor
+  # in favour of H0 grows like sqrt(n_eff) when H0 holds, as for the BIC)
+  tau <- scale * s0 * (if (effect_scale == "unit") sqrt(n_eff) else 1)
+  # null density.  Inside the range of the replicates: their kernel density.  Outside it the replicates carry no
+  # information, and the tails of the kernel estimate are those of the kernel with the bandwidth as scale, which
+  # decay far too fast (Bayes factors above the bound of the shift model); there the estimate is continued by the
+  # tail of the normal distribution with the mean and the standard deviation of the replicates, matched at the
+  # extreme replicate.
+  extrapolated <- FALSE
   f0 <- if (null_model == "normal") function(v) stats::dnorm(v, m0, s0) else {
-    bw <- stats::bw.nrd0(draws)
-    function(v) vapply(v, function(u) mean(stats::dnorm(u, draws, bw)), 0)
+    bw <- stats::bw.nrd0(draws); lo_d <- min(draws); hi_d <- max(draws)
+    kde <- function(u) mean(stats::dnorm(u, draws, bw))
+    c_lo <- kde(lo_d) / stats::dnorm(lo_d, m0, s0); c_hi <- kde(hi_d) / stats::dnorm(hi_d, m0, s0)
+    extrapolated <- T > hi_d || T < lo_d
+    function(v) vapply(v, function(u) if (u > hi_d) c_hi * stats::dnorm(u, m0, s0) else if (u < lo_d) c_lo * stats::dnorm(u, m0, s0)
+                                      else kde(u), 0)
   }
   f0T <- f0(T)
   # H1 density: closed form for the normal null with the half-normal / normal prior
@@ -245,6 +311,7 @@ surrogate_bf <- function(statistic, null, alternative = c("greater", "less", "tw
       half_normal = abs(stats::rnorm(k, 0, tau)) * sgn, normal = stats::rnorm(k, 0, tau),
       half_cauchy = abs(stats::rcauchy(k, 0, tau)) * sgn, cauchy = stats::rcauchy(k, 0, tau))
     k1 <- n_draws %/% 2; k2 <- n_draws - k1; shift <- T - m0
+    if (is.finite(T) && !is.finite(f0T)) f0T <- 0
     dd <- c(rprior(k1), stats::rnorm(k2, shift, s0))
     qd <- 0.5 * dprior(dd) + 0.5 * stats::dnorm(dd, shift, s0)
     w <- f0(T - dd) * dprior(dd) / qd; w[!is.finite(w)] <- 0
@@ -258,8 +325,22 @@ surrogate_bf <- function(statistic, null, alternative = c("greater", "less", "tw
     o <- order(dd); cw <- cumsum(ws[o]); q <- function(p) dd[o][which(cw >= p)[1]]
     c(mean = mu, lower = q((1 - credible) / 2), upper = q(1 - (1 - credible) / 2))
   } else c(mean = NA_real_, lower = NA_real_, upper = NA_real_)
+  # Outside the range of the replicates the Bayes factor rests on the continuation of the tail, a convention.  What
+  # the replicates themselves support is the Bayes factor at the extreme replicate, a lower bound of the Bayes factor
+  # of a statistic beyond it (the generator of the session is left as it was).
+  bound <- NA_real_
+  if (isTRUE(extrapolated)) {
+    st <- .rng_get()
+    bound <- tryCatch(surrogate_bf(if (T > max(draws)) max(draws) else min(draws), draws, alternative = alternative,
+                                   effect_prior = effect_prior, scale = scale, null_model = null_model, prior_prob = prior_prob,
+                                   n_draws = n_draws, credible = credible, effect_scale = effect_scale, n_eff = n_eff)$bf10,
+                      error = function(e) NA_real_)
+    .rng_put(st)
+  }
   structure(list(bf10 = bf, post_prob = post, effect = eff, z = (T - m0) / s0, statistic = T, null_mean = m0, null_sd = s0,
+                 extrapolated = extrapolated, bound = bound,
                  settings = list(alternative = alternative, effect_prior = effect_prior, scale = scale, null_model = null_model,
+                                 effect_scale = effect_scale, n_eff = n_eff,
                                  n_surr = length(draws), n_draws = n_draws, prior_prob = prior_prob, credible = credible)),
             class = "surrogate_bf")
 }
@@ -267,13 +348,18 @@ surrogate_bf <- function(statistic, null, alternative = c("greater", "less", "tw
 #' @export
 print.surrogate_bf <- function(x, digits = 3, ...) {
   s <- x$settings
-  cat("Bayes factor of a statistic against its surrogate distribution\n")
-  cat(sprintf("  statistic %s = %.3f surrogate sd from the null mean (%s surrogates, %s null, %s prior of scale %g, %s)\n",
+  .out("Bayes factor of a statistic against its surrogate distribution\n")
+  .out(sprintf("  statistic %s = %.3f surrogate sd from the null mean (%s surrogates, %s null, %s prior of scale %g, %s)\n",
               formatC(x$statistic, digits = digits, format = "g"), x$z, if (is.null(s$n_surr)) "-" else s$n_surr,
               s$null_model, s$effect_prior, s$scale, s$alternative))
-  cat(sprintf("  BF10 = %s (%s); posterior probability of an effect = %.3f (prior %.2f)\n", .fmt_bf(x$bf10),
+  if (isTRUE(x$extrapolated) && is.finite(x$bound)) {
+    .out(sprintf("  BF10 > %s (evidence: at least \"%s\" an effect). The statistic lies outside the range of the %s surrogates,\n",
+                 .fmt_bf(x$bound), as.character(bf_evidence(x$bound)), if (is.null(s$n_surr)) "" else s$n_surr))
+    .out(sprintf("   which support the Bayes factor at their extreme value only; with the tail of a normal distribution beyond it\n   BF10 = %s and the posterior probability of an effect is %.3f (prior %.2f).\n",
+                 .fmt_bf(x$bf10), x$post_prob, s$prior_prob))
+  } else .out(sprintf("  BF10 = %s (%s); posterior probability of an effect = %.3f (prior %.2f)\n", .fmt_bf(x$bf10),
               as.character(bf_evidence(x$bf10)), x$post_prob, s$prior_prob))
-  cat(sprintf("  effect under H1: %.3g [%.3g, %.3g] (%.0f%% credible)\n", x$effect[["mean"]], x$effect[["lower"]],
+  .out(sprintf("  effect under H1: %.3g [%.3g, %.3g] (%.0f%% credible)\n", x$effect[["mean"]], x$effect[["lower"]],
               x$effect[["upper"]], 100 * s$credible))
   invisible(x)
 }
@@ -282,8 +368,9 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 
 # log marginal likelihood of y ~ N(X_S b, sigma^2) with b ~ N(0, sigma^2 D),
 # sigma^2 ~ IG(a0, b0), up to a constant common to all subsets of the same y
-.log_ml_nig <- function(y, X, d, a0 = 0.01, b0 = 0.01) {
-  n <- length(y)
+# (`n`: the number of observations that enters the exponent; smaller than length(y) when regressors with flat
+# priors have been projected out of y and X)
+.log_ml_nig <- function(y, X, d, a0 = 0.01, b0 = 0.01, n = length(y)) {
   if (!ncol(X)) { b <- b0 + sum(y^2) / 2; return(-(a0 + n / 2) * log(b)) }
   A <- crossprod(X) + diag(1 / d, ncol(X))
   R <- tryCatch(chol(A), error = function(e) NULL); if (is.null(R)) return(-Inf)
@@ -304,7 +391,12 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'   subsets are enumerated exactly when `q <= 12` (Gibbs sampling otherwise)
 #'   and the Bayes factor compares "at least one lag" with "no lag";
 #' * `prior = "normal"`: the block of all cause lags with the normal slab
-#'   against none;
+#'   against none. For these two priors the coefficients that both
+#'   regressions share (intercept, own lags, lags of the controls) have flat
+#'   priors: the restricted regression is the base model, and the marginal
+#'   likelihoods have `n - k0` degrees of freedom. A regression whose
+#'   always-included coefficients leave no degrees of freedom stops with an
+#'   error (use `"minnesota"`);
 #' * `prior = "minnesota"`: the hierarchical Minnesota prior for short
 #'   series (lag-decaying shrinkage of all coefficients, the overall
 #'   tightness integrated out under a Gamma hyperprior; see [bayes_control()]);
@@ -315,7 +407,9 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'   [rcausality()].
 #' Posterior draws of the coefficients, of `sigma` and of Geweke's measure
 #' `log(1 + var(X_c b_c) / sigma^2)` (the Bayesian analogue of
-#' `log(RSS_r / RSS_u)`) are generated for `prior = "spike_slab"` and
+#' `log(RSS_r / RSS_u)`; `X_c`: the lags of the cause after the
+#' always-included regressors have been projected out) are generated for
+#' `prior = "spike_slab"` and
 #' `"normal"` (`chains` x `n_iter`, burn-in, thinning).
 #'
 #' @param effect,cause numeric vectors.
@@ -327,8 +421,12 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'   `1 - (1 - inclusion_prob)^lag`).
 #' @param seed optional RNG seed.
 #' @param cores CPU cores: the chains run in parallel (see [Rcausality-parallel]).
-#' @return An object of class `bayes_granger`: `bf10`, `post_prob`,
-#'   `inclusion` (posterior inclusion probability of every cause lag, spike
+#' @return An object of class `bayes_granger`: `bf10`, `post_prob` (computed
+#'   from the Bayes factor and `prior_prob`), `any_included` (posterior and
+#'   prior probability that at least one lag of the cause is included; under
+#'   the spike-and-slab prior the prior value, `1 - (1 - inclusion_prob)^lag`,
+#'   grows with the order, which is why this probability is not the one that
+#'   decides), `inclusion` (posterior inclusion probability of every cause lag, spike
 #'   and slab only), `geweke` (posterior mean and credible interval of the
 #'   measure), `coefficients` (posterior mean and interval of the cause's
 #'   coefficients), `draws` (matrix of posterior draws, the chains stacked),
@@ -368,7 +466,7 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
   if (is.null(control$prior)) control <- bayes_control()
   if (identical(control$prior, "minnesota")) return(.bayes_granger_minnesota(effect, cause, controls, lag, control, prior_prob, cores))
   if (control$prior %in% c("g", "hyper_g", "bic")) {
-    g <- .granger_pair(effect, cause, controls, lag, prior = control$prior)
+    g <- .granger_pair(effect, cause, controls, lag, prior = control$prior, prior_par = .prior_par(control))
     bf <- g$bf10
     return(structure(list(bf10 = bf, post_prob = bf * prior_prob / (bf * prior_prob + 1 - prior_prob), inclusion = NULL,
                           geweke = c(mean = g$effect_size, lower = NA_real_, upper = NA_real_), coefficients = NULL,
@@ -379,7 +477,7 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
   own <- .lagmat(.std(effect), lag)
   cz <- if (is.null(controls)) NULL else do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lagmat(.std(controls[, j]), lag)))
   Xc <- .lagmat(.std(cause), lag); colnames(Xc) <- paste0("lag", seq_len(lag))
-  X0 <- cbind(1, own, cz); d0 <- c(1e4, rep(100, ncol(X0) - 1L))        # intercept and always-in terms: vague
+  X0 <- cbind(1, own, cz); d0 <- NULL                                    # intercept and always-in terms: flat priors
   .bayes_reg_core(yd, X0, d0, Xc, control, prior_prob, cores, lag)
 }
 
@@ -392,7 +490,20 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
   if (is.null(colnames(Xc))) colnames(Xc) <- paste0("lag", seq_len(ncol(Xc)))
   q <- ncol(Xc); tau2 <- control$scale^2; pin <- control$inclusion_prob
   N <- length(yd); a0 <- 0.01; b0 <- 0.01
-  ml <- function(gam) .log_ml_nig(yd, cbind(X0, Xc[, gam, drop = FALSE]), c(d0, rep(tau2, sum(gam))), a0, b0)
+  # The always-in regressors (intercept, own lags, lags of the controls) are common to all models and have flat
+  # priors, with p(sigma^2) vague: the restricted regression is the base model, as for the g priors.  They are
+  # projected out, which leaves nu0 = N - rank(X0) degrees of freedom for the lags of the cause and the error
+  # variance.  (A proper normal prior with variance sigma^2 d0 on them, however vague, keeps N in the exponent of the
+  # marginal likelihood although the common coefficients have used rank(X0) degrees of freedom: with 9 coefficients
+  # and 13 observations the Bayes factor then exceeded 3 for 29% of the series without a link, and with more
+  # coefficients than degrees of freedom for 80%.  `d0` is kept in the signature and no longer used.)
+  q0 <- qr(X0); nu0 <- N - q0$rank
+  if (nu0 < 2L)
+    stop(sprintf(paste0("The regression has %d always-included coefficients for %d observations and leaves no degrees of freedom ",
+                        "for the lags of the cause; prior = \"minnesota\" shrinks all coefficients and remains defined."),
+                 q0$rank, N), call. = FALSE)
+  yp <- qr.resid(q0, yd); Xp <- qr.resid(q0, Xc); colnames(Xp) <- colnames(Xc)
+  ml <- function(gam) .log_ml_nig(yp, Xp[, gam, drop = FALSE], rep(tau2, sum(gam)), a0, b0, n = nu0)
   n_keep <- ceiling(control$n_iter / control$thin)                    # kept draws per chain
   exact <- control$prior == "normal" || q <= 12L
   if (control$prior == "normal") {
@@ -430,13 +541,14 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
     }
     draws <- matrix(0, nrow(gam_keep), q + 2L); colnames(draws) <- c(colnames(Xc), "sigma", "geweke")
     for (s in seq_len(nrow(gam_keep))) {
-      gam <- gam_keep[s, ]; XS <- cbind(X0, Xc[, gam, drop = FALSE]); d <- c(d0, rep(tau2, sum(gam)))
-      A <- crossprod(XS) + diag(1 / d, ncol(XS)); V <- solve(A); m <- V %*% crossprod(XS, yd)
-      a <- a0 + N / 2; b <- b0 + (sum(yd^2) - sum(m * crossprod(XS, yd))) / 2
-      sig2 <- 1 / stats::rgamma(1, a, rate = max(b, 1e-12))
-      beta <- as.numeric(m + t(chol(V * sig2)) %*% stats::rnorm(ncol(XS)))
-      bc <- numeric(q); bc[gam] <- beta[(ncol(X0) + 1L):ncol(XS)]
-      contrib <- if (any(gam)) stats::var(as.numeric(Xc[, gam, drop = FALSE] %*% bc[gam])) else 0
+      # the conjugate posterior of the cause coefficients and of sigma^2 given the subset, on the projected data
+      gam <- gam_keep[s, ]; XS <- Xp[, gam, drop = FALSE]; bc <- numeric(q); a <- a0 + nu0 / 2
+      if (any(gam)) {
+        A <- crossprod(XS) + diag(1 / tau2, ncol(XS)); V <- solve(A); Xy <- crossprod(XS, yp); m <- V %*% Xy
+        sig2 <- 1 / stats::rgamma(1, a, rate = max(b0 + (sum(yp^2) - sum(m * Xy)) / 2, 1e-12))
+        bc[gam] <- as.numeric(m + t(chol(V * sig2)) %*% stats::rnorm(ncol(XS)))
+        contrib <- mean(as.numeric(XS %*% bc[gam])^2)              # variance explained beyond the always-in terms
+      } else { sig2 <- 1 / stats::rgamma(1, a, rate = max(b0 + sum(yp^2) / 2, 1e-12)); contrib <- 0 }
       draws[s, ] <- c(bc, sqrt(sig2), log(1 + contrib / sig2))
     }
     list(draws = draws, gamma = gam_keep)
@@ -458,10 +570,15 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
       first_neg <- which(ac < 0)[1]; if (!is.na(first_neg)) ac <- ac[seq_len(first_neg - 1)]
       nd / (1 + 2 * sum(ac)) } }
   rhat <- .gelman_rhat(lapply(chains, function(ch) ch$draws[, "geweke"]))
-  structure(list(bf10 = bf, post_prob = post, inclusion = incl, geweke = ci(draws[, "geweke"]),
+  # P(H1 | data) from the Bayes factor and the prior probability of the link, as for every other prior.  Under the
+  # prior of the indicators "some lag is included" has the prior probability 1 - (1 - inclusion_prob)^lag, which
+  # grows with the order (0.996 at lag 8); the posterior of that event is reported separately (`any_included`).
+  any_included <- c(posterior = post, prior = if (control$prior == "normal") prior_prob else 1 - (1 - pin)^q)
+  post <- bf * prior_prob / (bf * prior_prob + 1 - prior_prob)
+  structure(list(bf10 = bf, post_prob = post, any_included = any_included, inclusion = incl, geweke = ci(draws[, "geweke"]),
                  coefficients = t(apply(draws[, seq_len(q), drop = FALSE], 2, ci)), draws = draws, ess = ess, rhat = rhat, n = N,
                  settings = list(prior = control$prior, lag = lag, scale = control$scale, inclusion_prob = pin,
-                                 prior_prob = if (control$prior == "normal") prior_prob else 1 - (1 - pin)^q,
+                                 prior_prob = prior_prob,
                                  chains = control$chains, n_iter = control$n_iter, burnin = control$burnin, thin = control$thin,
                                  credible = control$credible, sampler = if (exact) "exact" else "Gibbs")), class = "bayes_granger")
 }
@@ -480,27 +597,40 @@ bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = ba
 #' @export
 print.bayes_granger <- function(x, digits = 3, ...) {
   s <- x$settings
-  cat(sprintf("Bayesian Granger causality (prior: %s, lag %d, n = %d)\n", s$prior, s$lag, x$n))
-  cat(sprintf("  BF10 = %s (%s); posterior probability of the link = %.3f (prior %.2f)\n", .fmt_bf(x$bf10),
+  .out(sprintf("Bayesian Granger causality: second argument (cause) -> first argument (effect); prior: %s, lag %d, n = %d\n",
+               s$prior, s$lag, x$n))
+  .out(sprintf("  BF10 = %s (%s); posterior probability of the link = %.3f (prior %.2f)\n", .fmt_bf(x$bf10),
               as.character(bf_evidence(x$bf10)), x$post_prob, s$prior_prob))
-  if (!is.null(x$inclusion)) cat("  posterior inclusion probability per cause lag:", paste(sprintf("%s %.2f", names(x$inclusion), x$inclusion), collapse = ", "), "\n")
+  if (!is.null(x$inclusion)) {
+    .out("  posterior inclusion probability per cause lag:", paste(sprintf("%s %.2f", names(x$inclusion), x$inclusion), collapse = ", "), "\n")
+    if (!is.null(x$any_included))
+      .out(sprintf("  probability that some lag is included: %.3f (%.3f a priori, inclusion probability %g per lag)\n",
+                   x$any_included[["posterior"]], x$any_included[["prior"]], s$inclusion_prob))
+  }
   if (!is.na(x$geweke[["lower"]]))
-    cat(sprintf("  Geweke measure log(1 + explained / sigma^2): %.3f [%.3f, %.3f] (%.0f%% credible; ESS %.0f of %d draws%s)\n",
+    .out(sprintf("  Geweke measure log(1 + explained / sigma^2): %.3f [%.3f, %.3f] (%.0f%% credible; ESS %.0f of %d draws%s)\n",
                 x$geweke[["mean"]], x$geweke[["lower"]], x$geweke[["upper"]], 100 * s$credible, x$ess, nrow(x$draws),
                 if (is.null(x$rhat) || is.na(x$rhat)) "" else sprintf("; %d chains, R-hat %.3f", s$chains, x$rhat)))
-  else cat(sprintf("  Geweke measure: %.3f\n", x$geweke[["mean"]]))
+  else .out(sprintf("  Geweke measure: %.3f\n", x$geweke[["mean"]]))
   if (!is.null(x$coefficients)) {
-    cat("  cause coefficients (standardised series):\n")
+    .out("  cause coefficients (standardised series):\n")
     print(round(x$coefficients, digits))
   }
   invisible(x)
 }
 
 # ---- (3) prior over the causal cases ------------------------------------------
-# reweight the posterior / score vector of the five cases by a prior
-.bayes_cases <- function(p, case_prior) {
+# The posterior / score vector `p` of the five cases was computed under the
+# prior `base` of the method (NULL = uniform over the five cases): replace
+# that prior by `case_prior`, i.e. posterior ~ p * case_prior / base.
+# Dimensional causality: uniform over the nine elementary events of Benko et
+# al. (2024), which gives the cases the weights (1, 1, 1, 3, 3) / 9.
+.dc_case_base <- c(x_to_y = 1, y_to_x = 1, bidirectional = 1, common_cause = 3, independent = 3) / 9
+.bayes_cases <- function(p, case_prior, base = NULL) {
   if (is.null(case_prior)) return(p)
-  q <- p * case_prior[names(p)]; q / sum(q)
+  q <- p * case_prior[names(p)]
+  if (!is.null(base)) q <- q / base[names(p)]
+  q / sum(q)
 }
 
 # Bayesian Markov decision table: the six binary events (x Markov, y Markov,
@@ -515,8 +645,13 @@ print.bayes_granger <- function(x, digits = 3, ...) {
   dec <- lapply(seq_len(nrow(G)), function(i) .markov_decide(G[i, "MA"], G[i, "MB"], G[i, "MJ"], G[i, "sAB"], G[i, "sBA"], G[i, "sI0"], iid))
   ab <- vapply(dec, function(d) d$ab != "n", TRUE); ba <- vapply(dec, function(d) d$ba != "n", TRUE)
   cls <- ifelse(ab & ba, "bidirectional", ifelse(ab, "x_to_y", ifelse(ba, "y_to_x", ifelse(G[, "sI0"], "common_cause", "independent"))))
-  pc <- tapply(w, factor(cls, c("x_to_y", "y_to_x", "bidirectional", "common_cause", "independent")), sum); pc[is.na(pc)] <- 0
-  pc <- .bayes_cases(pc, case_prior)
+  lev <- c("x_to_y", "y_to_x", "bidirectional", "common_cause", "independent")
+  pc <- tapply(w, factor(cls, lev), sum); pc[is.na(pc)] <- 0
+  if (!is.null(case_prior)) {
+    # the prior of the cases that the table implies when every event has probability 1/2
+    base <- tapply(rep(1 / nrow(G), nrow(G)), factor(cls, lev), sum); base[is.na(base)] <- 0
+    pc <- .bayes_cases(pc, case_prior, pmax(base, 1e-12))
+  }
   list(p_ab = sum(pc[c("x_to_y", "bidirectional")]), p_ba = sum(pc[c("y_to_x", "bidirectional")]), cases = pc)
 }
 
@@ -524,9 +659,9 @@ print.bayes_granger <- function(x, digits = 3, ...) {
 .bayes_postprocess <- function(r, control, prior_prob, bf_threshold, prob_threshold, seed = NULL) {
   s <- r$settings; P <- r$pairs; key <- paste(P$cause, "->", P$effect)
   rows <- list()
-  bf_row <- function(k, bf, post, eff, how) data.frame(pair = k, bf10 = bf, post_prob = post, effect_mean = eff[["mean"]],
-                                                       effect_lower = eff[["lower"]], effect_upper = eff[["upper"]], model = how,
-                                                       stringsAsFactors = FALSE)
+  bf_row <- function(k, bf, post, eff, how, bound = NA_real_)
+    data.frame(pair = k, bf10 = bf, post_prob = post, effect_mean = eff[["mean"]], effect_lower = eff[["lower"]],
+               effect_upper = eff[["upper"]], model = how, bf_bound = bound, stringsAsFactors = FALSE)
   na3 <- c(mean = NA_real_, lower = NA_real_, upper = NA_real_)
   if (s$method %in% c("dc", "dfe")) {
     # posterior over the five cases with the case prior; directed posterior = P(x->y) + P(x<->y)
@@ -534,7 +669,7 @@ print.bayes_granger <- function(x, digits = 3, ...) {
     if (!is.null(tab) && !is.null(control$case_prior)) {
       for (i in seq_len(nrow(tab))) {
         p <- unlist(tab[i, c("x_to_y", "y_to_x", "bidirectional", "common_cause", "independent")])
-        q <- .bayes_cases(p, control$case_prior); tab[i, names(q)] <- q
+        q <- .bayes_cases(p, control$case_prior, if (s$method == "dc") .dc_case_base else NULL); tab[i, names(q)] <- q
         a <- tab$var1[i]; b <- tab$var2[i]; prior_dir <- sum(control$case_prior[c("x_to_y", "bidirectional")])
         for (dir in c("ab", "ba")) {
           kk <- if (dir == "ab") paste(a, "->", b) else paste(b, "->", a)
@@ -556,7 +691,8 @@ print.bayes_granger <- function(x, digits = 3, ...) {
       nm <- r$null_markov[[paste(M$var1[i], "~", M$var2[i])]]
       bfs <- lapply(nm, function(e) surrogate_bf(e$statistic, e$null, alternative = e$alternative, effect_prior = control$effect_prior,
                                                  scale = control$scale, null_model = control$null_model, prior_prob = 0.5,
-                                                 n_draws = control$n_draws, credible = control$credible))
+                                                 n_draws = control$n_draws, credible = control$credible,
+                                                 effect_scale = .eff_scale(control), n_eff = .eff_n(NA, s$n)))
       # Markov tests: small statistic = not Markov; the event "Markov" has posterior 1 - P(effect)
       pM <- c(MA = 1 - bfs$x$post_prob, MB = 1 - bfs$y$post_prob, MJ = 1 - bfs$j$post_prob)
       pD <- c(sAB = bfs$xy$post_prob, sBA = bfs$yx$post_prob, sI0 = bfs$i0$post_prob)
@@ -565,7 +701,9 @@ print.bayes_granger <- function(x, digits = 3, ...) {
       for (dir in c("ab", "ba")) {
         kk <- if (dir == "ab") paste(M$var1[i], "->", M$var2[i]) else paste(M$var2[i], "->", M$var1[i])
         post <- if (dir == "ab") bm$p_ab else bm$p_ba; j <- match(kk, key); if (is.na(j)) next
-        pri <- 0.5
+        pri <- if (is.null(control$case_prior)) 0.5 else
+          sum(control$case_prior[c(if (dir == "ab") "x_to_y" else "y_to_x", "bidirectional")])
+        pri <- min(max(pri, 1e-12), 1 - 1e-12)
         P$post_prob[j] <- post; P$bf10[j] <- min(1e12, (post / max(1 - post, 1e-12)) / (pri / (1 - pri)))
         e <- if (dir == "ab") bfs$xy$effect else bfs$yx$effect
         rows[[length(rows) + 1L]] <- bf_row(kk, P$bf10[j], post, e, "Bayesian decision table")
@@ -583,11 +721,18 @@ print.bayes_granger <- function(x, digits = 3, ...) {
     conv <- if (!is.null(r$ccm)) r$ccm$converging[match(key, paste(r$ccm$cause, "->", r$ccm$effect))] else rep(TRUE, nrow(P))
     for (j in seq_along(key)) {
       e <- r$null[[key[j]]]; if (is.null(e)) next
+      if (.determined(e$cond_r2)) {                     # no test for a cause that the conditioning past determines
+        P$bf10[j] <- 1; P$post_prob[j] <- prior_prob
+        rows[[length(rows) + 1L]] <- bf_row(key[j], 1, prior_prob, na3, "not tested (cause determined by the conditioning past)")
+        next
+      }
       b <- surrogate_bf(e$statistic, e$null, alternative = e$alternative, effect_prior = control$effect_prior,
                         scale = control$scale, null_model = control$null_model, prior_prob = prior_prob,
-                        n_draws = control$n_draws, credible = control$credible)
+                        n_draws = control$n_draws, credible = control$credible,
+                        effect_scale = .eff_scale(control), n_eff = .eff_n(P$n_eff[j], s$n))
       P$bf10[j] <- b$bf10; P$post_prob[j] <- b$post_prob
-      rows[[length(rows) + 1L]] <- bf_row(key[j], b$bf10, b$post_prob, b$effect, sprintf("surrogate BF (%s)", control$effect_prior))
+      rows[[length(rows) + 1L]] <- bf_row(key[j], b$bf10, b$post_prob, b$effect, sprintf("surrogate BF (%s)", control$effect_prior),
+                                          bound = if (isTRUE(b$extrapolated)) b$bound else NA_real_)
     }
     P$evidence <- as.character(bf_evidence(P$bf10))
     sig <- if (control$decision == "bf") P$bf10 > bf_threshold else P$post_prob > prob_threshold
@@ -602,7 +747,8 @@ print.bayes_granger <- function(x, digits = 3, ...) {
       for (i in seq_len(nrow(r$instant))) {
         e <- r$null_instant[[paste(r$instant$var1[i], "~", r$instant$var2[i])]]; if (is.null(e)) next
         b <- surrogate_bf(e$statistic, e$null, alternative = "greater", effect_prior = control$effect_prior, scale = control$scale,
-                          null_model = control$null_model, prior_prob = prior_prob, n_draws = control$n_draws)
+                          null_model = control$null_model, prior_prob = prior_prob, n_draws = control$n_draws,
+                          effect_scale = .eff_scale(control), n_eff = .eff_n(NA, s$n))
         r$instant$bf10[i] <- b$bf10; r$instant$post_prob[i] <- b$post_prob
         r$instant$significant[i] <- if (control$decision == "bf") b$bf10 > bf_threshold else b$post_prob > prob_threshold
       }
@@ -620,7 +766,8 @@ print.bayes_granger <- function(x, digits = 3, ...) {
       rho <- P$statistic[j]; ne <- P$n_eff[j]; if (is.na(rho) || is.na(ne) || ne < 10) next
       z <- atanh(max(min(rho, 0.999), -0.999)); sdz <- 1 / sqrt(ne - 3)
       b <- surrogate_bf(z, list(mean = 0, sd = sdz), alternative = "two.sided", effect_prior = "normal", scale = control$scale,
-                        prior_prob = prior_prob, n_draws = control$n_draws, credible = control$credible)
+                        prior_prob = prior_prob, n_draws = control$n_draws, credible = control$credible,
+                        effect_scale = .eff_scale(control), n_eff = ne)
       P$bf10[j] <- b$bf10; P$post_prob[j] <- b$post_prob
       rows[[length(rows) + 1L]] <- bf_row(key[j], b$bf10, b$post_prob, tanh(b$effect), "Fisher-z normal approximation")
     }

@@ -126,8 +126,13 @@ sim_markov_pair <- function(n = 2000, class = c("x_to_y", "y_to_x", "bidirection
 #'
 #' Generates coupled binary Markov chains of the five causal classes
 #' ([sim_markov_pair()]), extracts the conditional-entropy features and trains
-#' a random forest (`ranger`). The model is cached for the session and used by
-#' [dfe_classify()] and `rcausality(method = "dfe")` when no model is given.
+#' a random forest (`ranger`). When [dfe_classify()] or
+#' `rcausality(method = "dfe")` is called without a model, a default model
+#' (the defaults of this function) is trained once, with a fixed seed, and
+#' cached for the session: it is the same in every session, whatever the
+#' kind and the state of the random number generator and wherever the first
+#' call comes from, so that results with the default model are reproducible
+#' (for a given version of \pkg{ranger}).
 #' The paper uses 1000 realisations per class with lengths 200-5000 and 100
 #' trees; the default here is smaller for speed -- raise `n_per_class` for a
 #' more accurate classifier.
@@ -137,7 +142,8 @@ sim_markov_pair <- function(n = 2000, class = c("x_to_y", "y_to_x", "bidirection
 #' @param Lmax,Kmax largest self- and cross-history lengths of the entropy
 #'   curves (paper: 6 and 5).
 #' @param num_trees number of trees.
-#' @param seed optional RNG seed.
+#' @param seed optional RNG seed of the training systems and of the forest;
+#'   the random number stream of the session is restored afterwards.
 #' @param cores CPU cores for the feature extraction and the forest (see
 #'   [Rcausality-parallel]).
 #' @return An object of class `dfe_model` (the `ranger` forest, the feature
@@ -183,19 +189,27 @@ dfe_train <- function(n_per_class = 200L, lengths = c(200L, 500L, 1000L, 2000L, 
 
 #' @export
 print.dfe_model <- function(x, ...) {
-  cat("df-entropy random-forest model (Jakovac et al.)\n")
-  cat(sprintf("  %d training series per class, lengths %s, Lmax = %d, Kmax = %d, %d trees, %d features\n",
+  .out("df-entropy random-forest model (Jakovac et al.)\n")
+  .out(sprintf("  %d training series per class, lengths %s, Lmax = %d, Kmax = %d, %d trees, %d features\n",
               x$n_per_class, paste(x$lengths, collapse = "/"), x$Lmax, x$Kmax, x$rf$num.trees, length(x$features)))
-  cat(sprintf("  out-of-bag prediction error (Brier) %.3f; in-sample confusion matrix:\n", x$oob_error))
+  .out(sprintf("  out-of-bag prediction error (Brier) %.3f; in-sample confusion matrix:\n", x$oob_error))
   print(x$confusion)
   invisible(x)
 }
 
+# The default model of the session is trained with a fixed seed under a fixed kind of generator: it is the same in
+# every session, whatever the kind and the state of the random number generator at the first call (which the call
+# leaves untouched) -- also when the first call comes from a worker of the package, which runs under L'Ecuyer-CMRG.
+.dfe_default_seed <- 20260101L
 .dfe_model <- function(model = NULL, ...) {
   if (!is.null(model)) return(model)
   if (is.null(.dfe_env$model)) {
-    message("dfe: training the default random forest (200 series per class); pass `model = dfe_train(...)` to reuse or enlarge it.")
-    .dfe_env$model <- dfe_train(...)
+    message("dfe: training the default random forest (200 series per class, fixed seed); pass `model = dfe_train(...)` to reuse or enlarge it.")
+    args <- list(...)
+    if (is.null(args$seed)) args$seed <- .dfe_default_seed
+    old <- .rng_get(); on.exit(.rng_put(old), add = TRUE)
+    suppressWarnings(RNGkind("Mersenne-Twister", "Inversion", "Rejection"))
+    .dfe_env$model <- do.call(dfe_train, args)
   }
   .dfe_env$model
 }
@@ -248,8 +262,8 @@ dfe_classify <- function(x, y, model = NULL, lag = 0L, ...) {
 
 #' @export
 print.dfe <- function(x, digits = 3, ...) {
-  cat("df-entropy method (Jakovac et al.): random-forest class scores\n")
-  cat(sprintf("  n = %d (binarised at the mean), lag = %d\n", x$n, x$lag))
+  .out("df-entropy method (Jakovac et al.): random-forest class scores\n")
+  .out(sprintf("  n = %d (binarised at the mean), lag = %d\n", x$n, x$lag))
   lab <- c(x_to_y = "X -> Y", y_to_x = "X <- Y", bidirectional = "X <-> Y",
            common_cause = "hidden common cause", independent = "independent")
   print(data.frame(case = lab[names(x$scores)], score = round(x$scores, digits),

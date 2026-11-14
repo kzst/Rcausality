@@ -33,8 +33,12 @@ bayes_granger(
 \item{cores}{CPU cores: the chains run in parallel (see \link{Rcausality-parallel}).}
 }
 \value{
-An object of class \code{bayes_granger}: \code{bf10}, \code{post_prob},
-\code{inclusion} (posterior inclusion probability of every cause lag, spike
+An object of class \code{bayes_granger}: \code{bf10}, \code{post_prob} (computed
+from the Bayes factor and \code{prior_prob}), \code{any_included} (posterior and
+prior probability that at least one lag of the cause is included; under
+the spike-and-slab prior the prior value, \code{1 - (1 - inclusion_prob)^lag},
+grows with the order, which is why this probability is not the one that
+decides), \code{inclusion} (posterior inclusion probability of every cause lag, spike
 and slab only), \code{geweke} (posterior mean and credible interval of the
 measure), \code{coefficients} (posterior mean and interval of the cause's
 coefficients), \code{draws} (matrix of posterior draws, the chains stacked),
@@ -55,7 +59,12 @@ prior inclusion probability \code{inclusion_prob} per lag); the 2^q lag
 subsets are enumerated exactly when \code{q <= 12} (Gibbs sampling otherwise)
 and the Bayes factor compares "at least one lag" with "no lag";
 \item \code{prior = "normal"}: the block of all cause lags with the normal slab
-against none;
+against none. For these two priors the coefficients that both
+regressions share (intercept, own lags, lags of the controls) have flat
+priors: the restricted regression is the base model, and the marginal
+likelihoods have \code{n - k0} degrees of freedom. A regression whose
+always-included coefficients leave no degrees of freedom stops with an
+error (use \code{"minnesota"});
 \item \code{prior = "minnesota"}: the hierarchical Minnesota prior for short
 series (lag-decaying shrinkage of all coefficients, the overall
 tightness integrated out under a Gamma hyperprior; see \code{\link[=bayes_control]{bayes_control()}});
@@ -66,7 +75,9 @@ observations;
 \code{\link[=rcausality]{rcausality()}}.
 Posterior draws of the coefficients, of \code{sigma} and of Geweke's measure
 \verb{log(1 + var(X_c b_c) / sigma^2)} (the Bayesian analogue of
-\code{log(RSS_r / RSS_u)}) are generated for \code{prior = "spike_slab"} and
+\code{log(RSS_r / RSS_u)}; \code{X_c}: the lags of the cause after the
+always-included regressors have been projected out) are generated for
+\code{prior = "spike_slab"} and
 \code{"normal"} (\code{chains} x \code{n_iter}, burn-in, thinning).
 }
 }

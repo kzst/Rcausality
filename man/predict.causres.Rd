@@ -14,8 +14,9 @@
   refit = TRUE,
   model = c("var", "bvar", "rf"),
   control = bayes_control(prior = "minnesota"),
-  rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+  rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = "auto"),
   n_sim = 500L,
+  seed = NULL,
   ...
 )
 
@@ -49,10 +50,15 @@ comparison optimistic. The final forecasts always use the links of
 settings are used).}
 
 \item{rf_settings}{forest settings for \code{model = "rf"} (\code{num_trees}, \code{mtry},
-\code{min_node_size}).}
+\code{min_node_size}; the default node size \code{"auto"} is chosen for every
+forest by its out-of-bag error, see \code{\link[=rf_granger]{rf_granger()}}).}
 
 \item{n_sim}{number of simulated paths for the intervals of \code{"bvar"} and
 \code{"rf"}.}
+
+\item{seed}{optional RNG seed of the forecast stage (the forests of
+\code{model = "rf"} and the simulated paths behind the intervals); the random
+number stream of the session is restored afterwards.}
 
 \item{...}{unused.}
 

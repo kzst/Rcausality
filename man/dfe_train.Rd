@@ -24,7 +24,8 @@ curves (paper: 6 and 5).}
 
 \item{num_trees}{number of trees.}
 
-\item{seed}{optional RNG seed.}
+\item{seed}{optional RNG seed of the training systems and of the forest;
+the random number stream of the session is restored afterwards.}
 
 \item{cores}{CPU cores for the feature extraction and the forest (see
 \link{Rcausality-parallel}).}
@@ -37,8 +38,13 @@ confusion matrix).
 \description{
 Generates coupled binary Markov chains of the five causal classes
 (\code{\link[=sim_markov_pair]{sim_markov_pair()}}), extracts the conditional-entropy features and trains
-a random forest (\code{ranger}). The model is cached for the session and used by
-\code{\link[=dfe_classify]{dfe_classify()}} and \code{rcausality(method = "dfe")} when no model is given.
+a random forest (\code{ranger}). When \code{\link[=dfe_classify]{dfe_classify()}} or
+\code{rcausality(method = "dfe")} is called without a model, a default model
+(the defaults of this function) is trained once, with a fixed seed, and
+cached for the session: it is the same in every session, whatever the
+kind and the state of the random number generator and wherever the first
+call comes from, so that results with the default model are reproducible
+(for a given version of \pkg{ranger}).
 The paper uses 1000 realisations per class with lengths 200-5000 and 100
 trees; the default here is smaller for speed -- raise \code{n_per_class} for a
 more accurate classifier.

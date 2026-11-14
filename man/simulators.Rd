@@ -6,6 +6,7 @@
 \alias{sim_logistic}
 \alias{sim_tent}
 \alias{sim_henon}
+\alias{sim_nonlinear}
 \alias{sim_markov01}
 \title{Simulators with known causal ground truth}
 \usage{
@@ -47,6 +48,16 @@ sim_henon(
   burn = 500L
 )
 
+sim_nonlinear(
+  n = 500,
+  scenario = "x_to_y",
+  coupling = 0.9,
+  noise = 0,
+  ar = 0.5,
+  seed = NULL,
+  burn = 100L
+)
+
 sim_markov01(
   n = 1000,
   scenario = "x_to_y",
@@ -77,6 +88,9 @@ network ground truth, returned in attribute \code{"adjacency"}).}
 
 \item{r}{growth parameter of the logistic / tent map.}
 
+\item{ar}{autoregressive coefficient of the series of \code{sim_nonlinear}
+that are not driven.}
+
 \item{p}{transition parameter of the binary Markov chains.}
 }
 \value{
@@ -89,6 +103,21 @@ common-cause scenario) and attach the true class as attribute \code{"truth"}.
 \details{
 Scenarios: \code{"x_to_y"}, \code{"y_to_x"}, \code{"bidirectional"}, \code{"common_cause"}
 (a hidden driver \code{z} drives both \code{x} and \code{y}), \code{"independent"}.
+
+\code{sim_nonlinear} returns stochastic series with a link that
+leaves no linear trace: the driver sets the autoregressive coefficient
+of the driven series,
+\verb{y[t] = phi(x[t-1]) y[t-1] + e[t]} with
+\verb{phi(u) = coupling * (1 - 2 exp(-u^2 / 2))} and standard normal \code{e}, a
+smooth-transition autoregression (negative dependence on the own past
+while the driver is near zero, positive while it is far from it;
+\verb{|coupling| < 1} keeps every scenario stable). Series that are not
+driven are first-order autoregressions with coefficient \code{ar}. The
+conditional mean of the driven series depends on the past of the
+driver, but its correlation with that past is zero in every scenario
+(the joint distribution is symmetric under a change of sign of either
+series), so that tests of linear predictability have no power, while
+the errors of their regressions are heteroskedastic.
 }
 \examples{
 # two coupled logistic maps, x driving y with coupling strength 0.3;

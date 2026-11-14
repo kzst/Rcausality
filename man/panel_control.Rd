@@ -13,6 +13,8 @@ panel_control(
   min_units = 3L,
   min_length = NULL,
   time_effects = FALSE,
+  bootstrap = c("auto", "joint", "effect"),
+  resample = c("units", "periods"),
   n_draws = 10000L
 )
 }
@@ -30,7 +32,15 @@ the two p-values, doubled (a Bonferroni correction over the two tests),
 or -- for Bayes-factor decisions -- the average of the two Bayes
 factors. The two levels are sensitive to different alternatives: the
 pooled test to an effect that has the same direction in most units, the
-group test to an effect in some of the units, of any sign.}
+group test to an effect in some of the units, of any sign. The group
+test adds the unit statistics and with them any excess that the unit
+tests share: for units that are short and strongly persistent the
+surrogate tests of \code{"cmi"}, \code{"cmi_lag"} and \code{"diks_panchenko"} reject
+somewhat too often, and their group tests declare a link in many panels
+without one (a warning says so when the median first-order
+autocorrelation of the units, corrected for their length, exceeds 0.8);
+differenced series or, for the two information measures,
+\code{decision = "pooled"} are advisable then.}
 
 \item{combine}{the group-level test:
 \code{"auto"} (the natural one for the method: \code{"mean"} for the methods whose
@@ -66,10 +76,28 @@ of units with the link in the prevalence model (default uniform).}
 (\code{NULL} = the advisable minimal length of the method, see
 \code{\link[=causal_methods]{causal_methods()}}); they still enter the pooled estimate.}
 
-\item{time_effects}{logical; remove common shocks first, i.e. centre every
-variable across the units within each period (needs \code{time})? The tests
-treat the units as independent; with strong common factors this
-transformation is advisable.}
+\item{time_effects}{logical; remove common shocks first (needs \code{time})?
+Every variable is standardized within its unit and then centred across
+the units within each period, so that the removal does not depend on the
+scales of the units. This removes a common factor that moves all units
+alike (in units of their own standard deviations), not one with
+unit-specific loadings; for the latter see \code{resample}.}
+
+\item{bootstrap}{reference distribution of the tests of the Granger
+family: \code{"joint"} (the default with \code{resample = "units"}) regenerates the cause together with the
+effect under the null hypothesis (the cause from its own lags and the
+lags of the effect), which reproduces the feedback from the effect to
+the cause and with it the bias that feedback leaves in the pooled
+estimator; \code{"effect"} (the default with \code{resample = "periods"})
+regenerates the effect and keeps the cause as observed.}
+
+\item{resample}{\code{"units"} (default): every unit resamples its own
+residuals; \code{"periods"}: the same resampled periods are used in all
+units (balanced panels), which keeps the dependence between the units
+(common shocks and factors with any loadings) in the reference
+distribution. With \code{decision = "group"} this is the bootstrap test of
+Dumitrescu and Hurlin (2012, Section 6.2), with the unit statistics
+combined as in \code{combine}.}
 
 \item{n_draws}{Monte Carlo size of the \code{"mean"} group test.}
 }

@@ -10,8 +10,8 @@ test_that("serial and parallel runs give identical results (model-free tests)", 
   skip_if_not(two_cores_ok())
   d <- sim_logistic(200, "x_to_y", seed = 1)
   for (m in c("cmi", "te", "ccm", "pid", "ccdh", "hirata")) {
-    a <- rcausality(d, method = m, n_perm = 40, n_surr = 40, lag = 1, seed = 1, cores = 1)
-    b <- rcausality(d, method = m, n_perm = 40, n_surr = 40, lag = 1, seed = 1, cores = 2)
+    a <- suppressWarnings(rcausality(d, method = m, n_perm = 40, n_surr = 40, lag = 1, seed = 1, cores = 1))
+    b <- suppressWarnings(rcausality(d, method = m, n_perm = 40, n_surr = 40, lag = 1, seed = 1, cores = 2))
     expect_equal(a$pairs, b$pairs, info = m)
     if (!is.null(a$instant)) expect_equal(a$instant, b$instant, info = m)
   }
@@ -87,8 +87,8 @@ test_that("a user-supplied cluster is accepted and not stopped", {
   cl <- parallel::makeCluster(2)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   for (m in c("te", "cmi", "ccdh", "hirata")) {
-    a <- rcausality(d, method = m, lag = 1, n_perm = 30, n_surr = 30, seed = 1, cores = 1)
-    b <- rcausality(d, method = m, lag = 1, n_perm = 30, n_surr = 30, seed = 1, cores = cl)
+    a <- suppressWarnings(rcausality(d, method = m, lag = 1, n_perm = 30, n_surr = 30, seed = 1, cores = 1))
+    b <- suppressWarnings(rcausality(d, method = m, lag = 1, n_perm = 30, n_surr = 30, seed = 1, cores = cl))
     expect_equal(a$pairs, b$pairs, info = m)
   }
   # lazy arguments of the caller are forced before the closures travel to the nodes

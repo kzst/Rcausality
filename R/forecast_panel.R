@@ -71,6 +71,9 @@
 #' @param model forecast model: `"var"`, `"bvar"` or `"rf"`.
 #' @param control,rf_settings,n_sim as in [predict.causres()] (`n_sim` paths
 #'   per unit).
+#' @param seed optional RNG seed of the forecast stage (the forests of
+#'   `model = "rf"` and the simulated paths behind the intervals); the random
+#'   number stream of the session is restored afterwards.
 #' @param ... unused.
 #' @return An object of class `causfcpanel`: `forecasts` (unit, series,
 #'   horizon, point, lower, upper, se), `evaluation` (per series, pooled over
@@ -91,13 +94,15 @@
 #' }
 predict.causpanel <- function(object, h = 5L, p = NULL, holdout = 0.2, level = 0.95, refit = TRUE,
                               model = c("var", "bvar", "rf"), control = bayes_control(prior = "minnesota"),
-                              rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = 5L), n_sim = 200L, ...) {
+                              rf_settings = list(num_trees = 300L, mtry = NULL, min_node_size = "auto"), n_sim = 200L,
+                              seed = NULL, ...) {
   model <- match.arg(model)
+  .local_seed(seed)
   if (model == "rf") .need_ranger("predict(model = \"rf\")")
   .check_number(h, "h", lower = 1, integer = TRUE); .check_number(level, "level", lower = 0, upper = 1, strict = TRUE)
   vars <- object$series; D0 <- as.data.frame(object$data)
   PD <- .panel_units(D0, object$id, object$time, vars = vars); U <- PD$units; N <- length(U); n_i <- PD$n
-  settings <- list(control = control, rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+  settings <- list(control = control, rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = "auto"),
                                                              rf_settings, keep.null = TRUE))
   full <- .panel_links(object, vars); causes_of <- full$causes
   p_full <- if (is.null(p)) full$p else max(1L, as.integer(p))
@@ -201,9 +206,9 @@ predict.causpanel <- function(object, h = 5L, p = NULL, holdout = 0.2, level = 0
 #' @export
 print.causfcpanel <- function(x, digits = 3, ...) {
   mdl <- c(var = "pooled restricted VAR", bvar = "pooled Bayesian VAR, Minnesota prior", rf = "pooled random forests")[[x$model]]
-  cat(sprintf("Causality-informed panel forecasts (%s from the '%s' links; %d units, p = %d lags, h = %d)\n", mdl, x$method, x$n_units, x$p, x$h))
-  if (is.null(x$evaluation)) cat("  no hold-out evaluation\n") else {
-    cat(sprintf("  hold-out evaluation (last %.0f%% of the periods of every unit, rolling one-step forecasts; links selected on the %s):\n",
+  .out(sprintf("Causality-informed panel forecasts (%s from the '%s' links; %d units, p = %d lags, h = %d)\n", mdl, x$method, x$n_units, x$p, x$h))
+  if (is.null(x$evaluation)) .out("  no hold-out evaluation\n") else {
+    .out(sprintf("  hold-out evaluation (last %.0f%% of the periods of every unit, rolling one-step forecasts; links selected on the %s):\n",
                 100 * x$holdout, x$evaluation_source))
     E <- x$evaluation; EU <- x$evaluation_units
     better <- vapply(E$series, function(v) mean(EU$improvement[EU$series == v] > 0), 0)
@@ -211,10 +216,10 @@ print.causfcpanel <- function(x, digits = 3, ...) {
                      RMSE.causal = round(E$rmse_causal, digits), improvement = sprintf("%+.1f%%", 100 * E$improvement),
                      units.better = ifelse(E$causes == "", "-", sprintf("%.0f%%", 100 * better))), row.names = FALSE, right = FALSE)
   }
-  cat("  forecast model: links of the full panel; causes per series:",
+  .out("  forecast model: links of the full panel; causes per series:",
       paste(sprintf("%s <- {%s}", names(x$fitted_causes), vapply(x$fitted_causes, function(v) paste(v, collapse = ","), "")), collapse = "; "), "\n")
   Fc <- x$forecasts; u1 <- utils::head(unique(Fc$unit), 3L)
-  cat(sprintf("\n  forecasts: point [%d%% interval]; first units (all in $forecasts):\n", round(100 * x$level)))
+  .out(sprintf("\n  forecasts: point [%d%% interval]; first units (all in $forecasts):\n", round(100 * x$level)))
   f <- Fc[Fc$unit %in% u1 & Fc$horizon <= min(x$h, 5L), ]
   f$forecast <- sprintf("%s [%s, %s]", formatC(f$point, digits = digits - 1, format = "f"), formatC(f$lower, digits = digits - 1, format = "f"),
                         formatC(f$upper, digits = digits - 1, format = "f"))
@@ -282,7 +287,7 @@ plot.causfcpanel <- function(x, series = NULL, units = NULL, n_last = 30L, main 
   uid <- as.character(D0[[id]]); pos <- stats::ave(seq_along(uid), uid, FUN = seq_along)
   Dtr <- D0[pos <= n_train[match(uid, names(U))], c(id, time, vars), drop = FALSE]
   settings <- list(control = if (is.null(dots$control)) bayes_control(prior = "minnesota") else dots$control,
-                   rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = 5L),
+                   rf = utils::modifyList(list(num_trees = 300L, mtry = NULL, min_node_size = "auto"),
                                           if (is.null(dots$rf_settings)) list() else dots$rf_settings, keep.null = TRUE))
   sc <- .split_cores(length(methods), cores)
   runs <- .plapply(methods, function(m) {

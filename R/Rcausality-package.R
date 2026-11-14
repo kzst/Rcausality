@@ -28,7 +28,8 @@
 #'
 #' @section Panel data and one explained variable:
 #' [panel_causality()] (every method at the level of the units, of the group
-#' of units and of the pooled units, with Bayesian variants;
+#' of units and of the pooled units, with Bayesian variants of all methods
+#' but the random forest;
 #' [panel_control()], [plot.causpanel()], [sim_panel()], [panel_long()]) and
 #' [causal_drivers()] (drivers of a target with lags, importance, direct and
 #' indirect links and the causal graph of the explanatory variables, for
@@ -54,7 +55,7 @@
 #' `vignette("panel")` (panel data and the causal drivers of one variable).
 #'
 #' @references
-#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*. \doi{10.1111/twec.70148}
+#' Kosztyan, Z. T., Matrai, R. and Kiss, D. (2026). Is the world getting smaller? Network-driven heterogeneity in gravity-model elasticities. *The World Economy*, 49(11), 2478-2525. \doi{10.1111/twec.70148}
 #'
 #' @keywords internal
 "_PACKAGE"

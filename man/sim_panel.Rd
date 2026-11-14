@@ -54,7 +54,7 @@ drivers), \code{x2 -> x1} (so \code{x2} drives \code{y} only through \code{x1}),
 unrelated.
 With \code{prevalence < 1} only that share of the units has the links (a
 heterogeneous panel); \code{nonlinear = TRUE} couples through the centred
-square of the cause, which is invisible to linear tests.
+square of the cause, whose linear projection on the cause is zero.
 }
 }
 \examples{
