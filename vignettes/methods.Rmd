@@ -86,8 +86,13 @@ Mixtures of g priors for Bayesian variable selection. *JASA*, 103(481),
 prediction of $y_t$ beyond the lags of $y$ (and of the control series in
 the conditional version). The restricted model $y_t = a_0 + \sum_l a_l
 y_{t-l} + \varepsilon_t$ is compared with the unrestricted one that adds
-$\sum_l b_l x_{t-l}$ by an F-test; Geweke's measure $\log(RSS_r/RSS_u)$
-is the effect size.
+$\sum_l b_l x_{t-l}$ by an F test; Geweke's measure $\log(RSS_r/RSS_u)$
+is the effect size. With `lag = "auto"` the number of tested lags of $x$
+is selected by the BIC of the vector autoregression, and the regression
+keeps as many lags of $y$ as the autoregression of $y$ needs by the
+corrected AIC, which can be more: an effect whose own memory is cut short
+lets the past of the other series stand in for it (`?rcausality`, section
+"The memory of the effect").
 
 **Bayesian decision.** `bayes = TRUE` turns the regression into a
 Bayesian one (`bayes_control()`): stochastic-search variable selection
@@ -202,22 +207,25 @@ contingency tables conditional on the present state; for continuous
 states it follows Algorithms 1-2 of the paper (kNN conditions of size
 $\sqrt{n}$, local random projections, two bins, Yates-corrected modified
 log-likelihood test, local-permutation surrogates of the futures). The
-local p-values are aggregated by a clipped geometric mean (the paper uses
+local p values are aggregated by a clipped geometric mean (the paper uses
 the harmonic mean, `aggregate = "harmonic"`).
 
 **Reproduced.** Sect. 6.1, the "turn-wheel" example of Figure 2: Alice is
 a two-state Markov chain that drives Bob and Barry with one step delay.
+(The memory that Alice gives to a driven wheel is weak with the default
+settings of the simulator, and the test needs a few thousand time points
+to find it: with 2000 points it does not reject for every driven series.)
 
 ```{r markov}
-w <- sim_turnwheel(2000, seed = 1); N <- nrow(w)
+w <- sim_turnwheel(5000, seed = 1); N <- nrow(w)
 mp <- function(x) markov_test(x, m = 1, n_perm = 49, seed = 1)$p_value
 pv <- c(alice = mp(w$alice), bob = mp(w$bob), barry = mp(w$barry),
         `alice[t] x bob[t+1]` = mp(cbind(w$alice[-N], w$bob[-1])), `bob x barry` = mp(cbind(w$bob, w$barry)))
 round(pv, 3)
 ```
 
-```{r markov-plot, fig.height = 3.8, fig.cap = "Markov-property p-values of the turn-wheel series (Stippinger et al. 2023, Fig. 2): the driver and the lagged driver-driven joint are Markov, the driven series and the joint of the two driven series are not."}
-bp <- barplot(pv, col = ifelse(pv < 0.05, "#B2403A", "#1B7A43"), ylim = c(0, 1), ylab = "p-value of the Markov test",
+```{r markov-plot, fig.height = 3.8, fig.cap = "Markov-property p values of the turn-wheel series (Stippinger et al. 2023, Fig. 2): the driver and the lagged driver-driven joint are Markov, the driven series and the joint of the two driven series are not."}
+bp <- barplot(pv, col = ifelse(pv < 0.05, "#B2403A", "#1B7A43"), ylim = c(0, 1), ylab = "p value of the Markov test",
               names.arg = rep("", 5), border = "grey40", main = "Turn-wheel: who is Markov?", font.main = 2)
 mtext(names(pv), side = 1, at = bp, line = 1, cex = 0.75); abline(h = 0.05, lty = 3, col = "grey40")
 legend("topleft", c("Markov (p >= 0.05)", "not Markov"), fill = c("#1B7A43", "#B2403A"), bty = "n", cex = 0.8)
@@ -496,7 +504,7 @@ their joint and an independent joint obey the same relations as the
 intrinsic dimensions of the dimensional method; the relations are tested
 with bootstrap standard errors (plus a 10 % relative tolerance here).
 
-```{r krakovska, fig.height = 3.8, fig.cap = "Correlation sums of X, Y and the joint of the driven pair: the slopes (dimensions) of X and the joint coincide when x drives y."}
+```{r krakovska, fig.height = 3.8, fig.cap = "Correlation sums of X, Y and the joint of the driven pair: the slopes (dimensions) of the driven Y and of the joint coincide when x drives y, and the slope of the driver X is smaller."}
 kc <- krakovska_cd(dh$x, dh$y, E = 3, n_boot = 10, seed = 1)
 kc
 ex <- embed_delay(dh$x, 3); ey <- embed_delay(dh$y, 3); ej <- embed_delay(sqrt(29 / 31) * dh$x + dh$y, 3)
@@ -523,8 +531,9 @@ Munch, S. (2012). Detecting causality in complex ecosystems. *Science*,
 </div>
 
 **Transfer entropy** $T_{x \to y} = I(y_t; x_{t-k} \mid y_{t-l})$ on
-binned series, with shuffle surrogates and the effective TE of
-Marschinski and Kantz (observed minus mean surrogate). **Convergent cross
+binned series, tested against conditional shifts of the cause given the
+past of the effect (`reference = "circular"`: plain circular shifts), with
+the effective TE of Marschinski and Kantz (observed minus mean surrogate). **Convergent cross
 mapping** predicts $x$ from the delay embedding of $y$ by simplex
 projection; if $x$ drives $y$, the skill $\rho$ of "$y$ cross-maps $x$"
 rises and converges with the library size (Kendall test), and it is
@@ -561,7 +570,7 @@ PCMCI+ also orients contemporaneous links.
 
 **Implemented.** `pcmci()` wraps the authors' Python package tigramite
 through reticulate (nothing is ported) and maps the MCI statistics,
-adjusted p-values and contemporaneous links onto a `causres`. The chunk
+adjusted p values and contemporaneous links onto a `causres`. The chunk
 below runs only when tigramite is installed; the full reproduction
 (`inst/reproduce/runge2019_pcmci.R`) recovers the four links of the
 tigramite tutorial model exactly.
@@ -579,19 +588,20 @@ rp$pairs[, c("cause", "effect", "lag", "statistic", "p_adj", "significant")]
 `compare_methods()` runs several methods on one data set. On a linear
 VAR link the stochastic methods agree. On one realisation of the chaotic
 logistic maps of Benko et al. (500 time points, `x` drives `y`) the
-verdicts split: the predictive tests (`granger`, `te`, the kNN-CMI test
-with one lag) and the recurrence- and correlation-dimension methods
-return the true direction; CCM reads the strong unidirectional coupling
-as bidirectional (the driver's embedding carries some information about
-the driven system); the dimension-based method does not find the
-relation in a series of this length; and CCDH reads this realisation as
+verdicts split: the kNN-CMI test with one lag, the dimensional method and
+the recurrence- and correlation-dimension methods return the true
+direction; the regression test, the transfer entropy with circular shifts
+and CCM report the reverse direction as well (in a deterministic system
+the driven series carries information about its driver, which a test of
+dependence finds, and the embedding of a strong driver carries some
+information about the driven system); and CCDH reads this realisation as
 a hidden common cause. One data set is an illustration, not an
 assessment: the benchmark below gives the frequencies. (In noise-free
 deterministic systems the driver is a function of the past of the driven
 series. With a conditioning past that is long enough to reconstruct it,
-the tests of conditional independence, `cmi` and `rf_granger`, notice
-this, carry out no test and say so in a warning; see `?rcausality`,
-section "Conditional shifts".)
+the tests of conditional independence (`cmi`, `rf_granger`, and `te` and
+`pid` with their default reference) notice this, carry out no test and say
+so in a warning; see `?rcausality`, section "Conditional shifts".)
 
 ```{r compare1, fig.height = 3.4, fig.cap = "Verdicts on a linear VAR(1) link."}
 cv <- compare_methods(sim_var(500, "x_to_y", seed = 1), methods = c("granger", "cmi", "te", "pid"), seed = 1, lag = 1)
@@ -599,16 +609,20 @@ cv$table
 plot(cv)
 ```
 
+On noise-free maps the conditional tests carry out no test (the past of
+the effect determines the cause), and `"te"` is used with plain circular
+shifts:
+
 ```{r compare2, eval = FALSE}
 cl <- compare_methods(sim_logistic_bdc(500, "x_to_y", seed = 2), methods = c("granger", "cmi", "te", "ccm", "dc", "hirata", "cd", "ccdh"),
-                      seed = 1, lag = 1)
+                      seed = 1, lag = 1, args = list(te = list(method_args = list(reference = "circular"))))
 cl$table
 plot(cl)
 ```
 
 ```{r compare2-run, echo = FALSE, fig.height = 3.4, fig.cap = "Verdicts on the coupled logistic maps of Benko et al. (x drives y)."}
 cl <- .pre("compare2", compare_methods(sim_logistic_bdc(500, "x_to_y", seed = 2), methods = c("granger", "cmi", "te", "ccm", "dc", "hirata", "cd", "ccdh"),
-                      seed = 1, lag = 1))
+                      seed = 1, lag = 1, args = list(te = list(method_args = list(reference = "circular")))))
 cl$table
 plot(cl)
 ```
@@ -619,31 +633,35 @@ plot(cl)
 known truth. The five patterns of Benko et al. (2024) --
 `sim_logistic_bdc()` -- are the natural benchmark for the
 dynamical-systems methods; the stochastic ones are included for
-contrast. Two replications per scenario keep the vignette fast; use many
-more in practice.
+contrast. Five replications per scenario are used here (the result is
+stored with the vignette); use many more in practice.
 
 ```{r bench, eval = FALSE}
 bm <- benchmark_methods(methods = c("granger", "te", "ccm", "dc", "ccdh", "hirata", "cd"),
                         scenarios = c("x_to_y", "bidirectional", "common_cause", "independent"),
-                        simulator = sim_logistic_bdc, n = 500, reps = 2, seed = 1, args = list(te = list(lag = 1)))
+                        simulator = sim_logistic_bdc, n = 500, reps = 5, seed = 1,
+                        args = list(te = list(lag = 1, method_args = list(reference = "circular"))))
 bm
 plot(bm)
 ```
 
-```{r bench-run, echo = FALSE, fig.height = 4.6, fig.cap = "Accuracy of the methods on the five coupled-logistic-map patterns (2 replications each, n = 500)."}
+```{r bench-run, echo = FALSE, fig.height = 4.6, fig.cap = "Accuracy of the methods on the five coupled-logistic-map patterns (5 replications each, n = 500)."}
 bm <- .pre("bench", benchmark_methods(methods = c("granger", "te", "ccm", "dc", "ccdh", "hirata", "cd"),
                         scenarios = c("x_to_y", "bidirectional", "common_cause", "independent"),
-                        simulator = sim_logistic_bdc, n = 500, reps = 2, seed = 1, args = list(te = list(lag = 1))))
+                        simulator = sim_logistic_bdc, n = 500, reps = 5, seed = 1,
+                        args = list(te = list(lag = 1, method_args = list(reference = "circular")))))
 bm$simulator <- "sim_logistic_bdc"
 bm
 plot(bm)
 ```
 
-At this length the recurrence and correlation-dimension criteria are the
-most reliable; the dimensional method needs longer series (Benko et al.
-use $N = 10^4$; the README reproduction at that length recovers all
-four patterns), and the stochastic tests cannot tell a hidden common
-cause from a directed link on deterministic data. The confusion matrices
+Five replications show the form of the output and are too few to rank
+the methods; the accompanying paper reports this benchmark with many
+replications. Two things are known beforehand: the dimensional method needs
+longer series (Benko et al. use $N = 10^4$; the README reproduction at
+that length recovers all four patterns), and the stochastic tests cannot
+tell a hidden common cause from a directed link on deterministic data.
+The confusion matrices
 show *how* a method fails, which matters more than the accuracy figure:
 e.g. whether a hidden common cause is read as a directed link (a false
 causal claim) or as independence (a missed relation).
@@ -658,7 +676,7 @@ bm$confusion$granger
 ```{r bench2, eval = FALSE}
 bv <- benchmark_methods(methods = c("granger", "cmi", "te", "pid"),
                         scenarios = c("x_to_y", "bidirectional", "independent"), simulator = sim_var,
-                        n = 400, reps = 2, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1)))
+                        n = 400, reps = 10, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1)))
 bv
 plot(bv)
 ```
@@ -666,7 +684,7 @@ plot(bv)
 ```{r bench2-run, echo = FALSE, fig.height = 4.2, fig.cap = "Accuracy on linear VAR pairs."}
 bv <- .pre("bench2", benchmark_methods(methods = c("granger", "cmi", "te", "pid"),
                         scenarios = c("x_to_y", "bidirectional", "independent"), simulator = sim_var,
-                        n = 400, reps = 2, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1))))
+                        n = 400, reps = 10, seed = 1, args = list(cmi = list(lag = 1), pid = list(lag = 1))))
 bv$simulator <- "sim_var"
 bv
 plot(bv)

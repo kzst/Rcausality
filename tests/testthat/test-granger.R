@@ -1,4 +1,4 @@
-test_that("Granger F-test agrees with lmtest::grangertest", {
+test_that("Granger F test agrees with lmtest::grangertest", {
   skip_if_not_installed("lmtest")
   d <- sim_var(300, scenario = "x_to_y", seed = 11)
   r <- rcausality(d$x, d$y, lag = 2, adjust = "none")
@@ -27,6 +27,7 @@ test_that("bayes_granger reports Bayes factors and decides by threshold", {
 })
 
 test_that("data.frame (all pairs) and MIMO block modes work", {
+  skip_on_cran()
   d <- sim_var(500, n_series = 4, seed = 5)
   r <- rcausality(d)
   expect_equal(nrow(r$pairs), 12)
@@ -54,6 +55,7 @@ test_that("input validation", {
 })
 
 test_that("simulators and prep helpers", {
+  skip_on_cran()
   for (f in list(sim_var, sim_logistic, sim_tent, sim_henon, sim_markov01))
     for (sc in c("x_to_y", "y_to_x", "bidirectional", "common_cause", "independent")) {
       d <- f(200, scenario = sc, seed = 1)

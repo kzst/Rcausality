@@ -13,7 +13,7 @@ transfer_entropy(
   n_surr = 100L,
   seed = NULL,
   cores = getOption("Rcausality.cores", 1L),
-  reference = c("circular", "conditional")
+  reference = c("conditional", "circular")
 )
 }
 \arguments{
@@ -29,8 +29,8 @@ transfer_entropy(
 
 \item{cores}{CPU cores for the surrogates (see \link{Rcausality-parallel}).}
 
-\item{reference}{\code{"circular"} or \code{"conditional"}: see the section on the
-reference distribution.}
+\item{reference}{\code{"conditional"} (default) or \code{"circular"}: see the
+section on the reference distribution.}
 }
 \value{
 A list with \code{te}, \code{te_eff} (effective TE), \code{p_value}, \code{null},
@@ -39,8 +39,10 @@ A list with \code{te}, \code{te_eff} (effective TE), \code{p_value}, \code{null}
 \description{
 Schreiber's transfer entropy \verb{TE(x -> y) = H(y[t] | y[t-1..t-l]) - H(y[t] | y[t-1..t-l], x[t-1..t-k])} in bits, estimated from the
 quantile-binned (symbolic) series. The null distribution comes from
-circular-shift surrogates of \code{x} (its own dynamics kept, the coupling
-destroyed); the \emph{effective} transfer entropy is \verb{TE - mean(TE of the surrogates)} (Marschinski and Kantz, 2002). A kNN (continuous) transfer
+surrogates of \code{x} that keep its own dynamics and destroy the coupling
+(conditional shifts by default, see below); the \emph{effective} transfer
+entropy is \verb{TE - mean(TE of the surrogates)} (Marschinski and Kantz,
+2002). A kNN (continuous) transfer
 entropy is available as \code{rcausality(method = "cmi")}, since the transfer
 entropy is the conditional mutual information \verb{I(x past; y[t] | y past)}.
 }
@@ -53,20 +55,24 @@ statistic conditions on the past of \code{y}. A few symbols do not resolve a
 strongly autocorrelated past: when \code{x} is driven by \code{y} and \code{y} is
 persistent, the coded past of \code{x} keeps information about \code{y[t]}, and the
 test of \code{x -> y} rejects too often in long series (the simulation study
-of the accompanying paper gives the rates). \code{reference = "conditional"}
-uses conditional shifts of \code{x} given the past of \code{y} (location and scale
-of the lags of \code{x} as functions of that past, standardized residuals
-shifted circularly, see \code{\link[=rcausality]{rcausality()}}), coded after the shift: the
-surrogates keep the dependence of \code{x} on the past of \code{y}. They need
-series on a continuous scale; symbolic series (at most \code{bins} distinct
-values) are shifted circularly. More bins or a longer history \code{l} also
-reduce the effect, at a cost in power.
+of the accompanying paper gives the rates). \code{reference = "conditional"},
+the default, uses conditional shifts of \code{x} given the past of \code{y}
+(location and scale of the lags of \code{x} as functions of that past,
+standardized residuals shifted circularly, see \code{\link[=rcausality]{rcausality()}}), coded
+after the shift: the surrogates keep the dependence of \code{x} on the past of
+\code{y}, which is taken up to the order of the autoregression of \code{y} (see
+"The memory of the effect" in \code{\link[=rcausality]{rcausality()}}). They need series on a
+continuous scale; symbolic series (at most \code{bins} distinct values) are
+shifted circularly. When the past of \code{y} determines \code{x}, as in a
+noise-free deterministic system, no conditional surrogate differs from
+\code{x} and no test is carried out (p value 1); circular shifts are the
+reference for such systems.
 }
 
 \examples{
 # x drives y in the simulated VAR.  The transfer entropy x -> y exceeds
-# its circular-shift surrogates (small p-value); the reverse direction sits
-# at the surrogate level (large p-value), so there is no feedback.
+# that of its surrogates (small p value); the reverse direction sits
+# at the surrogate level (large p value), so there is no feedback.
 d <- sim_var(500, "x_to_y", seed = 1)
 te_xy <- transfer_entropy(d$x, d$y, n_surr = 50, seed = 1)
 te_xy$te         # transfer entropy in bits

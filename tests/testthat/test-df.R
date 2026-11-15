@@ -1,4 +1,5 @@
 test_that("df_variance recovers the order of AR processes", {
+  skip_on_cran()
   set.seed(2)
   x2 <- as.numeric(stats::arima.sim(list(ar = c(.5, .3)), 400))
   d <- df_variance(x2, max_constr = 3, n_perm = 49, seed = 1)
@@ -16,6 +17,7 @@ test_that("deterministic rotation: z needs one constrained pair (profile reading
 })
 
 test_that("method = 'df' finds x -> y and fills the orders table", {
+  skip_on_cran()
   d <- sim_var(300, "x_to_y", seed = 1)
   r <- rcausality(d, method = "df", n_perm = 60, seed = 1)
   expect_s3_class(r, "causres")
@@ -27,6 +29,7 @@ test_that("method = 'df' finds x -> y and fills the orders table", {
 })
 
 test_that("parallel runs reproduce with a seed and restore the RNG kind", {
+  skip_on_cran()
   d <- sim_logistic(200, "x_to_y", seed = 1)
   kind <- RNGkind()[1]
   r1 <- rcausality(d, method = "cmi", n_perm = 60, seed = 1, cores = 2)

@@ -14,6 +14,7 @@ test_that("transfer entropy and CCM baselines work and integrate", {
 })
 
 test_that("compare_methods and benchmark_methods summarise verdicts", {
+  skip_on_cran()
   d <- sim_var(300, "x_to_y", seed = 1)
   cmp <- compare_methods(d, methods = c("granger", "bayes_granger", "te"), seed = 1, n_perm = 60)
   expect_s3_class(cmp, "causcomp"); expect_equal(cmp$table$consensus, "x_to_y")

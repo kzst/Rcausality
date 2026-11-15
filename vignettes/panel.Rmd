@@ -86,10 +86,10 @@ which the method is advisable for a single series. The settings of a method
 are shown by `causal_methods("te")` and passed in `method_args`:
 
 ```{r oneif, eval = FALSE}
-d <- sim_logistic(300, "x_to_y", seed = 1)
+d <- sim_nonlinear(300, "x_to_y", seed = 1)
 rcausality(d, method = "te", method_args = list(bins = 6))     # a method setting
 rcausality(d, method = "te", bayes = TRUE)                     # the Bayesian variant
-rcausality(d, method = "te", bayes = TRUE, cores = 4)          # in parallel
+rcausality(d, method = "te", bayes = TRUE, cores = 2)          # in parallel
 ```
 
 # Panel data
@@ -132,7 +132,7 @@ Every directed link is analysed at three levels.
   also when the units are too short to be analysed one by one.
 
 By default the panel decision uses both levels (`panel_control(decision =
-)`): the smaller of the two p-values, doubled, and corrected over the links
+)`): the smaller of the two p values, doubled, and corrected over the links
 (`adjust`). The `prevalence` column estimates the share of the units with
 the link (posterior mean and credible interval of a model on the unit
 Bayes factors); the simulated share is 0.6.
@@ -175,14 +175,14 @@ For the Granger family (`"granger"`, `"bayes_granger"`,
   bootstrap panels (`panel_control(bootstrap = "joint")`, the default since
   version 0.0.5; `bootstrap = "effect"` keeps the cause as observed). The
   bootstrap sample is the null sample of the group test, and it calibrates
-  the unit p-values and the pooled p-value (an *empirical null*, Efron
+  the unit p values and the pooled p value (an *empirical null*, Efron
   2004); the calibration can only make a test more conservative.
 
 The following experiment shows why this matters. The null hypothesis is
 true in every case; a test at the 5% level should reject in 5% of the
 panels. The table gives the rejection rates of the classical tests -- the
 Dumitrescu-Hurlin statistic with its normal approximation and the
-fixed-effects F-test with common coefficients -- and of the tests of the
+fixed-effects F test with common coefficients -- and of the tests of the
 package.
 
 ```{r size, echo = FALSE}
@@ -210,7 +210,7 @@ size_tab <- .pre("panel-size", {
 })
 knitr::kable(size_tab, digits = 1, row.names = FALSE,
              col.names = c("Panel (the null hypothesis is true)", "Units", "Periods", "Dumitrescu-Hurlin, asymptotic",
-                           "Fixed-effects F-test", "Group", "Pooled", "Group or pooled"),
+                           "Fixed-effects F test", "Group", "Pooled", "Group or pooled"),
              caption = "Rejection rates (%) of tests at the 5% level when the null hypothesis is true; 200 simulated panels per row, lag order 1.")
 ```
 
@@ -231,9 +231,10 @@ or factors, two options exist for the Granger family:
 its unit and centres it across the units within each period, which removes
 shocks that move all units alike; and
 `panel_control(resample = "periods")` resamples the same periods in all
-units of a balanced panel, which keeps the dependence between the units in
-the reference distribution, whatever its form (the bootstrap of Dumitrescu
-and Hurlin 2012, Section 6.2). Without one of the two options every panel
+units of a balanced panel, which keeps the dependence between the units
+within a period, whatever its form, in the bootstrap panels (the bootstrap
+of Dumitrescu and Hurlin 2012, Section 6.2); the pooled and the group
+statistic are then both referred to their values in these panels. Without one of the two options every panel
 analysis checks the assumption. For each variable it computes the CD
 statistic of Pesaran (2021), the scaled sum of the correlations between
 the units of the residuals of first-order autoregressions with trend,
@@ -256,7 +257,7 @@ cmp <- .pre("panel-compare",
             compare_methods(pn, methods = c("granger", "cmi", "rf_granger"),
                             id = "unit", time = "time", n_perm = 200, seed = 1, cores = 2))
 cmp
-sapply(cmp$results, function(r) r$pairs$p_adj[r$pairs$cause == "x"])   # adjusted p-values of x -> y
+sapply(cmp$results, function(r) r$pairs$p_adj[r$pairs$cause == "x"])   # adjusted p values of x -> y
 ```
 
 The linear test does not declare the link here; the conditional mutual
@@ -412,8 +413,8 @@ runs are distributed over the cores; every unit of work has its own random
 stream, so the results are identical for any number of cores.
 
 ```{r cores, eval = FALSE}
-options(Rcausality.cores = 4)                         # for the session
-rcausality(pd, id = "unit", time = "time", method = "cmi", cores = 4, seed = 1)
+options(Rcausality.cores = 2)                         # for the session
+rcausality(pd, id = "unit", time = "time", method = "cmi", cores = 2, seed = 1)
 ```
 
 # References

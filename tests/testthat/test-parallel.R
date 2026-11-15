@@ -7,8 +7,9 @@ two_cores_ok <- function() {
 }
 
 test_that("serial and parallel runs give identical results (model-free tests)", {
+  skip_on_cran()
   skip_if_not(two_cores_ok())
-  d <- sim_logistic(200, "x_to_y", seed = 1)
+  d <- sim_nonlinear(200, "x_to_y", seed = 1)
   for (m in c("cmi", "te", "ccm", "pid", "ccdh", "hirata")) {
     a <- suppressWarnings(rcausality(d, method = m, n_perm = 40, n_surr = 40, lag = 1, seed = 1, cores = 1))
     b <- suppressWarnings(rcausality(d, method = m, n_perm = 40, n_surr = 40, lag = 1, seed = 1, cores = 2))
@@ -18,6 +19,7 @@ test_that("serial and parallel runs give identical results (model-free tests)", 
 })
 
 test_that("pair-level parallelism (three series) is reproducible", {
+  skip_on_cran()
   skip_if_not(two_cores_ok())
   d <- sim_var(200, n_series = 3, seed = 2)
   a <- rcausality(d, method = "te", lag = 1, n_perm = 40, seed = 3, cores = 1)
@@ -49,8 +51,9 @@ test_that("bayes_granger chains run in parallel with identical draws; R-hat repo
 })
 
 test_that("standalone tests and the benchmark are worker-count invariant", {
+  skip_on_cran()
   skip_if_not(two_cores_ok())
-  d <- sim_logistic(200, "x_to_y", seed = 1)
+  d <- sim_nonlinear(200, "x_to_y", seed = 1)
   set.seed(1); a <- local_permutation_test(d$x[-1], d$y[-200], n_perm = 30, cores = 1)
   set.seed(1); b <- local_permutation_test(d$x[-1], d$y[-200], n_perm = 30, cores = 2)
   expect_equal(a, b)
@@ -63,7 +66,7 @@ test_that("standalone tests and the benchmark are worker-count invariant", {
 })
 
 test_that("the session's generator is left where a serial call leaves it; kind unchanged", {
-  d <- sim_logistic(150, "x_to_y", seed = 1)
+  d <- sim_nonlinear(150, "x_to_y", seed = 1)
   kind <- RNGkind()[1]
   set.seed(7); invisible(rcausality(d, method = "te", lag = 1, n_perm = 20, cores = 1)); r1 <- runif(1)
   expect_equal(RNGkind()[1], kind)
@@ -83,7 +86,7 @@ test_that("the session's generator is left where a serial call leaves it; kind u
 test_that("a user-supplied cluster is accepted and not stopped", {
   skip_on_cran()
   skip_if_not(parallel::detectCores() >= 2)
-  d <- sim_logistic(150, "x_to_y", seed = 1)
+  d <- sim_nonlinear(150, "x_to_y", seed = 1)
   cl <- parallel::makeCluster(2)
   on.exit(parallel::stopCluster(cl), add = TRUE)
   for (m in c("te", "cmi", "ccdh", "hirata")) {
@@ -99,7 +102,7 @@ test_that("a user-supplied cluster is accepted and not stopped", {
 })
 
 test_that("the Rcausality.cores option sets the default and bad values are rejected", {
-  d <- sim_logistic(150, "x_to_y", seed = 1)
+  d <- sim_nonlinear(150, "x_to_y", seed = 1)
   old <- options(Rcausality.cores = 1); on.exit(options(old), add = TRUE)
   expect_equal(formals(rcausality)$cores, quote(getOption("Rcausality.cores", 1L)))
   expect_error(rcausality(d, method = "te", lag = 1, n_perm = 20, cores = "many"), "cores")
@@ -113,7 +116,7 @@ test_that("the Rcausality.cores option sets the default and bad values are rejec
 test_that("the socket-cluster path (used on Windows) leaves no connection open", {
   skip_on_cran()
   skip_if_not(parallel::detectCores() >= 2)
-  d <- sim_logistic(150, "x_to_y", seed = 1)
+  d <- sim_nonlinear(150, "x_to_y", seed = 1)
   old <- options(Rcausality.psock = TRUE); on.exit(options(old), add = TRUE)
   before <- nrow(showConnections())
   a <- rcausality(d, method = "te", lag = 1, n_perm = 30, seed = 1, cores = 1)

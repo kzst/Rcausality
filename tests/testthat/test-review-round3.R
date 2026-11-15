@@ -58,9 +58,11 @@ test_that("the kernel test with conditional shifts keeps the reverse direction o
 
 test_that("the transfer entropy can be referred to conditional shifts", {
   d <- sim_var(400, "x_to_y", seed = 1)
-  r0 <- suppressMessages(rcausality(d, method = "te", n_perm = 60, seed = 1))
+  r0 <- suppressMessages(rcausality(d, method = "te", n_perm = 60, seed = 1, method_args = list(reference = "circular")))
   expect_true(all(r0$extra$reference == "circular shifts"))
   r <- suppressMessages(rcausality(d, method = "te", n_perm = 60, seed = 1, method_args = list(reference = "conditional")))
+  # conditional shifts are the default from version 0.0.12
+  expect_equal(suppressMessages(rcausality(d, method = "te", n_perm = 60, seed = 1))$pairs$p_value, r$pairs$p_value)
   expect_true(all(r$extra$reference == "conditional shifts")); expect_true(all(is.finite(r$extra$cond_r2)))
   expect_identical(r$settings$method_args$reference, "conditional")
   expect_lt(r$pairs$p_value[r$pairs$cause == "x"], 0.05); expect_gt(r$pairs$p_value[r$pairs$cause == "y"], 0.05)
@@ -77,6 +79,7 @@ test_that("the transfer entropy can be referred to conditional shifts", {
 })
 
 test_that("a significant test that conditions coarsely on a persistent past gets a warning", {
+  skip_on_cran()
   d <- rev_pair(1000, 2, function(v) v^2 - 1)                      # x drives y; the test of y -> x is a true null
   w <- character(0)
   r <- withCallingHandlers(suppressMessages(rcausality(d, method = "diks_panchenko", method_args = list(reference = "normal"))),
@@ -97,10 +100,13 @@ test_that("a significant test that conditions coarsely on a persistent past gets
 })
 
 test_that("the decomposition can be referred to conditional shifts (version 0.0.10)", {
+  skip_on_cran()
   d <- sim_var(400, "x_to_y", seed = 1)
-  r0 <- suppressMessages(rcausality(d, method = "pid", n_perm = 60, seed = 1))
+  r0 <- suppressMessages(rcausality(d, method = "pid", n_perm = 60, seed = 1, method_args = list(reference = "permutation")))
   expect_true(all(r0$extra$reference == "permutation"))
   r <- suppressMessages(rcausality(d, method = "pid", n_perm = 60, seed = 1, method_args = list(reference = "conditional")))
+  # conditional shifts are the default from version 0.0.12
+  expect_equal(suppressMessages(rcausality(d, method = "pid", n_perm = 60, seed = 1))$pairs$p_value, r$pairs$p_value)
   expect_true(all(r$extra$reference == "conditional shifts")); expect_true(all(is.finite(r$extra$cond_r2)))
   expect_identical(r$settings$method_args$reference, "conditional")
   expect_lt(r$pairs$p_value[r$pairs$cause == "x"], 0.05); expect_gt(r$pairs$p_value[r$pairs$cause == "y"], 0.05)
@@ -125,7 +131,7 @@ test_that("the panel versions of cmi and of the kernel test warn for strongly pe
   expect_warning(chk(mk(0.95), grid, "cmi"), "decision = .pooled")
   expect_no_warning(chk(mk(0.5), grid, "cmi"))
   expect_no_warning(chk(mk(0.95), grid, "te"))                      # (the transfer entropy kept its level in such panels)
-  expect_no_warning(chk(mk(0.95), grid, "cmi", bayes = TRUE))
+  expect_warning(chk(mk(0.95), grid, "cmi", bayes = TRUE), "group test adds this excess")   # (also for the Bayesian variants, from version 0.0.12)
   # the limit of the Granger family is unchanged (0.9), and its message is the former one
   expect_warning(chk(mk(0.99), grid, "granger"), "persistent or trending")
 })

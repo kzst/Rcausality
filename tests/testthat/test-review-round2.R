@@ -51,6 +51,7 @@ test_that("the conditional tests keep a true null hypothesis when the cause is a
 })
 
 test_that("no conditional test is carried out for a cause that the past of the effect determines", {
+  skip_on_cran()
   lg <- sim_logistic(300, "x_to_y", seed = 1)                   # noise-free maps: x[t] is a polynomial of y[t], y[t - 1]
   expect_warning(r <- suppressMessages(rcausality(lg, method = "cmi", seed = 1, n_perm = 40)), "No test is carried out")
   expect_equal(r$pairs$p_value[r$pairs$cause == "x"], 1); expect_false(any(r$pairs$significant))
@@ -58,7 +59,9 @@ test_that("no conditional test is carried out for a cause that the past of the e
   b <- suppressWarnings(suppressMessages(rcausality(lg, method = "cmi", seed = 1, n_perm = 40, bayes = TRUE)))
   expect_equal(b$pairs$bf10[b$pairs$cause == "x"], 1); expect_match(b$bayes$model[b$bayes$pair == "x -> y"], "not tested")
   # the test with plain shifts and the state-space methods are the tools for such systems ...
-  expect_equal(suppressMessages(rcausality(lg, method = "te", seed = 1))$classes$class, "x_to_y")
+  expect_equal(suppressMessages(rcausality(lg, method = "te", seed = 1, method_args = list(reference = "circular")))$classes$class, "x_to_y")
+  # (the default reference of "te", conditional shifts from version 0.0.12, is a conditional test as well)
+  expect_warning(suppressMessages(rcausality(lg, method = "te", seed = 1)), "No test is carried out")
   # ... and observational noise makes the conditional test informative again
   ln <- sim_logistic(300, "x_to_y", seed = 1, noise = 0.05)
   expect_no_warning(rn <- suppressMessages(rcausality(ln, method = "cmi", seed = 1)))
@@ -163,6 +166,7 @@ test_that("the F test reports heteroskedastic errors and has a heteroskedasticit
 })
 
 test_that("the unit statistics of a panel are those of plm::pgrangertest()", {
+  skip_on_cran()
   skip_if_not_installed("plm")
   pd <- sim_panel(n_units = 10, n_time = 20, seed = 3)
   r <- suppressMessages(rcausality(pd, id = "unit", time = "time", lag = 1, seed = 1, n_perm = 19))
@@ -192,7 +196,7 @@ test_that("defective calls are refused or reported", {
   expect_message(rcausality(d, method = "bayes_granger", bayes = FALSE), "ignored")
   M <- causal_methods(); nm <- stats::setNames(M$min_length, M$method)
   expect_equal(unname(nm[c("te", "rf_granger", "ccm")]), c(50, 50, 55))
-  # a step-up correction over 12 tests with about 80 admissible shifts: several tests must attain the smallest p-value
+  # a step-up correction over 12 tests with about 80 admissible shifts: several tests must attain the smallest p value
   d4 <- sim_var(100, n_series = 4, seed = 1)
   w <- capture_warnings(suppressMessages(rcausality(d4, method = "te", adjust = "BH", lag = 1, seed = 1)))
   expect_true(any(grepl("attain that value together", w)))

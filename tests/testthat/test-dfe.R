@@ -1,4 +1,5 @@
 test_that("binary conditional entropy and the coupled-chain simulator behave", {
+  skip_on_cran()
   skip_if_not_installed("ranger")
   set.seed(1)
   x <- rbinom(2000, 1, 0.5)
@@ -11,6 +12,7 @@ test_that("binary conditional entropy and the coupled-chain simulator behave", {
 })
 
 test_that("dfe_train / dfe_classify recover simulated Markov classes", {
+  skip_on_cran()
   skip_if_not_installed("ranger")
   m <- dfe_train(n_per_class = 40, lengths = c(500, 1000), num_trees = 50, seed = 1)
   expect_s3_class(m, "dfe_model"); expect_output(print(m), "random-forest")

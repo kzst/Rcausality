@@ -39,7 +39,7 @@ has_ranger <- requireNamespace("ranger", quietly = TRUE)
 
 The classical Granger test regresses the effect on its own past and on the
 past of the cause in a stationary linear autoregression, with enough
-observations for the F-test. This vignette shows the tools of
+observations for the F test. This vignette shows the tools of
 **Rcausality** for the situations where one of these assumptions fails, and
 for checking and using the detected links.
 
@@ -167,7 +167,7 @@ with a nonlinear link (`sim_nonlinear()`) no such limit exists.
 # Short series: the hierarchical Minnesota prior
 
 With `K` series and lag `p` the unrestricted regression has `1 + K p`
-coefficients. For short series the F-test has few residual degrees of
+coefficients. For short series the F test has few residual degrees of
 freedom, loses power, or cannot be computed at all, and the BIC
 approximation of the Bayes factor is unreliable. The Minnesota prior
 (Litterman 1986) shrinks every coefficient towards zero, more strongly for
@@ -187,7 +187,7 @@ r_m <- rcausality(d14, conditional = TRUE, lag = 3, method = "bayes_granger", pr
 r_m$pairs[, c("cause", "effect", "lag", "bf10", "post_prob", "evidence")]
 ```
 
-The F-test of the conditional lag-3 model is not available (13
+The F test of the conditional lag-3 model is not available (13
 coefficients for 11 observations; the frequentist run behind the table had
 to shorten the lag to 2), while the Bayesian comparison uses the requested
 order and grades the evidence, for and against.
@@ -207,7 +207,7 @@ sim_short <- function(n, coupling) {
                     method = "bayes_granger", prior = "bic")$pairs$bf10[1]
   m <- bayes_granger(X[, 2], X[, 1], X[, 3:4], lag = 2,
                      control = bayes_control(prior = "minnesota", n_iter = 4, chains = 1))
-  c(`F-test (p < 0.05)` = isTRUE(g$p_value < 0.05), `BIC Bayes factor > 3` = isTRUE(bic > 3),
+  c(`F test (p < 0.05)` = isTRUE(g$p_value < 0.05), `BIC Bayes factor > 3` = isTRUE(bic > 3),
     `Minnesota Bayes factor > 3` = m$bf10 > 3)
 }
 short <- .pre("ext-short", {
@@ -219,7 +219,7 @@ short <- .pre("ext-short", {
 })
 ```
 
-```{r minn-plot, fig.height = 4, fig.cap = "Short series, conditional test in a four-series VAR: power (left) and false-positive rate (right) of the F-test, the BIC Bayes factor and the hierarchical Minnesota Bayes factor."}
+```{r minn-plot, fig.height = 4, fig.cap = "Short series, conditional test in a four-series VAR: power (left) and false-positive rate (right) of the F test, the BIC Bayes factor and the hierarchical Minnesota Bayes factor."}
 op <- par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.5, 1))
 cols <- c("#555555", "#B2403A", "#2B5C8A"); rules <- unique(short$rule)
 for (what in c("power", "false_positive")) {
@@ -234,11 +234,11 @@ par(op)
 ```
 
 The Minnesota Bayes factor keeps the false-positive rate near the nominal
-level of the F-test. Its power equals that of the F-test for the shortest
+level of the F test. Its power equals that of the F test for the shortest
 series and exceeds it from about 30 observations (0.52 against 0.38 at
 `n = 30`); the BIC approximation, by contrast, declares spurious links in
 the shortest samples (10% at `n = 15`) and loses power in longer ones. The
-Minnesota Bayes factor is also available when the F-test is not, as in the
+Minnesota Bayes factor is also available when the F test is not, as in the
 example above.
 
 # Panels of short series
@@ -262,7 +262,7 @@ and neither finds a link in the reverse direction.
 
 # Are the links artefacts? Placebo, time reversal, robustness, triangulation
 
-```{r placebo, fig.height = 4, fig.cap = "Left: number of links in placebo data (independent circular shifts of every series; red: the data). Right: evidence and placebo p-value of every link."}
+```{r placebo, fig.height = 4, fig.cap = "Left: number of links in placebo data (independent circular shifts of every series; red: the data). Right: evidence and placebo p value of every link."}
 d3 <- sim_var(300, n_series = 3, seed = 2)
 attr(d3, "adjacency")                               # the true links
 r3 <- rcausality(d3)

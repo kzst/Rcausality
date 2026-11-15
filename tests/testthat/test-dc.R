@@ -13,6 +13,7 @@ test_that("dimensional causality recovers the five logistic-map scenarios", {
 })
 
 test_that("method = 'dc' fills a causres with posterior decisions", {
+  skip_on_cran()
   d <- sim_logistic_bdc(1500, "x_to_y", seed = 3)
   r <- rcausality(d, method = "dc", m = 4, k_range = c(12, 20, 28), seed = 1)
   expect_s3_class(r, "causres")

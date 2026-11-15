@@ -1,6 +1,6 @@
 # Corrections of version 0.0.4 (first review round of the paper)
 
-test_that("circular-shift surrogates are distinct and the p-value respects their number", {
+test_that("circular-shift surrogates are distinct and the p value respects their number", {
   set.seed(1)
   s <- Rcausality:::.shift_draws(10L, 60L, 20L)
   expect_length(s, 20L); expect_equal(anyDuplicated(s), 0L); expect_true(all(s >= 10L & s <= 60L))
@@ -15,12 +15,14 @@ test_that("circular-shift surrogates are distinct and the p-value respects their
 })
 
 test_that("the user is told when no link can pass the correction for multiplicity", {
+  skip_on_cran()
   set.seed(2); d <- as.data.frame(matrix(rnorm(500), 100, 5))
   expect_warning(r <- suppressMessages(rcausality(d, method = "te", lag = 1, seed = 1)), "cannot pass the holm correction over 20 tests")
   expect_false(any(r$pairs$significant))
   # enough replicates are drawn for many tests (no cap at 999)
   d8 <- as.data.frame(matrix(rnorm(8 * 60), 60, 8))
-  r8 <- suppressWarnings(suppressMessages(rcausality(d8, method = "pid", lag = 1, seed = 1, method_args = list(k_target = 1, k_source = 1))))
+  r8 <- suppressWarnings(suppressMessages(rcausality(d8, method = "pid", lag = 1, seed = 1,
+                                                     method_args = list(k_target = 1, k_source = 1, reference = "permutation"))))
   expect_equal(length(r8$null[[1]]$null), ceiling(56 / 0.05))
 })
 
@@ -46,6 +48,7 @@ test_that("the lag scans use joint replicates (te, cmi, pid)", {
 })
 
 test_that("the PID test permutes the cause within the levels of the other source", {
+  skip_on_cran()
   set.seed(3); code <- sample(0:3, 200, replace = TRUE)
   p <- Rcausality:::.perm_within(code)
   expect_equal(sort(p), seq_along(code)); expect_identical(code[p], code)
@@ -158,12 +161,16 @@ test_that("the Diks-Panchenko test uses conditional shifts, and the normal refer
 test_that("the kNN conditional mutual information uses conditional shifts and keeps the local permutations as an option", {
   d <- sim_var(200, seed = 5)
   r <- suppressMessages(rcausality(d, method = "cmi", seed = 1, n_perm = 60))
-  expect_identical(r$settings$method_args$reference, "shift")
+  expect_identical(r$settings$method_args$reference, "conditional")       # ("shift" up to version 0.0.11)
+  expect_true(all(r$extra$reference == "conditional shifts"))
   expect_equal(r$pairs$significant[r$pairs$cause == "x"], TRUE)
   expect_true(all(r$pairs$p_value >= 1 / 41))                                   # the shifts of the scan are spaced by its length
   l <- suppressMessages(rcausality(d, method = "cmi", seed = 1, n_perm = 60, method_args = list(reference = "local")))
   expect_identical(l$settings$method_args$reference, "local")
-  expect_error(rcausality(d, method = "cmi", method_args = list(reference = "none")), "arg")
+  expect_error(rcausality(d, method = "cmi", method_args = list(reference = "none")), "must be .conditional. or .local.")
+  # the former name of the conditional shifts is still accepted
+  s <- suppressMessages(rcausality(d, method = "cmi", seed = 1, n_perm = 60, method_args = list(reference = "shift")))
+  expect_equal(s$pairs$p_value, r$pairs$p_value)
   # one set of shifts for all lags of a scan, also when the conditioning vector depends on the lag ("cmi_lag")
   set.seed(3)
   g <- Rcausality:::.cmi_pair(d$y, d$x, NULL, 1:3, 1L, 5L, 5L, 40L, cause_past = TRUE, reference = "shift")
@@ -190,7 +197,7 @@ test_that("short and strongly autocorrelated series get a warning from the tests
   expect_true(all(se < 19) && se[1] == se[2])
   # the warning is given below 2 / alpha effective shifts: 300 time points with coefficient 0.9 are about 25
   set.seed(2); q <- data.frame(x = as.numeric(arima.sim(list(ar = 0.9), 300)), y = as.numeric(arima.sim(list(ar = 0.9), 300)))
-  expect_warning(suppressMessages(rcausality(q, method = "te", lag = 1, seed = 1)), "2/alpha")
+  expect_warning(suppressMessages(rcausality(q, method = "te", lag = 1, seed = 1)), "strongly autocorrelated for their length")
   set.seed(2); q <- data.frame(x = as.numeric(arima.sim(list(ar = 0.5), 300)), y = as.numeric(arima.sim(list(ar = 0.5), 300)))
   expect_no_warning(suppressMessages(rcausality(q, method = "te", lag = 1, seed = 1)))
 })
@@ -258,6 +265,7 @@ test_that("a target analysis limits the lag scan of a pair by the size of its ow
 })
 
 test_that("the default dfe model does not depend on the state of the session", {
+  skip_on_cran()
   skip_if_not_installed("ranger")
   e <- Rcausality:::.dfe_env; old <- e$model; on.exit(e$model <- old, add = TRUE)
   d <- sim_markov_pair(400, "x_to_y", seed = 1)

@@ -12,6 +12,7 @@ test_that("local permutation test separates dependence", {
 })
 
 test_that("method = 'cmi' detects non-linear coupling direction", {
+  skip_on_cran()
   d <- nl_pair(300, 1)
   r <- suppressMessages(rcausality(d$x, d$y, method = "cmi", seed = 1))
   expect_equal(r$classes$class, "x_to_y")

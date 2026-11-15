@@ -55,7 +55,7 @@ Two traditions meet here:
 All methods are called through **one function**, `rcausality()`, and return
 **one kind of object**, `causres`, that prints, summarises, plots and
 compares the same way. Every method reports, per ordered pair of series,
-a test statistic, a p-value and/or a Bayes factor, an effect size and a
+a test statistic, a p value and/or a Bayes factor, an effect size and a
 decision, and classifies each unordered pair into one of five cases:
 
 | class | meaning |
@@ -90,7 +90,7 @@ plot_series(d, n_last = 200, main = "sim_var(400, 'x_to_y')")
 ## Granger causality in one call
 
 ```{r granger}
-r <- rcausality(d)          # Granger causality (F-test); lag order chosen by BIC
+r <- rcausality(d)          # Granger causality (F test); lag order chosen by BIC
 r
 ```
 
@@ -99,7 +99,7 @@ How to read the output:
 * **one row per directed test** (`y -> x` and `x -> y`): `lag` is the
   VAR order selected by the information criterion, `F` the test statistic
   with its degrees of freedom, `p` the raw and `p.adj` the Holm-adjusted
-  p-value, `BF10` the BIC-approximated Bayes factor for the link and
+  p value, `BF10` the BIC-approximated Bayes factor for the link and
   `P.post` the posterior probability of the link given a 50 % prior;
 * `sig` is the decision (`*` codes as in `summary.lm`);
 * the **classification** block reads the two directions together.
@@ -193,10 +193,10 @@ $I(x_{t-\text{lag}};\, y_t \mid y_{t-1}, \dots)$ with the Frenzel-Pompe
 the cause, surrogates that keep its location and scale given the
 conditioning past (Runge's (2018) local permutations
 are an option); `method = "te"` is the binned transfer entropy of
-Schreiber (2000), tested against circular shifts of the coded cause
-(`method_args = list(reference = "conditional")` uses conditional shifts,
-which matter in the reverse direction of a strong link whose driver is
-persistent); `method = "rf_granger"` replaces the regression by a
+Schreiber (2000), tested against conditional shifts as well
+(`method_args = list(reference = "circular")` gives plain circular shifts
+of the coded cause, which reject too often in the reverse direction of a
+link whose driver is persistent); `method = "rf_granger"` replaces the regression by a
 random forest. The verdicts of several methods can be compared in one
 call:
 
@@ -242,20 +242,25 @@ Without noise the driven series contains its driver: here $x_t$ is a
 quadratic polynomial of $y_t$ and $y_{t-1}$ (Takens' theorem in its
 simplest form). Given the past of $y$, the past of $x$ then has nothing to
 add, and a test of conditional independence is not informative:
-`method = "cmi"` and `method = "rf_granger"` notice that the past of the
-effect determines the cause, carry out no test and say so in a warning.
+`method = "cmi"`, `method = "te"` and `method = "rf_granger"` notice that
+the past of the effect determines the cause, carry out no test and say so
+in a warning.
 The state-space methods use exactly this reconstruction -- `method = "ccm"`
 is Sugihara et al.'s (2012) convergent cross mapping -- and the transfer
 entropy with plain circular shifts tests dependence as such:
 
 ```{r compare-det}
-cd <- compare_methods(lg, methods = c("granger", "te", "ccm"), seed = 1)
+cd <- compare_methods(lg, methods = c("granger", "te", "ccm"), seed = 1,
+                      args = list(te = list(method_args = list(reference = "circular"))))
 cd$table
 ```
 
-All three find the link here; this coupling of the two maps also leaves a
-linear trace. With observational noise the conditional tests are
-informative again (`sim_logistic(noise = 0.05)`).
+All three find the link from `x` to `y`; this coupling of the two maps also
+leaves a linear trace. Convergent cross mapping reports the reverse
+direction as well: the embedding of a strong driver carries some
+information about the driven map, and the method tends to read strong
+one-directional coupling as bidirectional. With observational noise the
+conditional tests are informative again (`sim_logistic(noise = 0.05)`).
 The CCM result can be inspected through the cross-map
 skill against the library size (`plot(r, "lags")` for a `ccm` result):
 
@@ -330,27 +335,31 @@ tab
 ```
 
 (`lag = 1` fixes the coupling lag, which is known here, and saves the lag
-search.) Only `cmi_lag` reports the contemporaneous dependence; the others
+search.) On the noise-free logistic maps `cmi` and `te` carry out no test,
+because the past of the effect determines the cause (Section 4.2), and
+report no relation. For the pair with correlated innovations only
+`cmi_lag` reports the contemporaneous dependence; the others
 report (correctly) that neither series Granger-causes the other, which the
 classification calls `independent`, that is, no relation detected.
 
 ## Benchmark with known truth
 
 `benchmark_methods()` simulates every scenario of a simulator several
-times, runs the methods and scores the class against the truth. Small
-sizes are used here to keep the vignette quick; in practice use more
-replications.
+times, runs the methods and scores the class against the truth. Ten
+replications per scenario are used here (the result is stored with the
+vignette); in practice use more: with ten, one chance finding of a test at
+the 5% level changes a cell by 0.1.
 
 ```{r benchmark, eval = FALSE}
 bm <- benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "bidirectional", "independent"),
-                        simulator = sim_var, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+                        simulator = sim_var, n = 300, reps = 10, seed = 1, args = list(cmi = list(lag = 1)))
 bm
 plot(bm)
 ```
 
 ```{r benchmark-run, echo = FALSE, fig.height = 4, fig.cap = "benchmark_methods(): accuracy per scenario on linear VAR data."}
 bm <- .pre("benchmark", benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "bidirectional", "independent"),
-                        simulator = sim_var, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1))))
+                        simulator = sim_var, n = 300, reps = 10, seed = 1, args = list(cmi = list(lag = 1))))
 bm$simulator <- "sim_var"
 bm
 plot(bm)
@@ -361,13 +370,13 @@ the linear test is at a disadvantage:
 
 ```{r benchmark2, eval = FALSE}
 bm2 <- benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "independent"),
-                         simulator = sim_nonlinear, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1)))
+                         simulator = sim_nonlinear, n = 300, reps = 10, seed = 1, args = list(cmi = list(lag = 1)))
 plot(bm2)
 ```
 
 ```{r benchmark2-run, echo = FALSE, fig.height = 4, fig.cap = "Accuracy per scenario on stochastic series with a nonlinear link."}
 bm2 <- .pre("benchmark2", benchmark_methods(methods = c("granger", "cmi", "te"), scenarios = c("x_to_y", "independent"),
-                         simulator = sim_nonlinear, n = 300, reps = 2, seed = 1, args = list(cmi = list(lag = 1))))
+                         simulator = sim_nonlinear, n = 300, reps = 10, seed = 1, args = list(cmi = list(lag = 1))))
 bm2$simulator <- "sim_nonlinear"
 plot(bm2)
 ```
@@ -474,7 +483,7 @@ surrogates of every test; `bayes_granger()` runs its chains in parallel,
 `benchmark_methods()` its replications. Every unit of work draws from its
 own L'Ecuyer-CMRG random stream, so **the results do not depend on the
 number of cores**: for a given `seed`, `cores = 1` and `cores = 8` give the
-same p-values, Bayes factors and verdicts to the last digit, and the
+same p values, Bayes factors and verdicts to the last digit, and the
 session's generator is left where a serial call leaves it. Forked workers
 are used on Linux and macOS, a socket cluster (started for the call and closed at its end) on
 Windows, where the package must be installed; a cluster object from
@@ -482,9 +491,9 @@ Windows, where the package must be installed; a cluster object from
 sets the default for the session (`?Rcausality-parallel`).
 
 ```{r cores, eval = FALSE}
-rcausality(net, method = "cmi", cores = 4, seed = 1)
+rcausality(net, method = "cmi", cores = 2, seed = 1)
 rcausality(net, method = "cmi", cores = "auto", seed = 1)   # all physical cores but one
-options(Rcausality.cores = 4)                               # for every call of the session
+options(Rcausality.cores = 2)                               # for every call of the session
 ```
 
 ```{r cores-check, echo = TRUE}
@@ -504,7 +513,7 @@ noise series.
 my <- read.csv("series.csv")
 my <- prep_series(my, diff = 1)          # first differences, linear interpolation of NAs
 plot_series(my)
-res <- rcausality(my, method = "cmi", cores = "auto", seed = 1)
+res <- rcausality(my, method = "cmi", cores = 2, seed = 1)
 res; plot(res, "all")
 compare_methods(my, methods = c("granger", "cmi", "te"), seed = 1)
 ```

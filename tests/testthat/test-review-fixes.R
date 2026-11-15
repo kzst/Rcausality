@@ -1,6 +1,7 @@
 # Regression tests for the issues found in the 0.0.1 code review (October 2026).
 
 test_that("CMI decisions do not depend on the units of one series", {
+  skip_on_cran()
   lg <- nl_pair(400, 2)
   r0 <- rcausality(lg$x, lg$y, method = "cmi", lag = 1, n_perm = 60, seed = 1)
   r1 <- rcausality(1000 * lg$x, lg$y, method = "cmi", lag = 1, n_perm = 60, seed = 1)
@@ -71,6 +72,7 @@ test_that("the df-entropy method rejects short or incomplete input instead of cr
 })
 
 test_that("directions = 'forward' is honoured by every method", {
+  skip_on_cran()
   skip_if_not_installed("ranger")
   net <- sim_var(300, n_series = 3, seed = 1)
   m_small <- dfe_train(n_per_class = 3, lengths = c(200, 300), seed = 1)
@@ -126,6 +128,7 @@ test_that("ccdh and the pairwise drivers do not depend on the column names", {
 })
 
 test_that("dimensional causality: odd k and discrete data", {
+  skip_on_cran()
   db <- sim_logistic_bdc(1200, "x_to_y", seed = 1)
   expect_equal(dimensional_causality(db$x, db$y, m = 3, k_range = c(11, 15, 21), seed = 1)$best, "x_to_y")
   expect_no_error(dimensional_causality(round(db$x, 1), round(db$y, 1), m = 3, k_range = c(10, 20), seed = 1))
@@ -168,6 +171,7 @@ test_that("ordinal patterns use canonical codes", {
 })
 
 test_that("ccm uses the largest library for rho_max and plots work for posterior / skill based results", {
+  skip_on_cran()
   lg <- sim_logistic(300, "x_to_y", seed = 1)
   r <- ccm(lg$x, lg$y, E = 2, lib_sizes = c(100, 20, 50), n_surr = 10, seed = 1)
   expect_equal(r$rho$lib_size, c(20, 50, 100)); expect_equal(r$rho_max, r$rho$rho[3])

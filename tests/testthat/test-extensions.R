@@ -50,7 +50,7 @@ test_that("the spectral decomposition averages to the time-domain measure", {
   expect_silent(plot(gs))
 })
 
-test_that("the hierarchical Minnesota prior works where the F-test cannot", {
+test_that("the hierarchical Minnesota prior works where the F test cannot", {
   d <- sim_var(200, "x_to_y", seed = 5)
   ctl <- bayes_control(prior = "minnesota", n_iter = 100, chains = 2)
   a <- bayes_granger(d$y, d$x, lag = 2, control = ctl, seed = 1)
@@ -73,6 +73,7 @@ test_that("the hierarchical Minnesota prior works where the F-test cannot", {
 })
 
 test_that("random-forest Granger-like test", {
+  skip_on_cran()
   skip_if_not_installed("ranger")
   d <- sim_logistic(250, "x_to_y", seed = 1)
   r <- rcausality(d, method = "rf_granger", lag = 1, n_perm = 40, seed = 1, method_args = list(num_trees = 60, folds = 3))
@@ -96,6 +97,7 @@ test_that("random-forest results do not depend on the number of cores", {
 })
 
 test_that("placebo test and time reversal", {
+  skip_on_cran()
   d <- sim_var(300, "x_to_y", seed = 1)
   r <- rcausality(d)
   pl <- placebo_test(r, n_placebo = 19, reverse = TRUE, seed = 1)
@@ -111,6 +113,7 @@ test_that("placebo test and time reversal", {
 })
 
 test_that("robustness grid", {
+  skip_on_cran()
   d <- sim_var(300, n_series = 3, seed = 2)
   r <- rcausality(d)
   rb <- robustness(r, lags = 1:2, adjust = c("holm", "BH"), n_sub = 4, methods = "toda_yamamoto", seed = 1)
@@ -158,6 +161,7 @@ test_that("method comparison runs in parallel with identical verdicts", {
 })
 
 test_that("the node size of the forests is selected by the out-of-bag error", {
+  skip_on_cran()
   skip_if_not_installed("ranger")
   set.seed(1); y <- as.numeric(arima.sim(list(ar = 0.5), 300)); x <- as.numeric(arima.sim(list(ar = 0.5), 300))
   expect_true(all(Rcausality:::.rf_node_grid(300) >= 5))

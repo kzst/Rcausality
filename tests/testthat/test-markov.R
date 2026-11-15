@@ -17,6 +17,7 @@ test_that("turn-wheel: driver Markov, driven not (discrete exact test)", {
 })
 
 test_that("method = 'markov' returns a decision table in the causres", {
+  skip_on_cran()
   d <- sim_markov01(300, scenario = "x_to_y", seed = 1)
   r <- rcausality(d, method = "markov", n_perm = 49, n_markov = 29, seed = 1)
   expect_s3_class(r, "causres"); expect_false(is.null(r$markov))

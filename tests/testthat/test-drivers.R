@@ -11,6 +11,7 @@ test_that("sim_drivers() and the peak lag", {
 })
 
 test_that("causal drivers of a target: direct, indirect, not a driver", {
+  skip_on_cran()
   d <- sim_drivers(300, seed = 1)
   cd <- causal_drivers(d, target = "y")
   expect_s3_class(cd, c("causdrivers", "causres"))

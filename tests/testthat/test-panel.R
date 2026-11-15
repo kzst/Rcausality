@@ -36,7 +36,7 @@ test_that("building blocks of the panel tests", {
   # Bayesian FDR: the most probable cells with mean posterior null probability <= alpha
   expect_equal(ns$.bayes_fdr(c(0.99, 0.97, 0.6, 0.2), 0.05), c(TRUE, TRUE, FALSE, FALSE))
   expect_false(any(ns$.bayes_fdr(c(0.6, 0.5), 0.05)))
-  # combinations of p-values
+  # combinations of p values
   expect_lt(ns$.combine_p(rep(0.04, 10), "stouffer")$p_value, 1e-4)
   expect_equal(ns$.combine_p(c(0.01, 0.5, 0.9), "simes")$p_value, 0.03)
   # the group test: exchangeable pools give no evidence, a shifted observation does
@@ -44,7 +44,7 @@ test_that("building blocks of the panel tests", {
   nl0 <- lapply(1:20, function(i) { v <- rnorm(11); list(statistic = v[1], null = v[-1], alternative = "greater") })
   nl1 <- lapply(nl0, function(e) { e$statistic <- e$statistic + 2; e })
   expect_gt(ns$.group_mean_test(nl0, 2000)$p_value, 0.01); expect_lt(ns$.group_mean_test(nl1, 2000)$p_value, 0.01)
-  # empirical null: centred null z-scores leave the p-values, a shifted or wider null makes them larger
+  # empirical null: centred null z-scores leave the p values, a shifted or wider null makes them larger
   set.seed(2); p0 <- pnorm(rnorm(400), lower.tail = FALSE)
   en <- ns$.empirical_null(p0); expect_lt(en[["mu0"]], 0.25); expect_lt(en[["sigma0"]], 1.25)
   en2 <- ns$.empirical_null(pnorm(rnorm(400, 0.8, 1.5), lower.tail = FALSE)); expect_gt(en2[["mu0"]], 0.5); expect_gt(en2[["sigma0"]], 1.2)
@@ -69,7 +69,7 @@ test_that("building blocks of the panel tests", {
   expect_true(all(apply(i1$y, 2, function(v) isTRUE(all.equal(v, i1$y[, 1])))))
 })
 
-test_that("the engine reproduces the unit F-tests and the pooled half-panel-jackknife estimate", {
+test_that("the engine reproduces the unit F tests and the pooled half-panel-jackknife estimate", {
   ns <- asNamespace("Rcausality")
   pd <- sim_panel(n_units = 8, n_time = 24, seed = 4); U <- ns$.panel_units(pd, "unit", "time")$units
   set.seed(1); eng <- ns$.reg_engine(U, "y", "x", character(0), 1:2, 0L, 9L)
@@ -97,13 +97,14 @@ test_that("the engine reproduces the unit F-tests and the pooled half-panel-jack
 })
 
 test_that("Granger causality in a panel: units, group and pooled level", {
+  skip_on_cran()
   pd <- sim_panel(n_units = 25, n_time = 20, scenario = "x_to_y", seed = 1)
   pg <- panel_causality(pd, id = "unit", time = "time", seed = 1)
   expect_s3_class(pg, c("causpanel", "causres"))
   expect_equal(pg$classes$class, "x_to_y")
   expect_setequal(unique(pg$panel$level), c("group", "pooled")); expect_equal(pg$settings$panel$decision, "both")
   P <- pg$panel; expect_true(all(P$significant[P$cause == "x"])); expect_false(any(P$significant[P$cause == "y"]))
-  # the decision of both levels: the smaller p-value, doubled
+  # the decision of both levels: the smaller p value, doubled
   expect_equal(pg$pairs$p_value, vapply(split(P$p_value, factor(paste(P$cause, P$effect), unique(paste(P$cause, P$effect)))), function(p) min(1, 2 * min(p)), 0),
                ignore_attr = TRUE)
   U <- pg$units; expect_equal(nrow(U), 50L)
@@ -129,6 +130,7 @@ test_that("Granger causality in a panel: units, group and pooled level", {
 })
 
 test_that("decision levels, group tests and lag rules", {
+  skip_on_cran()
   pd <- sim_panel(n_units = 20, n_time = 20, scenario = "x_to_y", seed = 2)
   f <- function(...) panel_causality(pd, id = "unit", time = "time", seed = 1, ...)
   g <- f(panel = panel_control(decision = "group")); p <- f(panel = panel_control(decision = "pooled"))
@@ -153,6 +155,7 @@ test_that("decision levels, group tests and lag rules", {
 })
 
 test_that("Bayesian panel variants", {
+  skip_on_cran()
   pd <- sim_panel(n_units = 20, n_time = 20, scenario = "x_to_y", seed = 2)
   for (pr in c("bic", "hyper_g")) {
     b <- rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = pr, seed = 1)
@@ -207,6 +210,7 @@ test_that("model-free methods with units analysed one by one: surrogate group te
 })
 
 test_that("unbalanced panels, missing values, time effects, input checks", {
+  skip_on_cran()
   pd <- sim_panel(n_units = 12, n_time = c(rep(18, 6), rep(26, 6)), scenario = "x_to_y", coupling = 0.6, seed = 5)
   pd$y[c(5, 40)] <- NA
   r <- panel_causality(pd[sample(nrow(pd)), ], id = "unit", time = "time", seed = 1)      # row order does not matter

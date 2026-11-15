@@ -59,6 +59,7 @@ test_that("bayes_control validates and prints", {
 })
 
 test_that("surrogate_bf: closed form agrees with Monte Carlo, direction and scale behave", {
+  skip_on_cran()
   set.seed(1); nl <- rnorm(300)
   a <- surrogate_bf(3, nl, effect_prior = "half_normal", null_model = "normal")$bf10
   b <- surrogate_bf(3, nl, effect_prior = "half_normal", null_model = "kde", n_draws = 20000, seed = 2)$bf10
@@ -132,6 +133,7 @@ test_that("rcausality(bayes = TRUE) runs every family and fills the Bayesian col
 })
 
 test_that("the g-prior scale and the hyper-g parameter of bayes_control() take effect", {
+  skip_on_cran()
   d <- sim_var(200, "x_to_y", seed = 1)
   bf <- function(...) bayes_granger(d$y, d$x, lag = 2, control = bayes_control(...))$bf10
   # g = scale * N: the closed form against its definition
