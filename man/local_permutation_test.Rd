@@ -45,7 +45,7 @@ Z-space (Runge, 2018), preserving the X-Z dependence.
 \examples{
 # x and y share the common cause z.  Unconditionally they are dependent;
 # conditionally on z they are independent, and the local permutation test
-# (which permutes x within neighbourhoods of z) gives a large p-value.
+# (which permutes x within neighbourhoods of z) gives a large p value.
 set.seed(2); z <- rnorm(300); x <- z + rnorm(300, 0, .5); y <- z + rnorm(300, 0, .5)
 local_permutation_test(x, y, n_perm = 50)$p_value       # small: dependent
 local_permutation_test(x, y, z, n_perm = 50)$p_value    # large: independent given z

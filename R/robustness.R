@@ -4,7 +4,7 @@
 #    every series keeps its own dynamics (independent circular shifts):
 #    the number of links found in placebo data estimates the false-positive
 #    level of the whole analysis, and the placebo distribution of a link's
-#    evidence gives a placebo p-value (Theiler et al. 1992; Kosztyan, Matrai
+#    evidence gives a placebo p value (Theiler et al. 1992; Kosztyan, Matrai
 #    and Kiss 2026);
 #  * time reversal: for a genuine directed link the reversed series show the
 #    opposite direction, whereas links produced by (non-directional)
@@ -67,7 +67,7 @@
   D[] <- lapply(seq_along(D), function(k) .rot(D[[k]], off[k])); D
 }
 # Two series have only n - 2 m + 1 relative circular offsets of at least m; more placebo data sets than that repeat
-# them, and a placebo p-value below 1 / (number of offsets + 1) would state a resolution that the data do not have.
+# them, and a placebo p value below 1 / (number of offsets + 1) would state a resolution that the data do not have.
 .placebo_offsets <- function(K, n, min_shift) {
   if (K != 2L) return(NULL)
   m <- max(1L, min(as.integer(floor(min_shift * n)), n %/% 2L)); if (n - m < m) NULL else m:(n - m)
@@ -99,7 +99,7 @@
 }
 
 # evidence of every directed test on a common scale: log10 BF10 for the
-# Bayesian variants, -log10 adjusted p when the method has p-values,
+# Bayesian variants, -log10 adjusted p when the method has p values,
 # otherwise log10 BF10, otherwise the statistic
 .evidence_of <- function(P, bayes = FALSE) {
   if (bayes && any(!is.na(P$bf10))) log10(pmax(P$bf10, 1e-300))
@@ -117,10 +117,10 @@
 #' neighbouring lag. The shift keeps the autocorrelation and the marginal distribution
 #' of every series and destroys the lead-lag relations between them, so the
 #' placebo runs show what the method finds when there is nothing to find:
-#' * the global placebo p-value compares the number of links of the
+#' * the global placebo p value compares the number of links of the
 #'   original analysis with the placebo distribution of the number of links;
-#' * the link-level placebo p-value compares the evidence of a link
-#'   (`-log10` adjusted p-value, or `log10` Bayes factor) with its placebo
+#' * the link-level placebo p value compares the evidence of a link
+#'   (`-log10` adjusted p value, or `log10` Bayes factor) with its placebo
 #'   distribution; the placebo rate is the share of placebo runs in which the
 #'   link is declared.
 #' With `reverse = TRUE` the analysis is also repeated on the time-reversed
@@ -131,9 +131,24 @@
 #' a genuine lead-lag relation around, whereas a link produced by symmetric
 #' dependence (for instance a common driver observed with noise) does not
 #' change sign. The check is one-sided: a score that is not positive speaks
-#' against the direction `x -> y`; a positive score does not confirm it
-#' (about half of the false links of simulated common-driver data have
-#' one).
+#' against the direction `x -> y`; a positive score does not confirm it.
+#' A declared direction is the one with the larger effect size, so that its
+#' score is positive for most declared links whether they are genuine or not
+#' (in the simulations of the accompanying paper for more than nine in ten
+#' links declared between unrelated series); the size of the score says
+#' more than its sign.
+#'
+#' How to read the placebo rates. An analysis that corrects for its `M`
+#' tests declares one given link in about `alpha / M` of the data sets
+#' without links, not in `alpha` of them, and the rate of one link varies
+#' between data sets. The quantity with a known reference value is the
+#' share of placebo data sets with at least one declared link
+#' (`any_rate`): for a valid analysis it is about `alpha`. The rate of one
+#' link can be small although the analysis is not valid for series of this
+#' kind (a link that the analysis declares between two random walks by
+#' chance is declared again in few of the shifted data sets), and the
+#' placebo p value of a link is small for most links that a valid test
+#' declares by chance: neither confirms a link.
 #'
 #' For panel analyses ([panel_causality()]) a placebo panel reassigns every
 #' variable across the units: each unit gets each of its variables from a
@@ -159,9 +174,10 @@
 #'   (each run is serial); the result does not depend on the number of
 #'   cores (see [Rcausality-parallel]).
 #' @return An object of class `causplacebo`: `links` (one row per directed
-#'   test: observed decision and evidence, placebo rate, placebo p-value and,
+#'   test: observed decision and evidence, placebo rate, placebo p value and,
 #'   with `reverse`, the net scores and their difference `trgc`), `counts` (the
-#'   number of links in every placebo run), `observed` (number of links of the
+#'   number of links in every placebo run), `any_rate` (the share of placebo
+#'   runs with at least one link), `observed` (number of links of the
 #'   original analysis), `p_global`, `settings`. Methods: `print`, `plot`.
 #' @references
 #' Theiler, J., Eubank, S., Longtin, A., Galdrikian, B. and Farmer, J. D. (1992). Testing for nonlinearity in time series: the method of surrogate data. *Physica D*, 58(1-4), 77-94. \doi{10.1016/0167-2789(92)90102-S}
@@ -177,12 +193,13 @@
 #' # with the lead-lag structure destroyed the analysis finds (almost) no
 #' # link, so the detected links are not an artefact of autocorrelation
 #' d <- sim_var(300, n_series = 3, seed = 2)
-#' r <- rcausality(d)
+#' r <- rcausality(d, max_lag = 3)
 #' pl <- placebo_test(r, n_placebo = 19, seed = 1)
 #' pl
 #' \donttest{
 #' plot(pl)
-#' placebo_test(r, n_placebo = 99, reverse = TRUE, seed = 1, cores = 2)
+#' # more placebo data sets (use 99 or more in practice), with the time-reversed analysis
+#' placebo_test(r, n_placebo = 39, reverse = TRUE, seed = 1, cores = 2)
 #' }
 placebo_test <- function(object, n_placebo = 99L, min_shift = 0.1, reverse = FALSE, seed = NULL,
                          cores = getOption("Rcausality.cores", 1L)) {
@@ -199,7 +216,7 @@ placebo_test <- function(object, n_placebo = 99L, min_shift = 0.1, reverse = FAL
   rel <- if (panel) NULL else .placebo_offsets(ncol(D), n, min_shift)
   if (!is.null(rel) && n_placebo >= length(rel)) {
     message(sprintf(paste0("placebo_test: two series of length %d have %d relative circular offsets of at least %.0f%% of the length; each of ",
-                           "them is used once (n_placebo = %d would repeat them), and the smallest placebo p-value is %s."),
+                           "them is used once (n_placebo = %d would repeat them), and the smallest placebo p value is %s."),
                     n, length(rel), 100 * min_shift, as.integer(n_placebo), .fmt_p(1 / (1 + length(rel)))))
     n_placebo <- length(rel)
   } else rel <- NULL
@@ -227,11 +244,12 @@ placebo_test <- function(object, n_placebo = 99L, min_shift = 0.1, reverse = FAL
     links$net_forward <- net_f; links$net_reversed <- net_r; links$trgc <- net_f - net_r
     links$reversed_significant <- Pr$significant[match(key, kr)] %in% TRUE
   }
-  structure(list(links = links, counts = counts, observed = n_obs,
+  structure(list(links = links, counts = counts, any_rate = mean(counts > 0), observed = n_obs,
                  p_global = (1 + sum(counts >= n_obs)) / (1 + n_placebo),
                  settings = list(method = object$settings$method, n_placebo = n_placebo, min_shift = min_shift,
                                  reverse = reverse, n = n, panel = inherits(object, "causpanel"),
-                                 all_offsets = !is.null(rel))), class = "causplacebo")
+                                 all_offsets = !is.null(rel), alpha = object$settings$alpha, n_tests = length(key),
+                                 bayes = is_bayes(object), adjust = object$settings$adjust)), class = "causplacebo")
 }
 
 #' @export
@@ -243,6 +261,9 @@ print.causplacebo <- function(x, ...) {
                    100 * s$min_shift))
   .out(sprintf("  links found: %d in the data; in the placebo data mean %.2f, 95%% quantile %g; global placebo p = %s\n",
               x$observed, mean(x$counts), stats::quantile(x$counts, 0.95), .fmt_p(x$p_global)))
+  if (!is.null(x$any_rate))
+    .out(sprintf("  placebo data sets with at least one link: %.0f%%%s\n", 100 * x$any_rate,
+                 if (isTRUE(s$bayes) || is.null(s$alpha)) "" else sprintf(" (a valid analysis: about alpha = %g)", s$alpha)))
   L <- x$links
   tb <- data.frame(link = L$link, significant = ifelse(L$significant, "yes", "no"), evidence = round(L$evidence, 2),
                    placebo.rate = sprintf("%.2f", L$placebo_rate), p.placebo = .fmt_p(L$p_placebo), stringsAsFactors = FALSE)
@@ -251,11 +272,14 @@ print.causplacebo <- function(x, ...) {
     tb$time.reversal <- ifelse(is.na(L$trgc), "-", ifelse(L$trgc > 0, "positive", "not positive: speaks against the link"))
   }
   print(tb, row.names = FALSE, right = FALSE)
-  .out("  evidence = -log10 adjusted p (or log10 BF10); placebo.rate = share of placebo runs declaring the link;\n",
+  .out("  evidence = -log10 adjusted p (or log10 BF10); placebo.rate = share of placebo runs declaring the link",
+      if (!isTRUE(s$bayes) && !is.null(s$n_tests) && s$n_tests > 1L && !identical(s$adjust, "none"))
+        sprintf("\n (a valid analysis with %d corrected tests: about alpha / %d per link)", s$n_tests, s$n_tests) else "", ";\n",
       " p.placebo = share of placebo runs with at least the observed evidence", if (isTRUE(s$reverse))
         paste0(";\n TRGC = net score s(cause->effect) - s(effect->cause) in the data minus the same in the time-reversed data",
-               "\n (s = effect size of the method; a genuine lead gives a positive score, but so do about half of the links that an",
-               "\n asymmetry without a lead produces: only a score that is not positive is informative)") else "", "\n", sep = "")
+               "\n (s = effect size of the method; a declared link has the larger effect size of its pair, so that its score is",
+               "\n positive for most declared links, genuine or not: a score that is not positive speaks against the link, a",
+               "\n positive one says little, and its size says more than its sign)") else "", "\n", sep = "")
   invisible(x)
 }
 
@@ -278,7 +302,7 @@ plot.causplacebo <- function(x, main = NULL, ...) {
   xr <- range(0, L$evidence, na.rm = TRUE); xr[2] <- xr[2] + 0.3 * diff(xr)
   graphics::plot(L$evidence, seq_len(nrow(L)), xlim = xr, yaxt = "n", ylab = "",
                  xlab = "evidence (-log10 adj. p or log10 BF)", pch = 21, bg = ifelse(L$significant, .pal$causal, "grey85"),
-                 col = .pal$border, cex = 1.3, main = "Link evidence and placebo p-value", font.main = 2, cex.main = 0.9)
+                 col = .pal$border, cex = 1.3, main = "Link evidence and placebo p value", font.main = 2, cex.main = 0.9)
   graphics::axis(2, at = seq_len(nrow(L)), labels = L$link, las = 1, cex.axis = 0.8)
   graphics::text(L$evidence, seq_len(nrow(L)), sprintf("  p.plac %s", .fmt_p(L$p_placebo)), adj = 0, cex = 0.65, col = "grey30", xpd = NA)
   invisible(x)
@@ -290,7 +314,7 @@ plot.causplacebo <- function(x, main = NULL, ...) {
 #' alternative settings and reports, for every directed link, in how many of
 #' them it is declared:
 #' * `lags`: fixed lag orders instead of the selected one;
-#' * `adjust`: other multiplicity corrections of the same p-values (e.g.
+#' * `adjust`: other multiplicity corrections of the same p values (e.g.
 #'   Benjamini-Hochberg FDR control instead of Holm's family-wise control;
 #'   no re-run needed);
 #' * `subsamples`: `n_sub` contiguous blocks of `fraction` of the

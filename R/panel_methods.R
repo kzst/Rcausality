@@ -32,7 +32,7 @@
               if (identical(ps$lag_rule, "pooled BIC")) "; lag order of every link by the BIC of its pooled regression"
               else if (identical(ps$lag_rule, "first")) "; first significant lag order" else ""))
   lv <- c(group = "group level (the unit results combined)", pooled = "pooled level (stacked units)",
-          both = if (ps$use_bf) "group or pooled level (average of the two Bayes factors)" else "group or pooled level (smaller p-value, doubled)")
+          both = if (ps$use_bf) "group or pooled level (average of the two Bayes factors)" else "group or pooled level (smaller p value, doubled)")
   .out(sprintf("  decision: %s; link if %s\n", lv[[ps$decision]],
               if (ps$use_bf) sprintf("BF10 > %g", s$bf_threshold) else sprintf("adj. p < %g (%s)", s$alpha, s$adjust)))
   if (ps$units_analysed > 0)
@@ -54,17 +54,23 @@ print.causpanel <- function(x, digits = 3, ...) {
   if ("pooled" %in% ps$levels) show$pooled <- paste0(ev(tb$pooled_p, tb$pooled_bf), ifelse(tb$pooled %in% TRUE, " *", ""))
   show$panel <- paste0(if (ps$use_bf) ifelse(is.na(x$pairs$bf10), "-", paste("BF", .fmt_bf(x$pairs$bf10))) else
     ifelse(is.na(x$pairs$p_adj), "-", .fmt_p(x$pairs$p_adj)), ifelse(tb$significant, " *", ""))
-  if (any(is.finite(tb$prevalence)))
-    show$prevalence <- ifelse(is.finite(tb$prevalence), sprintf("%.2f [%.2f, %.2f]", tb$prevalence, tb$prevalence_lower, tb$prevalence_upper), "-")
   .out("\n"); print(show, row.names = FALSE, right = FALSE)
   .out("\n")
   if (ps$units_analysed > 0) .out("  units: units with the link / units analysed (after the error control over all cells)\n")
   .out(sprintf("  %s\n", if (ps$use_bf) "group: Bayes factor of 'some units have the link'; pooled: Bayes factor of the stacked units"
-                         else "group, pooled: p-values of the two panel-level tests"))
+                         else "group, pooled: p values of the two panel-level tests"))
   .out(sprintf("  panel: the decision -- %s; * = link\n",
-              if (ps$decision == "both") { if (ps$use_bf) "average of the two Bayes factors" else sprintf("the smaller p-value doubled, %s-adjusted over the links", x$settings$adjust) }
-              else if (ps$use_bf) sprintf("the Bayes factor of the %s level", ps$decision) else sprintf("the %s-adjusted p-value of the %s level", x$settings$adjust, ps$decision)))
-  if (any(is.finite(tb$prevalence))) .out("  prevalence: model-based share of the units with a detectable link, posterior mean [credible interval]\n")
+              if (ps$decision == "both") { if (ps$use_bf) "average of the two Bayes factors" else sprintf("the smaller p value doubled, %s-adjusted over the links", x$settings$adjust) }
+              else if (ps$use_bf) sprintf("the Bayes factor of the %s level", ps$decision) else sprintf("the %s-adjusted p value of the %s level", x$settings$adjust, ps$decision)))
+  if (ps$decision == "both" && ps$use_bf)
+    .out("  (the average is at least half of the larger Bayes factor: evidence against a link is read from the two columns)\n")
+  if (any(is.finite(tb$prevalence))) {
+    # (a table of its own: a further column would wrap, without the names of the links, at the usual widths)
+    .out("\nShare of the units with a detectable link (model-based, posterior mean [credible interval]):\n")
+    print(data.frame(link = tb$link, prevalence = ifelse(is.finite(tb$prevalence),
+                                                         sprintf("%.2f [%.2f, %.2f]", tb$prevalence, tb$prevalence_lower, tb$prevalence_upper), "-"),
+                     stringsAsFactors = FALSE), row.names = FALSE, right = FALSE)
+  }
   C <- x$classes
   .out("\nRelations in the panel:\n")
   for (i in seq_len(nrow(C))) .out(sprintf("  %s\n", C$relation[i]))
@@ -77,7 +83,7 @@ print.causpanel <- function(x, digits = 3, ...) {
 #' @param ... unused.
 #' @return A list of class `summary.causpanel` with the link table (`links`:
 #'   one row per directed link with the unit counts, the group- and
-#'   pooled-level statistics, p-values and Bayes factors, the posterior
+#'   pooled-level statistics, p values and Bayes factors, the posterior
 #'   prevalence and the decisions), the unit table restricted to the units
 #'   with a link after the error control (`units`), and the settings.
 #' @export

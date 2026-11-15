@@ -28,7 +28,7 @@ in \code{\link[=causal_methods]{causal_methods()}}).}
 \verb{$classes}): \code{"group"}, \code{"pooled"}, \code{"both"} or \code{"auto"} (= \code{"both"}
 when both levels are available, otherwise the available one). With
 \code{"both"} a link is declared when either level shows it: the smaller of
-the two p-values, doubled (a Bonferroni correction over the two tests),
+the two p values, doubled (a Bonferroni correction over the two tests),
 or -- for Bayes-factor decisions -- the average of the two Bayes
 factors. The two levels are sensitive to different alternatives: the
 pooled test to an effect that has the same direction in most units, the
@@ -45,26 +45,29 @@ differenced series or, for the two information measures,
 \item{combine}{the group-level test:
 \code{"auto"} (the natural one for the method: \code{"mean"} for the methods whose
 unit statistic has a bootstrap or surrogate null distribution,
-\code{"stouffer"} for the methods with asymptotic p-values only, \code{"count"}
+\code{"stouffer"} for the methods with asymptotic p values only, \code{"count"}
 for the methods whose decision is a table or a verdict), or one of
 \itemize{
 \item \code{"mean"}: the sum of the unit statistics, each standardised with the
 mean and the standard deviation of its own null sample (a
 nonparametric combination test, Pesarin and Salmaso 2010), against the
 convolution of the unit null distributions (Monte Carlo with
-\code{n_draws} draws);
+\code{n_draws} draws), which treats the units as independent; with
+\code{resample = "periods"} (Granger family) against the values of the
+same statistic in the bootstrap panels, which keep the dependence
+between the units;
 \item \code{"dh"}: Dumitrescu and Hurlin (2012), the mean of the unit Wald
 statistics standardised with the moments of the F distribution
 (Granger family). The normal approximation is anti-conservative for
 short and persistent series; the statistic is always reported next to
 the \code{"mean"} test;
 \item \code{"stouffer"}, \code{"fisher"}, \code{"simes"}: combinations of the unit
-p-values;
+p values;
 \item \code{"count"}: the number of units with a link at level \code{alpha} against
 the Binomial(\code{n_units}, \code{alpha}) distribution.
 }}
 
-\item{unit_adjust}{correction of the unit-level p-values over all unit x
+\item{unit_adjust}{correction of the unit-level p values over all unit x
 link cells (passed to \code{\link[stats:p.adjust]{stats::p.adjust()}}; default Benjamini-Hochberg).}
 
 \item{prevalence_prior}{the two parameters of the Beta prior of the share
@@ -95,9 +98,15 @@ regenerates the effect and keeps the cause as observed.}
 residuals; \code{"periods"}: the same resampled periods are used in all
 units (balanced panels), which keeps the dependence between the units
 (common shocks and factors with any loadings) in the reference
-distribution. With \code{decision = "group"} this is the bootstrap test of
+distributions of both panel-level tests: the pooled statistic and the
+group statistic are referred to their values in the bootstrap panels
+(at least 199 of them, and as many as the multiplicity correction
+needs). With \code{decision = "group"} this is the bootstrap test of
 Dumitrescu and Hurlin (2012, Section 6.2), with the unit statistics
-combined as in \code{combine}.}
+combined as in \code{combine}. A common factor with memory is in addition a
+common driver of the series within a unit, which no reference
+distribution removes (the rejection rates of simulated panels are in
+the accompanying paper).}
 
 \item{n_draws}{Monte Carlo size of the \code{"mean"} group test.}
 }

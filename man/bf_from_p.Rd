@@ -2,12 +2,12 @@
 % Please edit documentation in R/granger.R
 \name{bf_from_p}
 \alias{bf_from_p}
-\title{Calibrated Bayes-factor bound from a p-value}
+\title{Calibrated Bayes-factor bound from a p value}
 \usage{
 bf_from_p(p, prior_prob = 0.5)
 }
 \arguments{
-\item{p}{numeric vector of p-values.}
+\item{p}{numeric vector of p values.}
 
 \item{prior_prob}{prior probability of the alternative (a causal link).}
 }
@@ -15,10 +15,10 @@ bf_from_p(p, prior_prob = 0.5)
 A data frame with \code{bf10} (the bound) and \code{post_prob}.
 }
 \description{
-The Sellke-Bayarri-Berger calibration: for a p-value \code{p < 1/e} the Bayes
+The Sellke-Bayarri-Berger calibration: for a p value \code{p < 1/e} the Bayes
 factor in favour of the alternative is at most \verb{1 / (-e p log p)} over a
-wide class of alternatives; the bound is \code{1} for larger p-values. It
-turns the permutation / surrogate p-values of the model-free methods
+wide class of alternatives; the bound is \code{1} for larger p values. It
+turns the permutation / surrogate p values of the model-free methods
 into a Bayes factor (an upper bound, i.e. the most favourable reading of
 the evidence) and a posterior probability of a link.
 }

@@ -109,7 +109,7 @@
 #' @param target,s1,s2 numeric vectors (continuous or discrete) of equal
 #'   length; the rows are the joint observations.
 #' @param k_target,k_source binarisation depths (1 bit = median split).
-#' @param n_surr number of permutation replicates for the p-values. The
+#' @param n_surr number of permutation replicates for the p values. The
 #'   replicates for the atoms of source 1 (`unique_1`, `synergy` and the novel
 #'   information `novel_1 = unique_1 + synergy = I(target; s1 | s2)`) permute
 #'   `s1` within the levels of the coded `s2`, which generates the null
@@ -123,7 +123,7 @@
 #' @return An object of class `marpid`: `atoms` (named vector in bits,
 #'   summed over the target bits: `redundant`, `unique_1`, `unique_2`,
 #'   `synergy`, `total`), `per_bit` (average per target bit), `by_bit`
-#'   (matrix: one row per target bit), `p_values` (surrogate p-values of
+#'   (matrix: one row per target bit), `p_values` (surrogate p values of
 #'   `unique_1`, `unique_2`, `synergy`, `novel_1`, `novel_2`), `null` (the
 #'   surrogate draws of the same quantities, per target bit), `settings`.
 #'   Method: `print`.
@@ -142,7 +142,7 @@
 #' marpid(target = (a + b) %% 2, s1 = a, s2 = b, k_target = 1, k_source = 1)   # pure synergy
 #' marpid(target = a, s1 = a, s2 = a, k_target = 1, k_source = 1)             # pure redundancy
 #' \donttest{
-#' # continuous variables are binarised to k bits; surrogates give p-values of
+#' # continuous variables are binarised to k bits; surrogates give p values of
 #' # the unique and synergistic atoms (here s1 is informative, s2 is noise)
 #' t <- rnorm(1000); s1 <- t + rnorm(1000); s2 <- rnorm(1000)
 #' marpid(t, s1, s2, k_target = 2, k_source = 2, n_surr = 50, seed = 1)
@@ -228,13 +228,13 @@ print.marpid <- function(x, digits = 3, ...) {
 # (its values; see .cond_split()), coded after the shift: the surrogates keep the dependence of the cause on that past.
 # They need series on a continuous scale (series that take at most 2^k_source values are permuted).
 .pid_ref_arg <- function(v) {
-  v <- tolower(if (is.null(v)) "permutation" else as.character(v)[1L])
-  if (!v %in% c("permutation", "conditional")) stop("`reference` must be \"permutation\" or \"conditional\".", call. = FALSE)
+  v <- tolower(if (is.null(v)) "conditional" else as.character(v)[1L])
+  if (!v %in% c("permutation", "conditional")) stop("`reference` must be \"conditional\" or \"permutation\".", call. = FALSE)
   v
 }
 .rcausality_pid <- function(all, grid, causes, effects, alpha, adjust, lags, history, k_target, k_source, n_perm,
-                            cl, cores, reference = "permutation") {
-  n <- nrow(all)
+                            cl, cores, reference = "permutation", own_order = NULL) {
+  n <- nrow(all); if (is.null(own_order)) own_order <- rep(0L, nrow(grid))
   sc <- .split_cores(nrow(grid), cores); pair_cores <- sc$outer; inner_cores <- sc$inner
   res <- .plapply(seq_len(nrow(grid)), function(i) {
     cs <- grid$cause[i]; ef <- grid$effect[i]; x <- all[[cs]]; y <- all[[ef]]; h <- history[i]
@@ -245,7 +245,8 @@ print.marpid <- function(x, digits = 3, ...) {
     if (cond) {
       # conditional shifts of the lags of the cause given the own past of the effect, one shift per replicate for all
       # lags (spaced by the number of lags, as in the other scans)
-      sp <- .cond_split(.hist_cols(y, t_idx, h), .num_mat(vapply(lags, function(tau) x[t_idx - tau], numeric(N))))
+      sp <- .cond_split(.cond_extra(.hist_cols(y, t_idx, h), y, t_idx, h, own_order[i]),
+                        .num_mat(vapply(lags, function(tau) x[t_idx - tau], numeric(N))))
       cond_r2 <- sp$r2; det <- .determined(sp$r2)
       surr <- lapply(.cmi_shifts(N, n_perm, by = length(lags)), function(s) .cond_surr(sp, ((seq_len(N) + s - 1L) %% N) + 1L))
       tests <- lapply(seq_along(lags), function(j) marpid(y[t_idx], x[t_idx - lags[j]], own, k_target, k_source, n_surr = length(surr),

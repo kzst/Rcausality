@@ -56,7 +56,7 @@ parallel (see \link{Rcausality-parallel}); the results do not depend on it.}
 }
 \value{
 An object of class \code{rf_granger}: \code{tests} (one row per direction:
-out-of-bag gain, surrogate p-value, out-of-sample gain, importance of the
+out-of-bag gain, surrogate p value, out-of-sample gain, importance of the
 best lag of the cause, shadow decision), \code{importance} (permutation
 importance of every feature, per direction), \code{null} (surrogate gains).
 Method: \code{print}.
@@ -93,7 +93,7 @@ circularly shifted copy of \code{x} added as a shadow.
 \donttest{
 if (requireNamespace("ranger", quietly = TRUE)) {
   # a nonlinear link x -> y without a linear trace: the forest gains from
-  # the past of x (small surrogate p-value, positive out-of-sample gain),
+  # the past of x (small surrogate p value, positive out-of-sample gain),
   # not the other way round
   d <- sim_nonlinear(300, "x_to_y", seed = 1)
   rf_granger(d$x, d$y, lag = 1, n_surr = 49, num_trees = 100, seed = 1)

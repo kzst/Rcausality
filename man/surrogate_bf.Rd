@@ -92,7 +92,7 @@ there, so that such Bayes factors rest on the normal tail.
 set.seed(1)
 surrogate_bf(3.2, rnorm(200))
 # A statistic inside the null distribution: BF10 < 1 is evidence *for* H0,
-# which a p-value cannot express.
+# which a p value cannot express.
 surrogate_bf(0.3, rnorm(200), scale = 0.5)
 }
 \references{

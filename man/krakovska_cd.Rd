@@ -52,7 +52,7 @@ embedding of the additive observation \verb{a x + y} (\code{a = sqrt(29/31)}) an
 the independent joint \verb{a X + Y*} with time-shuffled \verb{Y*}, as in Benko et
 al. (2024), so that all four dimensions carry the same embedding bias;
 relations are tested with the bootstrap standard errors of the estimates
-(z-tests at level \code{alpha}).
+(z tests at level \code{alpha}).
 }
 \examples{
 # x drives y: the joint attractor has the dimension of y (the driven system

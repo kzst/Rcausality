@@ -15,7 +15,7 @@ p <- t(sapply(seq_len(reps), function(r) {
     `alice0 x bob1` = mp(cbind(w$alice[-N], w$bob[-1])),
     `bob0 x barry0` = mp(cbind(w$bob, w$barry)))
 }))
-cat("Median p-values of the Markov test over", reps, "repetitions, n =", n, "\n")
+cat("Median p values of the Markov test over", reps, "repetitions, n =", n, "\n")
 print(round(apply(p, 2, median), 3))
 cat("Rejection rate at 5%:\n"); print(colMeans(p < 0.05))
 
@@ -39,5 +39,5 @@ q <- t(sapply(seq_len(reps), function(s) {
     `driver:0 x driven1:1` = mp(cbind(E$x0[-N, ], E$x1[-1, ])),
     `driven1:0 x driven2:0` = mp(cbind(E$x1, E$x2)))
 }))
-cat("\nCoupled logistic maps, median p-values over", reps, "runs (n = 2000):\n")
+cat("\nCoupled logistic maps, median p values over", reps, "runs (n = 2000):\n")
 print(round(apply(q, 2, median), 2))

@@ -27,7 +27,7 @@
 #' @export
 #' @examples
 #' # The same pair under three methods.  A linear VAR coupling is found by the
-#' # F-test, by the Bayes factor and by the transfer entropy; 'consensus' is
+#' # F test, by the Bayes factor and by the transfer entropy; 'consensus' is
 #' # the majority vote and 'agreement' the share of methods behind it.
 #' d <- sim_var(300, "x_to_y", seed = 1)
 #' cmp <- compare_methods(d, methods = c("granger", "bayes_granger", "te"), seed = 1)
@@ -37,7 +37,7 @@
 #' cmp$results$te       # the complete causres object of one of the methods
 #' # method-specific arguments go in `args`; the dots reach every method
 #' compare_methods(d, methods = c("granger", "cmi"), args = list(cmi = list(max_lag = 2)),
-#'                 n_perm = 100, seed = 1)
+#'                 n_perm = 50, seed = 1)
 #' # panel data: three members of the Granger family side by side
 #' pd <- sim_panel(n_units = 20, n_time = 25, seed = 1)
 #' compare_methods(pd, methods = c("granger", "bayes_granger", "toda_yamamoto"), id = "unit",
@@ -46,7 +46,10 @@
 compare_methods <- function(x, y = NULL, methods = c("granger", "bayes_granger", "cmi", "te"),
                             args = list(), cores = getOption("Rcausality.cores", 1L), ...) {
   methods <- match.arg(methods, .method_names, several.ok = TRUE)
+  force(x); force(y)                                    # (the data are evaluated here, not inside a unit of work)
   dots <- list(...)
+  # with a seed the generator of the session is left as it was, as by rcausality(seed = )
+  old <- .rng_setup(dots$seed); on.exit(.rng_restore(old), add = TRUE)
   sc <- .split_cores(length(methods), cores)
   results <- .plapply(methods, function(m) {
     a <- c(list(x = x, y = y, method = m, cores = sc$inner), dots, if (!is.null(args[[m]])) args[[m]])

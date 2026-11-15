@@ -37,20 +37,20 @@ pcmci_available <- function(python = NULL) {
 #' @param x a data frame / matrix with the series in columns (at least two).
 #' @param tau_max,tau_min maximal and minimal lag.
 #' @param test conditional-independence test: `"parcorr"` (linear partial
-#'   correlation, analytic p-values), `"robust_parcorr"` (rank-transformed),
-#'   `"cmiknn"` (kNN conditional mutual information, permutation p-values;
+#'   correlation, analytic p values), `"robust_parcorr"` (rank-transformed),
+#'   `"cmiknn"` (kNN conditional mutual information, permutation p values;
 #'   slow) or `"gpdc"` (Gaussian-process / distance correlation).
 #' @param pc_alpha significance level(s) of the condition-selection stage;
 #'   `NULL` lets tigramite pick it by model selection.
-#' @param alpha significance level of the final (adjusted) MCI p-values.
+#' @param alpha significance level of the final (adjusted) MCI p values.
 #' @param adjust multiple-testing correction applied by tigramite to the MCI
-#'   p-values: `"fdr_bh"` (Benjamini–Hochberg, tigramite's default) or `"none"`.
+#'   p values: `"fdr_bh"` (Benjamini–Hochberg, tigramite's default) or `"none"`.
 #' @param plus run PCMCI+ (`run_pcmciplus`) instead of PCMCI.
 #' @param python see [pcmci_available()].
 #' @param verbosity tigramite verbosity.
 #' @return A `causres` object (method `"pcmci"`). `pairs` holds, for every
-#'   ordered pair, the lag with the smallest MCI p-value; `by_lag` holds all
-#'   lags (`statistic` = test statistic, `p` = raw MCI p-value, `q` =
+#'   ordered pair, the lag with the smallest MCI p value; `by_lag` holds all
+#'   lags (`statistic` = test statistic, `p` = raw MCI p value, `q` =
 #'   adjusted); `instant` holds the contemporaneous links (lag 0) when
 #'   `plus = TRUE` or `tau_min = 0`; `pcmci` keeps tigramite's raw
 #'   `val_matrix`, `p_matrix`, `q_matrix` and `graph`.

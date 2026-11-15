@@ -27,9 +27,10 @@
 #' Schreiber's transfer entropy `TE(x -> y) = H(y[t] | y[t-1..t-l]) -
 #' H(y[t] | y[t-1..t-l], x[t-1..t-k])` in bits, estimated from the
 #' quantile-binned (symbolic) series. The null distribution comes from
-#' circular-shift surrogates of `x` (its own dynamics kept, the coupling
-#' destroyed); the *effective* transfer entropy is `TE - mean(TE of the
-#' surrogates)` (Marschinski and Kantz, 2002). A kNN (continuous) transfer
+#' surrogates of `x` that keep its own dynamics and destroy the coupling
+#' (conditional shifts by default, see below); the *effective* transfer
+#' entropy is `TE - mean(TE of the surrogates)` (Marschinski and Kantz,
+#' 2002). A kNN (continuous) transfer
 #' entropy is available as `rcausality(method = "cmi")`, since the transfer
 #' entropy is the conditional mutual information `I(x past; y[t] | y past)`.
 #'
@@ -41,14 +42,18 @@
 #' strongly autocorrelated past: when `x` is driven by `y` and `y` is
 #' persistent, the coded past of `x` keeps information about `y[t]`, and the
 #' test of `x -> y` rejects too often in long series (the simulation study
-#' of the accompanying paper gives the rates). `reference = "conditional"`
-#' uses conditional shifts of `x` given the past of `y` (location and scale
-#' of the lags of `x` as functions of that past, standardized residuals
-#' shifted circularly, see [rcausality()]), coded after the shift: the
-#' surrogates keep the dependence of `x` on the past of `y`. They need
-#' series on a continuous scale; symbolic series (at most `bins` distinct
-#' values) are shifted circularly. More bins or a longer history `l` also
-#' reduce the effect, at a cost in power.
+#' of the accompanying paper gives the rates). `reference = "conditional"`,
+#' the default, uses conditional shifts of `x` given the past of `y`
+#' (location and scale of the lags of `x` as functions of that past,
+#' standardized residuals shifted circularly, see [rcausality()]), coded
+#' after the shift: the surrogates keep the dependence of `x` on the past of
+#' `y`, which is taken up to the order of the autoregression of `y` (see
+#' "The memory of the effect" in [rcausality()]). They need series on a
+#' continuous scale; symbolic series (at most `bins` distinct values) are
+#' shifted circularly. When the past of `y` determines `x`, as in a
+#' noise-free deterministic system, no conditional surrogate differs from
+#' `x` and no test is carried out (p value 1); circular shifts are the
+#' reference for such systems.
 #'
 #' @param x,y numeric vectors (`x` the candidate cause).
 #' @param k,l history lengths of the cause and of the effect.
@@ -56,8 +61,8 @@
 #' @param n_surr number of surrogates.
 #' @param seed optional RNG seed.
 #' @param cores CPU cores for the surrogates (see [Rcausality-parallel]).
-#' @param reference `"circular"` or `"conditional"`: see the section on the
-#'   reference distribution.
+#' @param reference `"conditional"` (default) or `"circular"`: see the
+#'   section on the reference distribution.
 #' @return A list with `te`, `te_eff` (effective TE), `p_value`, `null`,
 #'   `settings`.
 #' @references
@@ -67,8 +72,8 @@
 #' @export
 #' @examples
 #' # x drives y in the simulated VAR.  The transfer entropy x -> y exceeds
-#' # its circular-shift surrogates (small p-value); the reverse direction sits
-#' # at the surrogate level (large p-value), so there is no feedback.
+#' # that of its surrogates (small p value); the reverse direction sits
+#' # at the surrogate level (large p value), so there is no feedback.
 #' d <- sim_var(500, "x_to_y", seed = 1)
 #' te_xy <- transfer_entropy(d$x, d$y, n_surr = 50, seed = 1)
 #' te_xy$te         # transfer entropy in bits
@@ -76,7 +81,7 @@
 #' te_xy$p_value    # small: x -> y
 #' transfer_entropy(d$y, d$x, n_surr = 50, seed = 1)$p_value   # large: no y -> x
 transfer_entropy <- function(x, y, k = 1L, l = 1L, bins = 4L, n_surr = 100L, seed = NULL,
-                             cores = getOption("Rcausality.cores", 1L), reference = c("circular", "conditional")) {
+                             cores = getOption("Rcausality.cores", 1L), reference = c("conditional", "circular")) {
   # (.shift_draws() and .shift_by() are defined below)
   .local_seed(seed); reference <- match.arg(reference)
   x <- as.numeric(x); y <- as.numeric(y); n <- length(x)
@@ -94,7 +99,7 @@ transfer_entropy <- function(x, y, k = 1L, l = 1L, bins = 4L, n_surr = 100L, see
     X <- .num_mat(.hist_cols(x, t_idx, k)); h0 <- cond_entropy_sym_cpp(ty, Hy, nb, nb)
     stat <- function(M) { H <- cbind(Hy, apply(M, 2L, .sym_bins, bins = bins)); storage.mode(H) <- "integer"
       h0 - cond_entropy_sym_cpp(ty, H, nb, nb) }
-    sp <- .cond_split(.hist_cols(y, t_idx, l), X); te <- stat(X)
+    sp <- .cond_split(.cond_extra(.hist_cols(y, t_idx, l), y, t_idx, l, .own_order(y)), X); te <- stat(X)
     lo <- max(2L * L + 1L, floor(N / 10)); hi <- N - lo
     if (hi <= lo) stop("Series too short for the surrogate test.", call. = FALSE)
     null <- if (.determined(sp$r2)) rep(te, min(n_surr, hi - lo + 1L)) else
@@ -139,10 +144,10 @@ transfer_entropy <- function(x, y, k = 1L, l = 1L, bins = 4L, n_surr = 100L, see
 # .cond_split()), coded after the shift: the surrogates keep the dependence of the cause on the past of the effect and
 # with it the transfer entropy that the coarse coding leaves under the null hypothesis.  They need series on a
 # continuous scale: symbolic series (at most `bins` distinct values) are shifted circularly.
-.te_scan <- function(x, y, lags, l, bins, n_surr, cores = 1L, reference = "circular") {
+.te_scan <- function(x, y, lags, l, bins, n_surr, cores = 1L, reference = "circular", own = 0L) {
   l <- max(1L, as.integer(l))
   if (reference == "conditional" && min(length(unique(x)), length(unique(y))) > bins)
-    return(.te_scan_cond(x, y, lags, l, bins, n_surr, cores))
+    return(.te_scan_cond(x, y, lags, l, bins, n_surr, cores, own))
   n <- length(x); sx <- .sym_bins(x, bins); sy <- .sym_bins(y, bins); nb <- max(sx, sy) + 1L
   stat <- function(s) vapply(lags, function(tau) {
     nn <- n - tau + 1L
@@ -156,7 +161,7 @@ transfer_entropy <- function(x, y, k = 1L, l = 1L, bins = 4L, n_surr = 100L, see
 }
 # (all lags are computed on the time points that have the longest lag; every lag of the cause is coded on these points,
 # for the data and for the surrogates alike)
-.te_scan_cond <- function(x, y, lags, l, bins, n_surr, cores = 1L) {
+.te_scan_cond <- function(x, y, lags, l, bins, n_surr, cores = 1L, own = 0L) {
   n <- length(x); sy <- .sym_bins(y, bins); nb <- max(as.integer(bins), max(sy) + 1L)
   t_idx <- (max(lags, l) + 1L):n; N <- length(t_idx)
   ty <- sy[t_idx]; Hy <- .hist_cols(sy, t_idx, l); storage.mode(Hy) <- "integer"
@@ -166,7 +171,8 @@ transfer_entropy <- function(x, y, k = 1L, l = 1L, bins = 4L, n_surr = 100L, see
     H <- cbind(Hy, .sym_bins(M[, j], bins)); storage.mode(H) <- "integer"
     h0 - cond_entropy_sym_cpp(ty, H, nb, nb)
   }, 0)
-  sp <- .cond_split(.hist_cols(y, t_idx, l), X); obs <- stat(X)
+  # (the surrogates depend on the past of the effect up to its own order, the statistic on l coded values: .own_order())
+  sp <- .cond_split(.cond_extra(.hist_cols(y, t_idx, l), y, t_idx, l, own), X); obs <- stat(X)
   L <- max(lags, l); lo <- max(2L * L + 1L, floor(N / 10)); hi <- N - lo
   if (hi <= lo) stop("Series too short for the surrogate test.", call. = FALSE)
   shifts <- .shift_draws(lo, hi, n_surr, by = length(lags))
@@ -252,19 +258,20 @@ ccm <- function(x, y, E = 3L, tau = 1L, lib_sizes = NULL, n_samples = 20L, n_sur
 
 # ---- rcausality drivers ----------------------------------------------------------
 .te_ref_arg <- function(v) {
-  v <- tolower(if (is.null(v)) "circular" else as.character(v)[1L])
-  if (!v %in% c("circular", "conditional")) stop("`reference` must be \"circular\" or \"conditional\".", call. = FALSE)
+  v <- tolower(if (is.null(v)) "conditional" else as.character(v)[1L])
+  if (!v %in% c("circular", "conditional")) stop("`reference` must be \"conditional\" or \"circular\".", call. = FALSE)
   v
 }
 .rcausality_te <- function(all, grid, causes, effects, alpha, adjust, conditional, lags, history, bins,
-                           n_perm, cl, cores, reference = "circular") {
+                           n_perm, cl, cores, reference = "circular", own = NULL) {
+  if (is.null(own)) own <- rep(0L, nrow(grid))
   sc <- .split_cores(nrow(grid), cores); pair_cores <- sc$outer; inner_cores <- sc$inner
   res <- .plapply(seq_len(nrow(grid)), function(i) {
     cs <- grid$cause[i]; ef <- grid$effect[i]
     x <- all[[cs]]; y <- all[[ef]]
     lags <- if (is.list(lags)) lags[[i]] else lags              # (a target analysis scans its families differently)
     # lag tau: the cause at t - tau only (x shifted by tau - 1, cause history 1)
-    sc <- .te_scan(x, y, lags, history[i], bins, n_perm, inner_cores, reference)
+    sc <- .te_scan(x, y, lags, history[i], bins, n_perm, inner_cores, reference, own[i])
     det <- .determined(sc$cond_r2)                             # (no test for a determined cause: see .determined())
     bl <- data.frame(cause = cs, effect = ef, lag = lags, statistic = sc$obs, te_eff = sc$obs - colMeans(sc$null),
                      p = if (det) 1 else (1 + colSums(sc$null >= rep(sc$obs, each = nrow(sc$null)))) / (nrow(sc$null) + 1))

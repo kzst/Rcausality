@@ -453,7 +453,7 @@ forecast_causal <- function(x, y = NULL, method = "granger", h = 10L, model = c(
 #'   the units in every hold-out period.
 #' @return An object of class `causfcomp`: `table` (one row per method and
 #'   series: causes, RMSE, gain over the own-lags model, Diebold-Mariano
-#'   statistic and p-value), `summary` (mean gain per method), `holdout`,
+#'   statistic and p value), `summary` (mean gain per method), `holdout`,
 #'   `model`. Methods: `print`, `plot`.
 #' @references
 #' Diebold, F. X. and Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business & Economic Statistics*, 13(3), 253-263. \doi{10.1080/07350015.1995.10524599}

@@ -37,7 +37,7 @@ select_embedding <- function(x, max_m = 3L, alpha = 0.05) {
   if (length(sig)) min(max(sig), max_m) else 1L
 }
 
-# local p-values (modified log-likelihood / Cressie-Read lambda = -1 with Yates)
+# local p values (modified log-likelihood / Cressie-Read lambda = -1 with Yates)
 .local_p_table <- function(bp, bf, b) {
   K <- ncol(bp)
   ra <- lapply(seq_len(b), function(a) rowSums(bp == a))
@@ -88,8 +88,8 @@ select_embedding <- function(x, max_m = 3L, alpha = 0.05) {
 # state itself included) form the condition; their pasts and futures are
 # projected on a random direction (a new one for every neighbourhood), binned
 # into `b` quantile bins, and the 2-D contingency table is tested with the
-# modified log-likelihood statistic (Yates-corrected).  The local p-values are
-# aggregated (default: geometric mean of the clipped local p-values; the
+# modified log-likelihood statistic (Yates-corrected).  The local p values are
+# aggregated (default: geometric mean of the clipped local p values; the
 # paper's harmonic mean is dominated by the few extreme neighbourhoods of
 # near-deterministic systems and then over-rejects).  The
 # reference distribution comes from local-permutation surrogates (Runge 2018):
@@ -134,7 +134,7 @@ select_embedding <- function(x, max_m = 3L, alpha = 0.05) {
 #' the `k_nn` nearest states are collected, their pasts and futures are
 #' randomly projected to one dimension and binned, a modified log-likelihood
 #' (power divergence) test with Yates correction is applied, and the local
-#' p-values are aggregated (`aggregate`: the clipped geometric mean by
+#' p values are aggregated (`aggregate`: the clipped geometric mean by
 #' default, or their median, mean or harmonic mean -- the latter as in the
 #' paper). The reference distribution is obtained from
 #' local-permutation surrogates (Runge 2018; Algorithm 1 of the paper): the
@@ -152,24 +152,24 @@ select_embedding <- function(x, max_m = 3L, alpha = 0.05) {
 #'   of the paper's examples).
 #' @param n_perm number of surrogates.
 #' @param k_perm neighbourhood size of the local permutation.
-#' @param aggregate aggregation of the local p-values: `"geometric"` (default:
-#'   geometric mean of the local p-values clipped from below at `clip`, which
-#'   keeps the broad shift of the local p-values but limits the influence of
+#' @param aggregate aggregation of the local p values: `"geometric"` (default:
+#'   geometric mean of the local p values clipped from below at `clip`, which
+#'   keeps the broad shift of the local p values but limits the influence of
 #'   the few extreme neighbourhoods of near-deterministic series),
 #'   `"median"`, `"mean"` or `"harmonic"` (harmonic mean, as in the paper).
-#' @param clip lower clipping level of the local p-values for
+#' @param clip lower clipping level of the local p values for
 #'   `aggregate = "geometric"`.
 #' @param seed optional RNG seed.
 #' @param cores CPU cores for the permutations (see [Rcausality-parallel]).
 #' @return A list with `p_value` (small = not Markov), `statistic`
-#'   (harmonic mean of local p-values), `m`.
+#'   (harmonic mean of local p values), `m`.
 #' @references
 #' Stippinger, M., Bencze, A., Zlatniczki, A., Somogyvari, Z. and Telcs, A. (2023). Causal discovery of stochastic dynamical systems: a Markov chain approach. *Mathematics*, 11(4), 852. \doi{10.3390/math11040852}
 #' @export
 #' @examples
 #' # An AR(1) process is first-order Markov: given x[t-1], x[t+1] carries no
 #' # information about x[t-2], and the local permutation test accepts the
-#' # Markov property (large p-value).
+#' # Markov property (large p value).
 #' set.seed(1)
 #' x <- as.numeric(stats::arima.sim(list(ar = 0.6), 400))
 #' markov_test(x, m = 1, n_perm = 49)$p_value
@@ -254,9 +254,10 @@ markov_test <- function(x, m = "auto", k_nn = NULL, n_bins = 2L, n_perm = 99L, k
   p_jm1 <- pm(cbind(Ex[1:(N - 1), , drop = FALSE], Ey[2:N, , drop = FALSE]))$p_value  # x earlier
   p_jp1 <- pm(cbind(Ex[2:N, , drop = FALSE], Ey[1:(N - 1), , drop = FALSE]))$p_value  # x later
   # the directed and the contemporaneous tests of "cmi_lag" at lag 1, with its default reference distribution
-  xy <- .cmi_pair(y, x, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores, reference = "shift")
-  yx <- .cmi_pair(x, y, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores, reference = "shift")
-  i0 <- .cmi_instant(x, y, NULL, m, k, k_perm, n_perm, cores = cores, reference = "shift")
+  ox <- .own_order(x); oy <- .own_order(y)             # (the surrogates depend on the pasts up to the own orders: .own_order())
+  xy <- .cmi_pair(y, x, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores, reference = "shift", own = oy)
+  yx <- .cmi_pair(x, y, NULL, 1L, m, k, k_perm, n_perm, cause_past = TRUE, cores = cores, reference = "shift", own = ox)
+  i0 <- .cmi_instant(x, y, NULL, m, k, k_perm, n_perm, cores = cores, reference = "shift", own = c(ox, oy))
   list(m = m, p_x = mx$p_value, p_y = my$p_value, p_j = mj$p_value, p_jm1 = p_jm1, p_jp1 = p_jp1,
        xy = xy, yx = yx, i0 = i0,
        null = list(x = list(statistic = mx$statistic, null = mx$null, alternative = "less"),

@@ -8,7 +8,7 @@
 Result object returned by \code{\link[=rcausality]{rcausality()}}. A list with
 \itemize{
 \item \code{pairs}: one row per tested ordered pair (cause -> effect) with lag,
-test statistic, degrees of freedom, p-value, adjusted p-value, Bayes
+test statistic, degrees of freedom, p value, adjusted p value, Bayes
 factor, posterior probability, evidence label, effect size (Geweke
 F-measure and R-squared gain), sign of the net influence and the
 \code{significant} decision;
@@ -17,7 +17,7 @@ F-measure and R-squared gain), sign of the net influence and the
 able to detect it -- \code{common_cause}), with evidence for each direction;
 \item \code{instant} (contemporaneous-dependence table, \code{cmi_lag}/\code{markov}),
 \code{markov} (Markov-property table, \code{markov}), \code{by_lag} (statistic and
-p-value of every directed pair at every candidate lag);
+p value of every directed pair at every candidate lag);
 \item \code{series}, \code{causes}, \code{effects}, \code{settings}, \code{call}, \code{data}.
 }
 }

@@ -11,7 +11,7 @@
 #' units, bootstrap and surrogate panels of [panel_causality()] -- takes a `cores`
 #' argument. Its default is
 #' `getOption("Rcausality.cores", 1L)`, so that
-#' `options(Rcausality.cores = 4)` switches the whole package to four
+#' `options(Rcausality.cores = 2)` switches the whole package to two
 #' workers for the session.
 #'
 #' @section What `cores` accepts:
@@ -23,7 +23,8 @@
 #'   when it returns (start-up costs a second or two, so on Windows pass
 #'   your own cluster, see below, when you make many calls); the package must
 #'   be *installed* on the machine (the workers load it by name).
-#' * `"auto"`: all physical cores but one (at most 2 under `R CMD check`).
+#' * `"auto"`: all physical cores but one; at most 2 under `R CMD check`, and
+#'   never more than a limit that the environment sets (`OMP_THREAD_LIMIT`).
 #' * a cluster object from `parallel::makeCluster()`: used as it is and never
 #'   stopped by the package. This is the way to parallelise over several
 #'   machines, or to use socket workers on a platform where forking is
@@ -57,27 +58,30 @@
 #' * the generator of the session is left exactly where a serial call would
 #'   have left it, so a script that mixes Rcausality calls with other random
 #'   draws stays reproducible when `cores` changes.
-#' Parallelisation therefore never changes a p-value, a Bayes factor or a
+#' Parallelisation therefore never changes a p value, a Bayes factor or a
 #' verdict; it only changes the wall-clock time. Use `seed` (or `set.seed()`
 #' before the call) for reproducible runs as usual.
 #'
 #' @section CRAN and continuous integration:
 #' Package checks limit the number of processes to two; `cores = "auto"`
-#' respects that limit automatically, and the examples and tests of the
-#' package use at most two workers.
+#' respects that limit automatically, and the examples, vignettes and tests
+#' of the package use at most two workers. The package never starts more
+#' processes or threads than `cores`: nested calls run serially inside a
+#' worker, and the random forests of the optional 'ranger' back-end are
+#' always given an explicit number of threads (one per worker).
 #'
 #' @name Rcausality-parallel
 #' @aliases parallel-Rcausality Rcausality.cores
 #' @examples
-#' d <- sim_logistic(300, "x_to_y", seed = 1)
+#' d <- sim_nonlinear(300, "x_to_y", seed = 1)
 #' # the same analysis serially and with two workers: identical results
 #' r1 <- rcausality(d, method = "te", seed = 1, cores = 1)
 #' r2 <- rcausality(d, method = "te", seed = 1, cores = 2)
 #' all.equal(r1$pairs, r2$pairs)
 #' \donttest{
 #' # a kNN-based test, where the workers pay off
-#' system.time(r1 <- rcausality(d, method = "cmi", max_lag = 2, n_perm = 60, seed = 1, cores = 1))
-#' system.time(r2 <- rcausality(d, method = "cmi", max_lag = 2, n_perm = 60, seed = 1, cores = 2))
+#' system.time(r1 <- rcausality(d, method = "cmi", max_lag = 2, n_perm = 40, seed = 1, cores = 1))
+#' system.time(r2 <- rcausality(d, method = "cmi", max_lag = 2, n_perm = 40, seed = 1, cores = 2))
 #' identical(r1$pairs, r2$pairs)
 #'
 #' # switch the whole session to two workers

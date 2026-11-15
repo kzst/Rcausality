@@ -51,7 +51,7 @@ Plot a \code{causres} object
 }
 \examples{
 # a VAR where x drives y: the network shows one arrow x -> y with its lag
-# and p-value, the matrix the p-value of every directed test, the lag scan
+# and p value, the matrix the p value of every directed test, the lag scan
 # the F statistic over the candidate lags
 d <- sim_var(300, "x_to_y", seed = 1)
 r <- rcausality(d)

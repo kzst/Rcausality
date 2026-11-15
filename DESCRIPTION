@@ -1,48 +1,51 @@
 Package: Rcausality
 Type: Package
 Title: Causality Analysis for Time Series and Panel Data
-Version: 0.0.11
+Version: 0.0.12
 Authors@R: c(
     person("Zsolt T.", "Kosztyán", email = "kosztyan.zsolt@gtk.uni-pannon.hu",
            role = c("aut", "cre", "cph")))
 Description: A unified interface to causality detection methods for time
-    series and panel data, returning one result object ('causres') with
-    'print', 'summary' and 'plot' methods for two series, a data frame (all
-    pairs), two blocks of series, a panel of units observed over time, or
-    the causal drivers of one explained variable. The causality method, its
-    Bayesian variant and the number of CPU cores are options of every call.
-    Implements Granger causality with classical and
-    Bayesian (spike-and-slab regression, hierarchical Minnesota prior for
-    short series after Giannone, Lenza and Primiceri (2015)
-    <doi:10.1162/REST_a_00483>, BIC, g-prior and hyper-g Bayes factor)
-    decisions; its generalisations to integrated series (Toda and Yamamoto,
-    1995, <doi:10.1016/0304-4076(94)01616-8>), to nonlinear dependence (the
-    nonparametric test of Diks and Panchenko, 2006,
+    series and panel data, returning one result object with print, summary
+    and plot methods for two series, a data frame (all pairs), two blocks
+    of series, a panel of units observed over time, or the causal drivers
+    of one explained variable. The causality method, its Bayesian variant
+    and the number of processor cores are options of every call.
+    Implements Granger causality with classical and Bayesian decisions
+    (spike-and-slab regression, the hierarchical Minnesota prior for short
+    series after Giannone, Lenza and Primiceri (2015)
+    <doi:10.1162/REST_a_00483>, and Bayes factors from the Bayesian
+    information criterion, the g-prior and the hyper-g prior); its
+    generalisations to integrated series (Toda and Yamamoto (1995)
+    <doi:10.1016/0304-4076(94)01616-8>), to nonlinear dependence (the
+    nonparametric test of Diks and Panchenko (2006)
     <doi:10.1016/j.jedc.2005.08.008>, and a random-forest Granger-like test
     with surrogate, out-of-sample and shadow-feature evidence) and to the
-    frequency domain (Breitung and Candelon, 2006,
-    <doi:10.1016/j.jeconom.2005.02.004>); conditional
-    mutual information with local-permutation tests and the lag-shifted
-    scheme of Zlatniczki et al. (2021) <doi:10.3390/e23111450>; the
-    Markov-chain approach of Stippinger et al. (2023)
-    <doi:10.3390/math11040852>; the degrees-of-freedom (conditional
-    variance) method of Telcs, Kurbucz and Jakovac (2025)
-    <doi:10.1103/PhysRevE.112.014204>; Bayesian dimensional causality of
-    Benko et al. (2024) <doi:10.1016/j.chaos.2024.115142>; the
-    complexity-based CCDH method of Stippinger et al. (2023)
-    <doi:10.1016/j.chaos.2023.114054> and the df-entropy method of Jakovac
-    et al.; finite-resolution MAR-PID of Telcs (2026)
+    frequency domain (Breitung and Candelon (2006)
+    <doi:10.1016/j.jeconom.2005.02.004>); conditional mutual information
+    with local-permutation tests and the lag-shifted scheme of Zlatniczki
+    et al. (2021) <doi:10.3390/e23111450>; the Markov-chain approach of
+    Stippinger et al. (2023) <doi:10.3390/math11040852>; the
+    degrees-of-freedom (conditional variance) method of Telcs, Kurbucz and
+    Jakovac (2025) <doi:10.1103/PhysRevE.112.014204>; Bayesian dimensional
+    causality of Benko et al. (2024) <doi:10.1016/j.chaos.2024.115142>;
+    the complexity-based causal discovery of hidden common causes (CCDH)
+    of Stippinger et al. (2023) <doi:10.1016/j.chaos.2023.114054> and the
+    degrees-of-freedom entropy method of Jakovac et al.; the
+    finite-resolution partial information decomposition of Telcs (2026)
     <doi:10.3390/e28060641>; the recurrence-plot criteria of Hirata and
     Aihara (2010) <doi:10.1103/PhysRevE.81.016203> and the
     correlation-dimension relations of Krakovska (2019)
     <doi:10.3390/e21090818>; transfer entropy and convergent cross mapping
-    as baselines; an optional wrapper for PCMCI (Runge et al., 2019,
-    <doi:10.1126/sciadv.aau4996>) through the 'Python' package 'tigramite'.
+    as baselines; an optional wrapper, through the 'Python' package
+    'tigramite', for the causal discovery algorithm of Runge et al. (2019)
+    <doi:10.1126/sciadv.aau4996>, which combines the Peter-Clark algorithm
+    with momentary conditional independence tests (PCMCI).
     Every method is available for panel data at the level of the units
     (with false-discovery-rate control), of the group of units (Dumitrescu
-    and Hurlin, 2012, <doi:10.1016/j.econmod.2012.02.014>, and combinations
+    and Hurlin (2012) <doi:10.1016/j.econmod.2012.02.014>, and combinations
     calibrated by bootstrap or surrogates) and of the pooled units (the
-    half-panel-jackknife test of Juodis, Karavias and Sarafidis, 2021,
+    half-panel-jackknife test of Juodis, Karavias and Sarafidis (2021)
     <doi:10.1007/s00181-020-01970-9>, and pooled model-free statistics),
     following the triangulation of Kosztyan, Matrai and Kiss (2026)
     <doi:10.1111/twec.70148>. Further tools compare and benchmark methods,

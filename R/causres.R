@@ -2,7 +2,7 @@
 #'
 #' Result object returned by [rcausality()]. A list with
 #' * `pairs`: one row per tested ordered pair (cause -> effect) with lag,
-#'   test statistic, degrees of freedom, p-value, adjusted p-value, Bayes
+#'   test statistic, degrees of freedom, p value, adjusted p value, Bayes
 #'   factor, posterior probability, evidence label, effect size (Geweke
 #'   F-measure and R-squared gain), sign of the net influence and the
 #'   `significant` decision;
@@ -11,7 +11,7 @@
 #'   able to detect it -- `common_cause`), with evidence for each direction;
 #' * `instant` (contemporaneous-dependence table, `cmi_lag`/`markov`),
 #'   `markov` (Markov-property table, `markov`), `by_lag` (statistic and
-#'   p-value of every directed pair at every candidate lag);
+#'   p value of every directed pair at every candidate lag);
 #' * `series`, `causes`, `effects`, `settings`, `call`, `data`.
 #'
 #' Methods: `print`, `summary`, `plot`, `as.data.frame`, `as.matrix`,
@@ -159,7 +159,11 @@ print.causres <- function(x, digits = 3, ...) {
   bc <- s$bayes_control
   g_txt <- function() if (is.null(bc) || isTRUE(all.equal(bc$scale, 1))) "n" else sprintf("%g n", bc$scale)
   bayes_rule <- function() {
-    dec <- if (!is.null(bc) && identical(bc$decision, "posterior")) sprintf("posterior probability > %g", s$prob_threshold)
+    # (the posterior rule with its prior probability of a link and the Bayes factor that the two imply)
+    pt <- if (is.null(s$prob_threshold)) 0.5 else s$prob_threshold; pp <- if (is.null(s$prior_prob)) 0.5 else s$prior_prob
+    dec <- if (!is.null(bc) && identical(bc$decision, "posterior"))
+             sprintf("posterior probability > %g with the prior probability %s of a link (BF10 > %s)", pt, format(signif(pp, 3)),
+                     .fmt_bf(pt / (1 - pt) * (1 - pp) / pp))
            else sprintf("BF10 > %g", s$bf_threshold)
     how <- if (s$method %in% c("granger", "bayes_granger"))
       switch(if (is.null(s$prior)) "bic" else s$prior, bic = "BIC approximation", g = sprintf("Zellner g-prior, g = %s", g_txt()),
@@ -174,7 +178,9 @@ print.causres <- function(x, digits = 3, ...) {
       else if (s$method %in% c("dc", "dfe")) "posterior of the causal cases"
       else if (s$method == "markov") "Bayesian decision table from the surrogate Bayes factors"
       else if (s$method == "pcmci") "Savage-Dickey Bayes factor of the partial correlation"
-      else sprintf("Bayesian surrogate test, %s effect prior of scale %g, %s null", bc$effect_prior, bc$scale, bc$null_model)
+      else sprintf("Bayesian surrogate test, %s effect prior of scale %g in %s, %s null", bc$effect_prior, bc$scale,
+                   if (identical(.eff_scale(bc), "unit")) "units of one observation (effect_scale = \"unit\")"
+                   else "standard deviations of the replicates (effect_scale = \"local\")", bc$null_model)
     sprintf("%s (%s)", dec, how)
   }
   .out("  decision: ",
@@ -182,7 +188,7 @@ print.causres <- function(x, digits = 3, ...) {
       else if (s$method %in% c("dc", "dfe")) sprintf("class score P(cause drives effect) > %g", s$prob_threshold)
       else if (s$method == "ccdh") sprintf("shared information: adjusted p < %g (%s); reconstruction index <= %g", s$alpha, s$adjust, s$prob_threshold)
       else if (s$method == "hirata") sprintf("coverage index >= threshold and surrogate p < %g; verdict per pair", s$alpha)
-      else if (s$method == "cd") sprintf("bootstrap z-tests of the dimension relations at level %g; verdict per pair", s$alpha)
+      else if (s$method == "cd") sprintf("bootstrap z tests of the dimension relations at level %g; verdict per pair", s$alpha)
       else if (s$method == "pcmci") sprintf("MCI test '%s'%s, adjusted p < %g (%s)", s$test, if (isTRUE(s$plus)) " (PCMCI+)" else "", s$alpha, s$adjust)
       else if (s$method == "df") sprintf("Table-2 reading of the orders where determinate, else directed variance-reduction tests with adjusted p < %g (%s)", s$alpha, s$adjust)
       else if (s$method != "bayes_granger") sprintf("adjusted p < %g (%s)", s$alpha, s$adjust)
@@ -252,6 +258,13 @@ print.causres <- function(x, digits = 3, ...) {
   if (s$method == "toda_yamamoto")
     .out(sprintf("  F = Wald test of the first 'lag' cause lags in a VAR augmented by d_max = %d extra lags (not tested)\n",
                 as.integer(s$method_args$d_max)))
+  if (s$method %in% c("granger", "toda_yamamoto") && !is.null(x$extra) && !is.null(x$extra$het_p) && any(is.finite(x$extra$het_p))) {
+    # the diagnostic of the regression errors, also when it stays above the limit of the warning
+    vc <- if (is.null(x$extra$vcov)) "classical" else as.character(x$extra$vcov[1L])
+    .out(sprintf("  White test of the regression errors (heteroskedasticity): smallest p = %s%s\n", .fmt_p(min(x$extra$het_p, na.rm = TRUE)),
+                 if (identical(vc, "classical")) "; the F test presupposes errors whose variance does not depend on the regressors"
+                 else sprintf("; the tests use the %s covariance", vc)))
+  }
   if (s$method == "diks_panchenko") {
     E <- x$extra
     .out(sprintf("  T.n = Diks-Panchenko statistic (bandwidth %.3g sd%s); p = %s\n",
@@ -272,7 +285,7 @@ print.causres <- function(x, digits = 3, ...) {
   }
   if (s$method %in% c("hirata", "cd")) {
     if (s$method == "hirata") .out("  cover.idx = normalised coverage P(R_cause | R_effect); p = surrogate test of the coverage\n")
-    else .out("  D2.diff = D2(effect) - D2(cause); no p-values, the verdict comes from the z-tests of the dimension relations\n")
+    else .out("  D2.diff = D2(effect) - D2(cause); no p values, the verdict comes from the z tests of the dimension relations\n")
     .out("\n  Per-pair quantities and verdict:\n")
     Cc <- x$ccdh; Cc$pair <- paste(Cc$var1, "~", Cc$var2); Cc$var1 <- Cc$var2 <- NULL
     num <- vapply(Cc, is.numeric, TRUE); Cc[num] <- lapply(Cc[num], round, 3)
@@ -353,11 +366,15 @@ print.causres <- function(x, digits = 3, ...) {
   if (!isFALSE(getOption("Rcausality.guide")))
     .out("  How to read: one row per directed test cause -> effect; 'sig' applies the decision rule above; ",
          if (!isTRUE(s$bayes) && s$method %in% c("granger", "toda_yamamoto"))
-           "BF10 and P.post (Bayes factor of the unit-information prior, posterior probability for a prior of 1/2) are given for information; " else "",
+           "BF10 and P.post (Bayes factor of the unit-information prior, posterior probability for a prior of 1/2) are given for information; "
+         else if (isTRUE(s$bayes))
+           "evidence 'against' is evidence against a link of the size that the prior of the effect expects (a weak link gives such values often); "
+         else "",
          "the classification combines the two directions of a pair (x -> y, y -> x, x <-> y, independent; ",
          "'independent' = no relation detected; 'common_cause', printed as <~> = the criterion of the method for shared information ",
-         "without a directed link holds: for \"cmi_lag\" and \"markov\" dependence within the sampling interval, which a hidden driver ",
-         "with memory does not produce; see the help page of the method for the systems on which the class is a hidden common cause). ",
+         "without a directed link holds: for \"cmi_lag\" and \"markov\" dependence within the sampling interval (a hidden driver with ",
+         "memory is more often reported as a directed link); see the help page of the method for the systems on which the class is ",
+         "a hidden common cause). ",
          "plot(x, \"all\") shows the same. ",
          "(options(Rcausality.guide = FALSE) hides this note.)\n", sep = "")
   invisible(x)
@@ -402,14 +419,19 @@ print.summary.causres <- function(x, digits = 3, ...) {
   s <- x$settings
   .out("\nRcausality summary\n", strrep("=", 50), "\n", sep = "")
   .out("Call:   ", deparse(x$call), "\n", sep = "")
+  bf_rule <- isTRUE(s$bayes) || s$method == "bayes_granger"       # decisions by the Bayes factor carry no level and no correction
   .out("Method: ", s$method, if (s$conditional) " (conditional)" else " (pairwise)",
-      "   n = ", s$n, "   alpha = ", s$alpha, " (", s$adjust, ")\n", sep = "")
-  .out("Tests:  ", x$n_tests, "   significant links: ", x$n_sig,
+      "   n = ", s$n,
+      if (bf_rule) {
+        if (identical(s$decision, "posterior")) sprintf("   decision: posterior probability > %g", if (is.null(s$prob_threshold)) 0.5 else s$prob_threshold)
+        else sprintf("   decision: BF10 > %g", s$bf_threshold)
+      } else paste0("   alpha = ", s$alpha, " (", s$adjust, ")"), "\n", sep = "")
+  .out("Tests:  ", x$n_tests, if (bf_rule) "   declared links: " else "   significant links: ", x$n_sig,
       sprintf("   (density %.0f%%)\n", 100 * x$density), sep = "")
   .out("\nPair classes (x = first, y = second variable of the pair):\n")
   print(x$classes)
   if (x$n_sig) {
-    .out("\nSignificant links, strongest first:\n")
+    .out(if (bf_rule) "\nDeclared links, strongest first:\n" else "\nSignificant links, strongest first:\n")
     L <- x$links
     tab <- data.frame(link = paste(L$cause, "->", L$effect), lag = L$lag,
                       sign = ifelse(L$sign > 0, "+", ifelse(L$sign < 0, "-", "0")),
@@ -422,8 +444,8 @@ print.summary.causres <- function(x, digits = 3, ...) {
     print(tab, row.names = FALSE, right = FALSE)
     .out("\nNode roles:\n")
     print(x$degree, row.names = FALSE, right = FALSE)
-    .out("\nLag distribution of significant links:\n")
+    .out(if (bf_rule) "\nLag distribution of the declared links:\n" else "\nLag distribution of significant links:\n")
     print(x$lags)
-  } else .out("\nNo significant causal links at the chosen threshold.\n")
+  } else .out(if (bf_rule) "\nNo link is declared by the decision rule.\n" else "\nNo significant causal links at the chosen threshold.\n")
   invisible(x)
 }

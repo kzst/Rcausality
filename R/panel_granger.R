@@ -1,6 +1,6 @@
 # Granger causality in panels: the estimators and their null distributions -----
 #
-# Unit level: the F-test of the cause's lags in every unit.
+# Unit level: the F test of the cause's lags in every unit.
 # Pooled level: the test of Juodis, Karavias and Sarafidis (2021).  Under the
 #   null hypothesis the coefficients of the cause's lags are zero in every
 #   unit, hence equal across the units, and can be pooled although the
@@ -213,9 +213,9 @@
 }
 
 # ---- empirical null (Efron 2004) ----------------------------------------------------
-# z-scores of p-values; location and scale of the null z-scores (median and
+# z-scores of p values; location and scale of the null z-scores (median and
 # upper half-spread, robust to the mass at p = 1 of Bonferroni-corrected
-# p-values), never below 0 and 1: the calibration can only make a test more
+# p values), never below 0 and 1: the calibration can only make a test more
 # conservative than its nominal distribution
 .zc <- function(p) pmin(pmax(stats::qnorm(p, lower.tail = FALSE), -6), 8)
 .empirical_null <- function(p0, min_n = 40L) {
@@ -260,7 +260,7 @@
 }
 
 # The pooled result of one link from the engine output: the test at the chosen
-# order (or the first significant order of the scan), its p-value calibrated
+# order (or the first significant order of the scan), its p value calibrated
 # with the empirical null of the bootstrap panels, the Bayes factor of the
 # control's prior (lowered by the change of the likelihood ratio that the
 # calibration implies)
@@ -292,7 +292,7 @@
 # The bootstrap null of the unit statistic of one link: per unit a list
 # (statistic, null, alternative, p0), with the F statistic at the order of
 # the test, or -- for the scan over the orders -- minus the logarithm of the
-# Bonferroni-corrected smallest p-value
+# Bonferroni-corrected smallest p value
 .unit_reg_nulls <- function(eng, lag_rule, unit_lag = NULL) {
   lags <- vapply(eng, `[[`, 0, "lag"); N <- nrow(eng[[1L]]$unitF)
   lapply(seq_len(N), function(i) {

@@ -101,7 +101,7 @@ knn_cmi <- function(x, y, z = NULL, k = 5L) {
 #' @examples
 #' # x and y share the common cause z.  Unconditionally they are dependent;
 #' # conditionally on z they are independent, and the local permutation test
-#' # (which permutes x within neighbourhoods of z) gives a large p-value.
+#' # (which permutes x within neighbourhoods of z) gives a large p value.
 #' set.seed(2); z <- rnorm(300); x <- z + rnorm(300, 0, .5); y <- z + rnorm(300, 0, .5)
 #' local_permutation_test(x, y, n_perm = 50)$p_value       # small: dependent
 #' local_permutation_test(x, y, z, n_perm = 50)$p_value    # large: independent given z
@@ -128,7 +128,7 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
   do.call(cbind, lapply(seq_len(history), function(l) v[t_idx - shift - l]))
 }
 
-# The pair is tested over all candidate lags at once: the p-value of the
+# The pair is tested over all candidate lags at once: the p value of the
 # maximal CMI over the lags against the maximum of the permuted CMIs.  When
 # the conditioning set is the same for all lags (cause_past = FALSE) every
 # replicate is ONE local permutation of the time points, applied to the cause
@@ -142,11 +142,20 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
 # the local permutations of Runge (2018).  Local permutations do not reproduce the serial dependence of the cause,
 # which narrows the reference distribution for persistent series (the rates for two independent AR(1) series with
 # coefficient 0.9 are in the simulation study of the accompanying paper).
+# (the conditional shifts are `reference = "conditional"` for all methods; "shift", their name for these two methods up to
+# version 0.0.11, is still accepted and is the internal value)
+.cmi_ref_arg <- function(v) {
+  v <- tolower(if (is.null(v)) "conditional" else as.character(v)[1L])
+  if (v == "conditional") v <- "shift"
+  if (!v %in% c("shift", "local")) stop("`reference` must be \"conditional\" or \"local\".", call. = FALSE)
+  v
+}
 .cmi_shifts <- function(N, n_perm, by = 1L) { lo <- max(2L, floor(0.1 * N)); .shift_draws(lo, N - lo, n_perm, by = by) }
-.cmi_shift_null <- function(X, yj, Z, k, shifts, cores = 1L) {
+.cmi_shift_null <- function(X, yj, Z, k, shifts, cores = 1L, W = Z) {
   N <- nrow(X); Zj <- .jit(.num_mat(Z)); k <- as.integer(k)
   cmi_of <- function(M) vapply(seq_len(ncol(M)), function(j) cmi_knn_cpp(.jit(M[, j, drop = FALSE]), yj, Zj, k), 0)
-  sp <- .cond_split(Z, X); obs <- cmi_of(X)
+  # (W: the conditioning vector of the surrogates, Z with the further lags of the effect up to its own order)
+  sp <- .cond_split(W, X); obs <- cmi_of(X)
   # (a determined cause has no surrogates that differ from it: no test, see .determined(); the replicates are not
   # computed and stand at the observed value)
   null <- if (.determined(sp$r2)) matrix(obs, length(shifts), length(obs), byrow = TRUE) else
@@ -155,7 +164,7 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
 }
 
 .cmi_pair <- function(effect, cause, controls, lags, history, k, k_perm, n_perm,
-                      cause_past = FALSE, cores = 1L, reference = "local") {
+                      cause_past = FALSE, cores = 1L, reference = "local", own = 0L) {
   effect <- .std(effect); cause <- .std(cause)
   if (!is.null(controls)) controls <- .std_mat(controls)
   n <- length(effect); cr2 <- NA_real_
@@ -169,7 +178,8 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
   if (!cause_past && reference == "shift") {
     # one conditional shift per replicate for all lags; the shifts are spaced by the number of lags (see .te_scan())
     X <- .num_mat(vapply(lags, function(tau) cause[t_idx - tau], numeric(length(t_idx))))
-    sn <- .cmi_shift_null(X, .jit(.num_mat(yt)), Z, k, .cmi_shifts(nrow(X), n_perm, by = length(lags)), cores = cores)
+    sn <- .cmi_shift_null(X, .jit(.num_mat(yt)), Z, k, .cmi_shifts(nrow(X), n_perm, by = length(lags)), cores = cores,
+                          W = .cond_extra(Z, effect, t_idx, history, own))
     obs <- sn$obs; null <- sn$null; cr2 <- sn$r2
     pl <- (1 + colSums(null >= rep(obs, each = nrow(null)))) / (nrow(null) + 1)
     null_max <- apply(null, 1L, max)
@@ -190,7 +200,7 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
       xt <- cause[t_idx - tau]
       Zt <- cbind(Z, .hist_cols(cause, t_idx, history, shift = tau))
       if (reference == "shift") {
-        sn <- .cmi_shift_null(cbind(xt), .jit(.num_mat(yt)), Zt, k, sh, cores = cores)
+        sn <- .cmi_shift_null(cbind(xt), .jit(.num_mat(yt)), Zt, k, sh, cores = cores, W = .cond_extra(Zt, effect, t_idx, history, own))
         list(cmi = sn$obs, p_value = (1 + sum(sn$null[, 1] >= sn$obs)) / (nrow(sn$null) + 1), null = sn$null[, 1], r2 = sn$r2)
       } else local_permutation_test(xt, yt, Zt, k = k, k_perm = k_perm, n_perm = n_perm, cores = cores, standardize = FALSE)
     })
@@ -209,7 +219,7 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
 # Contemporaneous (k = 0) dependence given both pasts: I(x[t]; y[t] | pasts).
 # Evidence of a common driver (or instantaneous causation) in the sense of
 # Zlatniczki et al. (2021), Relation 1.
-.cmi_instant <- function(x, y, controls, history, k, k_perm, n_perm, cores = 1L, reference = "local") {
+.cmi_instant <- function(x, y, controls, history, k, k_perm, n_perm, cores = 1L, reference = "local", own = c(0L, 0L)) {
   x <- .std(x); y <- .std(y); if (!is.null(controls)) controls <- .std_mat(controls)
   n <- length(y); t_idx <- (history + 1):n
   Z <- cbind(.hist_cols(x, t_idx, history), .hist_cols(y, t_idx, history))
@@ -217,7 +227,8 @@ local_permutation_test <- function(x, y, z = NULL, k = 5L, k_perm = 5L, n_perm =
     Z <- cbind(Z, do.call(cbind, lapply(seq_len(ncol(controls)),
                                         function(j) .hist_cols(controls[, j], t_idx, history))))
   if (reference == "shift") {
-    sn <- .cmi_shift_null(cbind(x[t_idx]), .jit(.num_mat(y[t_idx])), Z, k, .cmi_shifts(length(t_idx), n_perm), cores = cores)
+    sn <- .cmi_shift_null(cbind(x[t_idx]), .jit(.num_mat(y[t_idx])), Z, k, .cmi_shifts(length(t_idx), n_perm), cores = cores,
+                          W = .cond_extra(.cond_extra(Z, x, t_idx, history, own[1L]), y, t_idx, history, own[2L]))
     return(list(cmi = sn$obs, p_value = (1 + sum(sn$null[, 1] >= sn$obs)) / (nrow(sn$null) + 1), null = sn$null[, 1]))
   }
   r <- local_permutation_test(x[t_idx], y[t_idx], Z, k = k, k_perm = k_perm, n_perm = n_perm, cores = cores, standardize = FALSE)

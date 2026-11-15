@@ -10,7 +10,7 @@
 #             convolution of their null distributions (bootstrap for the
 #             Granger family, surrogates for the model-free methods), the
 #             Dumitrescu-Hurlin (2012) statistic, Stouffer / Fisher / Simes
-#             combinations of the unit p-values, or the count of units with
+#             combinations of the unit p values, or the count of units with
 #             the link; Bayesian variant: the Bayes factor of the group
 #             statistic against its null distribution, or a prevalence model
 #             on the unit Bayes factors;
@@ -49,8 +49,10 @@
       step <- stats::median(unlist(tapply(as.numeric(tv), uid, diff)), na.rm = TRUE)
       # dates: calendar periods differ in length (months, quarters, years), and daily dates skip weekends
       is_date <- inherits(tv, "Date"); tol <- if (is_date) 1.6 else 1 + 1e-8
-      gap <- tapply(as.numeric(tv), uid, function(a) any(diff(a) > step * tol))
-      if (any(gap %in% TRUE) && (!is_date || step >= 7))
+      # (daily dates: a step of up to four calendar days is a weekend with a holiday, a longer one a gap)
+      thr <- if (is_date && step < 7) max(4, step * tol) else step * tol
+      gap <- tapply(as.numeric(tv), uid, function(a) any(diff(a) > thr))
+      if (any(gap %in% TRUE))
         warning(sprintf(paste0("panel_causality: %d unit(s) have gaps in `%s` (e.g. '%s'); consecutive rows of a unit are treated as ",
                                "consecutive periods."), sum(gap %in% TRUE), time, names(gap)[which(gap %in% TRUE)[1]]), call. = FALSE)
     }
@@ -144,7 +146,7 @@ panel_long <- function(..., array = NULL, units = NULL, times = NULL) {
 #'   `$classes`): `"group"`, `"pooled"`, `"both"` or `"auto"` (= `"both"`
 #'   when both levels are available, otherwise the available one). With
 #'   `"both"` a link is declared when either level shows it: the smaller of
-#'   the two p-values, doubled (a Bonferroni correction over the two tests),
+#'   the two p values, doubled (a Bonferroni correction over the two tests),
 #'   or -- for Bayes-factor decisions -- the average of the two Bayes
 #'   factors. The two levels are sensitive to different alternatives: the
 #'   pooled test to an effect that has the same direction in most units, the
@@ -160,23 +162,26 @@ panel_long <- function(..., array = NULL, units = NULL, times = NULL) {
 #' @param combine the group-level test:
 #'   `"auto"` (the natural one for the method: `"mean"` for the methods whose
 #'   unit statistic has a bootstrap or surrogate null distribution,
-#'   `"stouffer"` for the methods with asymptotic p-values only, `"count"`
+#'   `"stouffer"` for the methods with asymptotic p values only, `"count"`
 #'   for the methods whose decision is a table or a verdict), or one of
 #'   * `"mean"`: the sum of the unit statistics, each standardised with the
 #'     mean and the standard deviation of its own null sample (a
 #'     nonparametric combination test, Pesarin and Salmaso 2010), against the
 #'     convolution of the unit null distributions (Monte Carlo with
-#'     `n_draws` draws);
+#'     `n_draws` draws), which treats the units as independent; with
+#'     `resample = "periods"` (Granger family) against the values of the
+#'     same statistic in the bootstrap panels, which keep the dependence
+#'     between the units;
 #'   * `"dh"`: Dumitrescu and Hurlin (2012), the mean of the unit Wald
 #'     statistics standardised with the moments of the F distribution
 #'     (Granger family). The normal approximation is anti-conservative for
 #'     short and persistent series; the statistic is always reported next to
 #'     the `"mean"` test;
 #'   * `"stouffer"`, `"fisher"`, `"simes"`: combinations of the unit
-#'     p-values;
+#'     p values;
 #'   * `"count"`: the number of units with a link at level `alpha` against
 #'     the Binomial(`n_units`, `alpha`) distribution.
-#' @param unit_adjust correction of the unit-level p-values over all unit x
+#' @param unit_adjust correction of the unit-level p values over all unit x
 #'   link cells (passed to [stats::p.adjust()]; default Benjamini-Hochberg).
 #' @param prevalence_prior the two parameters of the Beta prior of the share
 #'   of units with the link in the prevalence model (default uniform).
@@ -201,9 +206,15 @@ panel_long <- function(..., array = NULL, units = NULL, times = NULL) {
 #'   residuals; `"periods"`: the same resampled periods are used in all
 #'   units (balanced panels), which keeps the dependence between the units
 #'   (common shocks and factors with any loadings) in the reference
-#'   distribution. With `decision = "group"` this is the bootstrap test of
+#'   distributions of both panel-level tests: the pooled statistic and the
+#'   group statistic are referred to their values in the bootstrap panels
+#'   (at least 199 of them, and as many as the multiplicity correction
+#'   needs). With `decision = "group"` this is the bootstrap test of
 #'   Dumitrescu and Hurlin (2012, Section 6.2), with the unit statistics
-#'   combined as in `combine`.
+#'   combined as in `combine`. A common factor with memory is in addition a
+#'   common driver of the series within a unit, which no reference
+#'   distribution removes (the rejection rates of simulated panels are in
+#'   the accompanying paper).
 #' @param n_draws Monte Carlo size of the `"mean"` group test.
 #' @return A list of class `panel_control`.
 #' @references
@@ -269,8 +280,34 @@ print.panel_control <- function(x, ...) {
 # convolution of the standardised pools (Monte Carlo).  Under the null
 # hypothesis the observed value is exchangeable with its surrogates, so the
 # test keeps its level for any shape of the unit distributions, any unit
-# length and any number of surrogates.
-.group_mean_test <- function(nulls, n_draws = 10000L) {
+# length and any number of surrogates -- when the units are independent: the
+# convolution draws one member from every pool independently of the others.
+# `aligned`: the members of the unit pools belong to the same bootstrap panels
+# (Granger family with jointly resampled periods, panel_control(resample =
+# "periods")).  The bootstrap panels then keep the dependence between the
+# units, and the group statistic is referred to its own values in them: the
+# sum of the standardised unit statistics within every bootstrap panel.  The
+# convolution would discard that dependence: with a common factor (loading
+# 0.7, 30 units of 20 periods, no link) it rejected in 6%, 14% and 28% of the
+# panels for a factor without memory and with autoregressive coefficients
+# 0.5 and 0.8, the statistic within the bootstrap panels in 3%, 3% and 6%.
+.group_mean_test <- function(nulls, n_draws = 10000L, aligned = FALSE) {
+  if (aligned) {
+    ok <- vapply(nulls, function(e) !is.null(e) && is.finite(e$statistic) && is.numeric(e$null) && length(e$null) >= 19L, TRUE)
+    B <- unique(vapply(nulls[ok], function(e) length(e$null), 0L))
+    if (sum(ok) >= 2L && length(B) == 1L) {
+      M <- vapply(nulls[ok], function(e) {
+        pool <- c(e$statistic, e$null); f <- is.finite(pool); s <- stats::sd(pool[f])
+        if (sum(f) < 3L || !is.finite(s) || s <= 0) return(rep(NA_real_, length(pool)))
+        z <- (pool - mean(pool[f])) / s; z[!f] <- 0; z }, numeric(B + 1L))      # (B + 1) x units
+      M <- M[, colSums(is.na(M)) == 0L, drop = FALSE]; N <- ncol(M)
+      if (N >= 2L) {
+        Zs <- rowSums(M) / sqrt(N)
+        return(list(statistic = Zs[1L], p_value = (1 + sum(Zs[-1L] >= Zs[1L] - 1e-12)) / (B + 1L), n_units = N, z = M[1L, ],
+                    null = Zs[-1L], aligned = TRUE))
+      }
+    }
+  }
   std <- lapply(nulls, function(e) {
     if (is.null(e) || !is.finite(e$statistic)) return(NULL)
     dev <- switch(if (is.null(e$alternative)) "greater" else e$alternative, less = function(v) -v, two.sided = abs, identity)
@@ -293,7 +330,14 @@ print.panel_control <- function(x, ...) {
 }
 
 # the lag order of one link, the same in every unit: the BIC of its pooled
-# fixed-effects regression, all candidate orders compared on the same sample
+# fixed-effects regression, all candidate orders compared on the same sample.
+# (This is the criterion of one equation with the observations of all units: in
+# panels of 30 units of 20 and 50 periods it chose the second order in 95% and
+# 99% of the reverse tests of a link with a second-order driver, the case in
+# which the order of a VAR by the BIC is too short for single series; see
+# .own_order().  A floor by the order of the pooled autoregression of the
+# effect is not used: with the many observations of a panel the AIC selects
+# long orders for a driven series.)
 .panel_pair_lag <- function(units, ef, cs, ctrl, max_lag, aug = 0L) {
   cap <- .pooled_cap(units, max_lag, aug, 2L + length(ctrl)); lags <- seq_len(cap)
   bic <- vapply(lags, function(l) tryCatch(.pooled_F(.panel_design(units, ef, cs, ctrl, l, aug = aug, start = cap + aug))$bic,
@@ -635,10 +679,10 @@ print.panel_control <- function(x, ...) {
   .n_cores(A$cores)
   # resampling tests of the pooled level: enough surrogates for the multiplicity correction
   if (!method %in% c("granger", "toda_yamamoto") && isTRUE(info$pooled) && "pooled" %in% pc$levels && adjust != "none") {
-    both <- pc$decision %in% c("auto", "both") && "group" %in% pc$levels        # the smaller p-value is doubled
+    both <- pc$decision %in% c("auto", "both") && "group" %in% pc$levels        # the smaller p value is doubled
     need <- as.integer(ceiling((1 + both) * nrow(grid) / A$alpha))
     if (A$n_perm < need) {
-      message(method, ": n_perm raised from ", A$n_perm, " to ", need, " so that the surrogate p-values of the pooled tests can reach ",
+      message(method, ": n_perm raised from ", A$n_perm, " to ", need, " so that the surrogate p values of the pooled tests can reach ",
               "significance after the multiplicity correction.")
       A$n_perm <- need
     }
@@ -660,6 +704,19 @@ print.panel_control <- function(x, ...) {
 
   # ---- Granger family: the engine (unit F statistics and pooled test of the observed and of the bootstrap panels)
   eng <- NULL; B <- max(19L, min(as.integer(A$n_perm), 99L))
+  # jointly resampled periods: the group statistic is referred to its values in the bootstrap panels (.group_mean_test()),
+  # a Monte Carlo p value that needs enough panels for the multiplicity correction
+  per_joint <- fam_reg && identical(pc$resample, "periods") && length(unique(PD$n)) == 1L
+  if (per_joint) {
+    both <- pc$decision %in% c("auto", "both") && all(c("group", "pooled") %in% pc$levels)
+    need <- if (adjust == "none") 0L else as.integer(ceiling((1 + both) * nrow(grid) / A$alpha))
+    B <- max(19L, min(as.integer(A$n_perm), 199L))
+    if (B < need && "group" %in% pc$levels) {
+      message(method, ": ", need, " bootstrap panels instead of ", B, ", so that the bootstrap p values of the group test can reach ",
+              "significance after the multiplicity correction.")
+      B <- need
+    }
+  }
   if (fam_reg && identical(pc$resample, "periods") && length(unique(PD$n)) > 1L)
     warning(paste0("panel_control(resample = \"periods\") needs units of the same length (a balanced panel): every unit resamples its ",
                    "own residuals instead, which does not keep the dependence between the units in the reference distribution."),
@@ -699,6 +756,14 @@ print.panel_control <- function(x, ...) {
     Au <- A; Au$id <- Au$time <- Au$target <- NULL; Au$adjust <- "none"; Au["seed"] <- list(NULL)
     Au$method <- method; Au$bayes <- bayes
     if (first) Au$max_lag <- max(scan_lags)
+    # "te" and "pid": the unit tests use circular shifts (permutations within the coded past) unless the user names a
+    # reference.  For series of a few dozen points the plug-in statistic of conditional surrogates lies about a tenth
+    # of a standard deviation below the observed one on average (two independent first-order autoregressions of 50
+    # points: 0.10 and 0.14 standard deviations for the coefficients 0.5 and 0.9; circular shifts: 0.00 and -0.05).  The
+    # test of one series does not notice it (rejections at the 5% level: 5%); the group test adds it over the units and
+    # rejected in 11% and 21% of 100 panels of 30 such units.  The pooled test delays the causes circularly as well.
+    if (method %in% c("te", "pid") && is.null(as.list(A$method_args)$reference))
+      Au$method_args <- utils::modifyList(as.list(A$method_args), list(reference = if (method == "te") "circular" else "permutation"))
     sc <- .split_cores(sum(long), A$cores); Au$cores <- sc$inner
     rr <- .plapply(names(U)[long], function(u) {
       d <- U[[u]]
@@ -737,8 +802,8 @@ print.panel_control <- function(x, ...) {
     do_group <- "group" %in% pc$levels && length(unit_ids) >= pc$min_units
     rows_of <- function(j) which(units_tab$cause == grid$cause[j] & units_tab$effect == grid$effect[j])
     # Granger family: bootstrap null of the unit statistics, and the empirical null of the unit tests.  In short
-    # series the F-test of a unit is not exact (persistent regressors); the bootstrap panels show the null
-    # distribution of the unit z-scores of a link, and the unit p-values are recomputed against the normal
+    # series the F test of a unit is not exact (persistent regressors); the bootstrap panels show the null
+    # distribution of the unit z-scores of a link, and the unit p values are recomputed against the normal
     # distribution with the location and scale of that empirical null (Efron 2004), never below zero / one: the
     # correction can only make a unit test more conservative.  The unit Bayes factors are lowered by the
     # corresponding change of the likelihood ratio.
@@ -783,21 +848,23 @@ print.panel_control <- function(x, ...) {
         d <- .dh_test(ut$df1 * ut$statistic, ut$df1, ut$df2)
         if (how == "dh") {
           g <- list(statistic = d[["Z_tilde"]], p_value = d[["p_value"]], n_units = as.integer(d[["n_units"]]))
-          detail <- sprintf("Dumitrescu-Hurlin, W-bar = %.2f, Z-bar = %.2f, asymptotic p-value", d[["W_bar"]], d[["Z_bar"]])
+          detail <- sprintf("Dumitrescu-Hurlin, W-bar = %.2f, Z-bar = %.2f, asymptotic p value", d[["W_bar"]], d[["Z_bar"]])
         }
       }
       if (how == "mean") {
         nl <- if (fam_reg) reg_nulls[[j]] else lapply(nulls[ut$unit], function(e) e[[key[j]]])
-        g <- .group_mean_test(nl, pc$n_draws)
-        detail <- if (fam_reg) sprintf("group mean of the unit statistics against their bootstrap null (W-bar = %.2f; Dumitrescu-Hurlin Z-tilde = %.2f, asymptotic p = %s)",
+        g <- .group_mean_test(nl, pc$n_draws, aligned = per_joint)
+        detail <- if (fam_reg) sprintf("group mean of the unit statistics against %s (W-bar = %.2f; Dumitrescu-Hurlin Z-tilde = %.2f, asymptotic p = %s)",
+                                       if (isTRUE(g$aligned)) sprintf("its values in the %d bootstrap panels with jointly resampled periods", length(g$null))
+                                       else "their bootstrap null",
                                        d[["W_bar"]], d[["Z_tilde"]], format.pval(d[["p_value"]], digits = 2, eps = 1e-4))
                   else "group mean of the standardised unit statistics against the unit surrogates"
         if (is.na(g$p_value) && any(is.finite(ut$p_value))) how <- "stouffer"
       }
       if (how %in% c("stouffer", "fisher", "simes")) {
         g <- .combine_p(ut$p_value, how)
-        detail <- c(stouffer = "Stouffer combination of the unit p-values", fisher = "Fisher combination of the unit p-values",
-                    simes = "Simes test of the unit p-values")[[how]]
+        detail <- c(stouffer = "Stouffer combination of the unit p values", fisher = "Fisher combination of the unit p values",
+                    simes = "Simes test of the unit p values")[[how]]
       } else if (how == "count") {
         k <- sum(ut$nominal); N <- nrow(ut)
         g <- list(statistic = k / N, p_value = stats::pbinom(k - 1, N, A$alpha, lower.tail = FALSE), n_units = N)
@@ -832,6 +899,7 @@ print.panel_control <- function(x, ...) {
     } else {
       units_tab$q_value <- stats::p.adjust(units_tab$p_value, method = pc$unit_adjust)
       units_tab$significant <- units_tab$nominal & !is.na(units_tab$q_value) & units_tab$q_value < A$alpha
+      .panel_resolution_check(nulls, units_tab, pc$unit_adjust, A$alpha, method)
       if (all(is.na(units_tab$p_value))) units_tab$significant <- units_tab$nominal
     }
   }
@@ -896,7 +964,7 @@ print.panel_control <- function(x, ...) {
   }
   pick <- function(lv) { D <- PT[PT$level == lv, ]; D[match(key, paste(D$cause, "->", D$effect)), ] }
   if (dec == "both") {
-    # either level may show the link: the smaller of the two p-values, doubled (Bonferroni over the two tests);
+    # either level may show the link: the smaller of the two p values, doubled (Bonferroni over the two tests);
     # Bayesian variant: the average of the two Bayes factors, the Bayes factor of "a link at one of the levels"
     G <- pick("group"); Pp <- pick("pooled"); D <- Pp
     pm <- cbind(G$p_value, Pp$p_value); bm <- cbind(G$bf10, Pp$bf10)
@@ -928,7 +996,8 @@ print.panel_control <- function(x, ...) {
   out$prevalence <- if (length(prev_rows)) do.call(rbind, prev_rows) else NULL
   out$id <- A$id; out$time <- A$time; out$unit_errors <- unit_err
   out$settings$bayes <- bayes; out$settings$base_method <- method
-  if (bayes) { out$settings$prior <- ctl$prior; out$settings$bayes_control <- ctl; out$settings$decision <- ctl$decision }
+  if (bayes) { out$settings$prior <- ctl$prior; out$settings$bayes_control <- ctl; out$settings$decision <- ctl$decision
+               out$settings$prior_prob <- A$prior_prob }
   out$settings$panel <- list(n_units = length(U), n_range = range(PD$n), units_analysed = length(unit_ids),
                              units_short = sum(!long), units_failed = sum(names(unit_err) != "pooled"), decision = dec,
                              levels = have, group_test = if ("group" %in% have) unique(PT$test[PT$level == "group"]) else NA_character_,
@@ -940,13 +1009,61 @@ print.panel_control <- function(x, ...) {
   class(out) <- c("causpanel", "causres")
   .panel_persistence_check(U, grid, method, bayes)
   out$dependence <- .panel_dependence_check(PD, A, pc, fam_reg)
+  if (fam_reg) {
+    # (the covariance options of the time-series tests have no panel version: the reference is the bootstrap)
+    if (!identical(.method_args(method, A$method_args)$vcov, "classical"))
+      warning(sprintf(paste0("panel (%s): `vcov = \"%s\"` is not used. The panel tests refer the classical statistics to a bootstrap, ",
+                             "which presupposes errors whose variance does not depend on the regressors; the robust covariances are ",
+                             "available for single time series, and the panel versions of the nonlinear methods (\"cmi\", \"te\", ",
+                             "\"diks_panchenko\", \"rf_granger\") test for dependence of any form."),
+                      method, as.character(.method_args(method, A$method_args)$vcov)[1L]), call. = FALSE)
+  }
   out
 }
 
-# Strongly persistent or trending series in a panel.  The first-order autocorrelation of a short unit is biased
-# towards zero by about (1 + 3 rho) / T (Kendall 1954); the median over the units of the corrected value is compared
-# with 0.9.  In simulations without a link the default tests reject in 8 to 10% of the panels at the 5% level for a
-# persistence of 0.95 and in 10 to 13% for random walks with drift (30 units of 20 periods).
+# Heteroskedastic errors in a panel.  The bootstrap of the panel tests resamples the residuals of a unit as
+# exchangeable, which presupposes errors whose variance does not depend on the regressors: with a nonlinear link, or
+# with series that share a changing volatility, the tests reject without a linear link (a quadratic link in 30 units of
+# 20 periods: about 90% of the panels).  There is no diagnostic for it in panels.  (A White test on the stacked units,
+# with unit-specific regressions and studentized residuals, was tried for version 0.0.12 and is not used: in panels
+# without a link and with homoskedastic errors its p value was below 0.001 in 0% to 2% of independent panels of 30
+# units of 20 periods and in 5% to 19% of panels with a common factor, whose shocks the stacked residuals share.)  The
+# covariance options of the time-series tests have no panel version, and a call that passes one is told so.
+
+# Resolution of the unit-level tests (the panel counterpart of .resolution_check()).  The unit tests of the methods with
+# surrogates have a smallest attainable p value, 1 / (B + 1) with B replicates (for shifted series at most the number
+# of admissible shifts of a unit), and the correction over all unit x link cells asks for more: a step-up correction
+# (Benjamini-Hochberg, the default) can declare a cell only when enough cells attain the smallest value together, a
+# Holm or Bonferroni correction none at all.  The group and the pooled level do not depend on it.
+.panel_resolution_check <- function(nulls, units_tab, adjust, alpha, method) {
+  if (is.null(units_tab) || !length(nulls) || is.null(adjust) || identical(adjust, "none")) return(invisible(NULL))
+  B <- unlist(lapply(nulls, function(u) vapply(u, function(e) if (is.null(e) || !is.numeric(e$null)) NA_integer_ else length(e$null), 0L)))
+  B <- B[is.finite(B) & B > 0L]; m <- sum(is.finite(units_tab$p_value))
+  if (!length(B) || m < 1L) return(invisible(NULL))
+  need <- as.integer(ceiling(m / ((min(B) + 1) * alpha) - 1e-9))
+  if (need <= 1L) return(invisible(NULL))
+  if (adjust %in% c("BH", "BY", "hochberg", "hommel"))
+    warning(sprintf(paste0("panel, unit level (%s): with the smallest attainable p value of a unit test, 1/%d, the %s correction over the %d ",
+                           "unit x link tests can declare a unit at alpha = %g only when at least %d tests attain that value together%s. ",
+                           "The group and the pooled level do not depend on this; longer units, more replicates where the number of ",
+                           "shifts allows, or fewer links at once give the unit level more resolution."),
+                    method, min(B) + 1L, adjust, m, alpha, need, if (need > m) " (which is impossible here)" else ""), call. = FALSE)
+  else
+    warning(sprintf(paste0("panel, unit level (%s): the smallest attainable p value of a unit test, 1/%d, cannot pass the %s correction over ",
+                           "the %d unit x link tests at alpha = %g, so that no unit can be declared. The group and the pooled level do ",
+                           "not depend on this."), method, min(B) + 1L, adjust, m, alpha), call. = FALSE)
+  invisible(NULL)
+}
+
+# Strongly persistent or trending series in a panel.  The first-order autocorrelation r of a short unit is biased
+# towards zero, E(r) ~ rho - (1 + 3 rho) / T (Kendall 1954); the corrected value solves this for rho,
+# (r + 1 / T) / (1 - 3 / T), and its median over the units is compared with 0.9.  (Up to version 0.0.11 the correction
+# was r + (1 + 3 r) / T, with the estimate in place of rho, which is too small for strongly persistent units: the
+# warning was then given for 59%, 77% and 97% of panels of 10, 30 and 100 random walks with drift of 20 periods.)
+# In simulations without a link the default tests reject in 8 to 10% of the panels at the 5% level for a
+# persistence of 0.95 and in 10 to 13% for random walks with drift (30 units of 20 periods).  The rates of the warning
+# are in the simulation study of the accompanying paper.  The Bayesian variants use the same unit statistics and
+# bootstrap panels and get the same warning.
 #
 # The panel versions of the kernel test and of the conditional mutual information (version 0.0.11).  Their unit tests
 # refer the statistic of a unit to shifted series of that unit, and for units that are short relative to their
@@ -956,15 +1073,18 @@ print.panel_control <- function(x, ...) {
 # accompanying paper) the unit tests rejected in 9% (conditional mutual information) and 7% (kernel test) of the
 # units, the group test in 47% and 18% of the panels, the pooled test in 2% and 8%, and the default decision in 35%
 # and 13%; with 20 periods, where the pooled level decides alone, the kernel test rejected in 14% of the panels and
-# the conditional mutual information in 4%.  The transfer entropy kept its level in the same panels (2% to 7%), and
-# the other model-free methods were not simulated with persistent units.  The limit for these methods is 0.8.
+# the conditional mutual information in 4%.  The forest test behaves like the conditional mutual information (a
+# pilot of 40 such panels for version 0.0.12: unit tests 8%, group test 40%, pooled test 3%, decision 28%) and has
+# the warning since that version.  The transfer entropy, whose unit tests use circular shifts in a panel analysis,
+# kept its level in the same panels (2% to 7%); the other model-free methods were not simulated with persistent
+# units.  The limit for these methods is 0.8.
 .panel_persistence_check <- function(U, grid, method, bayes = FALSE) {
-  free <- c("cmi", "cmi_lag", "diks_panchenko")
-  if (!(method == "granger" || method %in% free) || bayes || !nrow(grid)) return(invisible(NULL))
+  free <- c("cmi", "cmi_lag", "diks_panchenko", "rf_granger")
+  if (!(method %in% c("granger", "toda_yamamoto") || method %in% free) || !nrow(grid)) return(invisible(NULL))
   vars <- unique(c(grid$cause, grid$effect))
   rho <- vapply(vars, function(v) stats::median(vapply(U, function(u) {
-    a <- .acf1(u[v])[[1L]]; n <- nrow(u); if (n < 8L) NA_real_ else min(1, a + (1 + 3 * a) / n) }, 0), na.rm = TRUE), 0)
-  hi <- which(pmin(rho[grid$cause], rho[grid$effect]) > if (method == "granger") 0.9 else 0.8)
+    a <- .acf1(u[v])[[1L]]; n <- nrow(u); if (n < 8L) NA_real_ else min(1, (a + 1 / n) / (1 - 3 / n)) }, 0), na.rm = TRUE), 0)
+  hi <- which(pmin(rho[grid$cause], rho[grid$effect]) > if (method %in% c("granger", "toda_yamamoto")) 0.9 else 0.8)
   if (!length(hi)) return(invisible(NULL))
   nm <- unique(c(grid$cause[hi], grid$effect[hi]))
   if (method %in% free) {
@@ -972,17 +1092,28 @@ print.panel_control <- function(x, ...) {
                            "for the length of the units: %s). The surrogate tests of short persistent units reject somewhat too often, and ",
                            "the group test adds this excess over the units: in simulated panels of 30 independent units of 50 periods with ",
                            "a persistence of 0.9, \"cmi\" declared a link in about a third of the panels and \"diks_panchenko\" in about ",
-                           "one in eight. Differenced series are advisable%s."),
+                           "one in eight, and \"rf_granger\" behaved like \"cmi\". Differenced series are advisable%s."),
                     paste(nm, collapse = ", "), paste(sprintf("%.2f", rho[nm]), collapse = ", "),
                     if (method == "diks_panchenko") "" else
                       "; the pooled level alone, panel_control(decision = \"pooled\"), kept its level in these panels"), call. = FALSE)
     return(invisible(NULL))
   }
+  if (method == "toda_yamamoto") {
+    # (random walks with drift, 20 periods, no link: the lag-augmented panel tests rejected in 8%, 11% and 21% of the
+    # panels of 10, 30 and 100 units; the augmenting lag does not remove the bias of the short units, which adds up)
+    warning(sprintf(paste0("panel: the series %s are strongly persistent or trending within the units (median first-order autocorrelation, ",
+                           "corrected for the length of the units: %s). For units that are random walks with drift the lag-augmented panel ",
+                           "tests still reject too often, more so the more units there are (8%% to 21%% of simulated panels of 10 to 100 units of ",
+                           "20 periods); differenced series or growth rates are advisable."),
+                    paste(nm, collapse = ", "), paste(sprintf("%.2f", rho[nm]), collapse = ", ")), call. = FALSE)
+    return(invisible(NULL))
+  }
   warning(sprintf(paste0("panel: the series %s are strongly persistent or trending within the units (median first-order autocorrelation, ",
-                         "corrected for the length of the units: %s). The default tests then reject too often; method = \"toda_yamamoto\" ",
-                         "(with panel_control(time_effects = TRUE) for common trends) or differenced series are advisable, and placebo_test() ",
-                         "shows how many links the analysis declares between unrelated series of this kind."),
-                  paste(nm, collapse = ", "), paste(sprintf("%.2f", rho[nm]), collapse = ", ")), call. = FALSE)
+                         "corrected for the length of the units: %s). The default %s then too often; differenced series or growth rates, or ",
+                         "method = \"toda_yamamoto\" (with panel_control(time_effects = TRUE) for common trends), are advisable, and ",
+                         "placebo_test() shows how many links the analysis declares between series of different units."),
+                  paste(nm, collapse = ", "), paste(sprintf("%.2f", rho[nm]), collapse = ", "),
+                  if (bayes) "analysis declares links" else "tests reject"), call. = FALSE)
   invisible(NULL)
 }
 
@@ -1042,7 +1173,9 @@ print.panel_control <- function(x, ...) {
     warning(sprintf(paste0("panel: the units move together (%s: mean correlation of the AR(1) residuals between the units %s; CD test of ",
                            "Pesaran, p %s). The reference distributions treat the units as independent, and common shocks or trends can then ",
                            "produce links between unrelated series. panel_control(time_effects = TRUE) removes the shocks that all units ",
-                           "share%s%s; placebo_test() shows how many links the analysis declares between series of different units."),
+                           "share%s (not a factor with loadings that differ between the units)%s. A common factor with memory remains a ",
+                           "common driver of the series of a unit under both options; placebo_test() shows how many links the analysis ",
+                           "declares between series of different units."),
                     paste(nm, collapse = ", "), paste(sprintf("%.2f", cd$mean_r[hi]), collapse = ", "),
                     if (all(cd$p[hi] < 1e-4)) "< 1e-04" else paste0("<= ", .fmt_p(max(cd$p[hi]))),
                     if (is.null(A$time)) " (it needs `time`)" else "",
@@ -1117,7 +1250,7 @@ print.panel_control <- function(x, ...) {
 #' in all units, which keeps the dependence between the units): the
 #' bootstrap sample is the null sample of the group test, and it gives the
 #' empirical null (a normal location-scale fit to the bootstrap scores) with
-#' which the unit p-values and the pooled p-value are calibrated -- the
+#' which the unit p values and the pooled p value are calibrated -- the
 #' calibration can only make a test more conservative. The Bayes factors use
 #' the prior of [bayes_control()]: the unit Bayes factors as in
 #' [rcausality()], except that the BIC form is replaced by the exact Bayes
@@ -1141,7 +1274,12 @@ print.panel_control <- function(x, ...) {
 #' 2015). Their null distribution comes from surrogate panels in which the
 #' cause is delayed circularly within every unit; with `bayes = TRUE` the
 #' statistic is compared with its surrogates by [surrogate_bf()] (the
-#' random forest has no Bayesian panel variant). These
+#' random forest has no Bayesian panel variant). The unit tests of `"te"`
+#' and `"pid"` use circular shifts and permutations within the coded past
+#' in a panel analysis, unless `method_args` names a `reference`: for
+#' series of a few dozen points the statistic of conditional surrogates
+#' lies slightly below the observed one on average, which the test of one
+#' series does not notice and the group test adds over the units. These
 #' estimators use all `units x periods` delay vectors, so they work with
 #' units that are far too short for a unit-by-unit analysis (see
 #' `min_length` in [causal_methods()]); within short units the shifted
@@ -1175,12 +1313,12 @@ print.panel_control <- function(x, ...) {
 #' @return An object of class `causpanel` (inheriting from
 #'   [`causres`][causres-class]) with, in addition to the slots of a
 #'   `causres`: `units` (one row per unit and directed pair: lag, statistic,
-#'   p-value, Bayes factor, `nominal` decision of the unit, `q_value`,
+#'   p value, Bayes factor, `nominal` decision of the unit, `q_value`,
 #'   `post_pooled` and the error-controlled decision `significant`; for the
 #'   Granger family also the uncalibrated `p_ftest` and `bf10_raw`), `panel`
 #'   (the group- and pooled-level tests, with a `detail` text), `prevalence`
 #'   (share of units with the link: observed, and the posterior under the
-#'   prevalence model), `dependence` (the CD statistic, its p-value and the
+#'   prevalence model), `dependence` (the CD statistic, its p value and the
 #'   mean correlation between the units for every variable; `NULL` when the
 #'   settings account for the dependence), `id`, `time`. Methods: `print`, `summary`, `plot`
 #'   (see [plot.causpanel()]), `as.matrix`, `predict`.
@@ -1228,9 +1366,9 @@ print.panel_control <- function(x, ...) {
 #' # the same call through rcausality(), Bayesian variant (closed-form Bayes factors)
 #' rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = "bic", seed = 1)
 #' # a nonlinear coupling in a short panel: the pooled conditional mutual information
-#' pn <- sim_panel(n_units = 30, n_time = 20, scenario = "x_to_y", nonlinear = TRUE,
+#' pn <- sim_panel(n_units = 20, n_time = 20, scenario = "x_to_y", nonlinear = TRUE,
 #'                 coupling = 0.8, seed = 2)
-#' rcausality(pn, id = "unit", time = "time", method = "cmi", n_perm = 100, seed = 1, cores = 2)
+#' rcausality(pn, id = "unit", time = "time", method = "cmi", n_perm = 80, seed = 1, cores = 2)
 #' }
 panel_causality <- function(data, id, time = NULL, method = "granger", bayes = FALSE,
                             cores = getOption("Rcausality.cores", 1L), target = NULL, panel = panel_control(), ...) {

@@ -23,17 +23,17 @@ pcmci(
 \item{tau_max, tau_min}{maximal and minimal lag.}
 
 \item{test}{conditional-independence test: \code{"parcorr"} (linear partial
-correlation, analytic p-values), \code{"robust_parcorr"} (rank-transformed),
-\code{"cmiknn"} (kNN conditional mutual information, permutation p-values;
+correlation, analytic p values), \code{"robust_parcorr"} (rank-transformed),
+\code{"cmiknn"} (kNN conditional mutual information, permutation p values;
 slow) or \code{"gpdc"} (Gaussian-process / distance correlation).}
 
 \item{pc_alpha}{significance level(s) of the condition-selection stage;
 \code{NULL} lets tigramite pick it by model selection.}
 
-\item{alpha}{significance level of the final (adjusted) MCI p-values.}
+\item{alpha}{significance level of the final (adjusted) MCI p values.}
 
 \item{adjust}{multiple-testing correction applied by tigramite to the MCI
-p-values: \code{"fdr_bh"} (Benjamini–Hochberg, tigramite's default) or \code{"none"}.}
+p values: \code{"fdr_bh"} (Benjamini–Hochberg, tigramite's default) or \code{"none"}.}
 
 \item{plus}{run PCMCI+ (\code{run_pcmciplus}) instead of PCMCI.}
 
@@ -43,8 +43,8 @@ p-values: \code{"fdr_bh"} (Benjamini–Hochberg, tigramite's default) or \code{"
 }
 \value{
 A \code{causres} object (method \code{"pcmci"}). \code{pairs} holds, for every
-ordered pair, the lag with the smallest MCI p-value; \code{by_lag} holds all
-lags (\code{statistic} = test statistic, \code{p} = raw MCI p-value, \code{q} =
+ordered pair, the lag with the smallest MCI p value; \code{by_lag} holds all
+lags (\code{statistic} = test statistic, \code{p} = raw MCI p value, \code{q} =
 adjusted); \code{instant} holds the contemporaneous links (lag 0) when
 \code{plus = TRUE} or \code{tau_min = 0}; \code{pcmci} keeps tigramite's raw
 \code{val_matrix}, \code{p_matrix}, \code{q_matrix} and \code{graph}.

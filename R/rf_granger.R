@@ -104,15 +104,17 @@
   out <- .cond_surr(sp, rows); dimnames(out) <- dimnames(sp$fit); out
 }
 
+# (`own`: lags of the effect itself among the features, at least `lag`; see .granger_pair() and .own_order())
 .rf_pair <- function(effect, cause, controls = NULL, lag = 2L, n_surr = 99L, settings = .method_arg_defaults$rf_granger,
-                     cores = 1L) {
+                     cores = 1L, own = NULL) {
   .need_ranger()
-  L <- max(1L, as.integer(lag)); n <- length(effect)
-  y <- effect[(L + 1):n]
-  R <- .lag_block(effect, L, "own")
+  L <- max(1L, as.integer(lag)); n <- length(effect); Q <- max(L, as.integer(own), na.rm = TRUE)
+  late <- function(M) M[(Q - L + 1L):nrow(M), , drop = FALSE]        # the time points Q + 1..n of a block of L lags
+  y <- effect[(Q + 1):n]
+  R <- .lag_block(effect, Q, "own")
   if (!is.null(controls)) for (j in seq_len(ncol(controls)))
-    R <- cbind(R, .lag_block(controls[, j], L, if (is.null(colnames(controls))) paste0("control", j) else colnames(controls)[j]))
-  C <- .lag_block(cause, L, "cause")
+    R <- cbind(R, late(.lag_block(controls[, j], L, if (is.null(colnames(controls))) paste0("control", j) else colnames(controls)[j])))
+  C <- late(.lag_block(cause, L, "cause"))
   U <- cbind(R, C)
   min_shift <- max(L + 1L, floor(0.1 * n))
   # the node size is chosen on the own-past forest, i.e. without reference to the cause, and used for every forest of
@@ -167,7 +169,8 @@
     inv <- cbind(effect, cause, ctrl)
     p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
     p <- max(1L, min(p, .cap_lag(nrow(inv), ncol(inv))))
-    g <- .rf_pair(effect, cause, ctrl, p, n_perm, settings, cores)
+    q <- if (is.null(fixed_lag)) min(.own_order(effect, max_lag), max(p, .cap_lag(nrow(inv), ncol(inv)))) else 0L
+    g <- .rf_pair(effect, cause, ctrl, p, n_perm, settings, cores, own = q)
     list(row = list(lag = p, statistic = g$gain, p_value = g$p_value,
                     effect_size = if (is.na(g$oos_gain)) g$gain else g$oos_gain, r2_gain = g$gain, n_eff = g$n_eff),
          null = list(statistic = g$gain, null = g$null, alternative = "greater", cond_r2 = g$cond_r2),
@@ -233,7 +236,7 @@
 #' @param cores CPU cores: the surrogate forests and the forecast blocks run in
 #'   parallel (see [Rcausality-parallel]); the results do not depend on it.
 #' @return An object of class `rf_granger`: `tests` (one row per direction:
-#'   out-of-bag gain, surrogate p-value, out-of-sample gain, importance of the
+#'   out-of-bag gain, surrogate p value, out-of-sample gain, importance of the
 #'   best lag of the cause, shadow decision), `importance` (permutation
 #'   importance of every feature, per direction), `null` (surrogate gains).
 #'   Method: `print`.
@@ -250,7 +253,7 @@
 #' \donttest{
 #' if (requireNamespace("ranger", quietly = TRUE)) {
 #'   # a nonlinear link x -> y without a linear trace: the forest gains from
-#'   # the past of x (small surrogate p-value, positive out-of-sample gain),
+#'   # the past of x (small surrogate p value, positive out-of-sample gain),
 #'   # not the other way round
 #'   d <- sim_nonlinear(300, "x_to_y", seed = 1)
 #'   rf_granger(d$x, d$y, lag = 1, n_surr = 49, num_trees = 100, seed = 1)

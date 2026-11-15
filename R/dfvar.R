@@ -92,7 +92,7 @@
 #'   sigma-versus-width profile as in the figures of the paper: the first
 #'   number of constraints whose line is proportional to the window width,
 #'   otherwise the number of distinct saturated levels), `steps` (per number of constraints: conditional sd, relative
-#'   reduction, p-value), `profile` (data frame: `n_constr`, `width`, `sigma`,
+#'   reduction, p value), `profile` (data frame: `n_constr`, `width`, `sigma`,
 #'   `n`), `n`, `k`, `call`. Methods: `print`, `plot` (the sigma-versus-width
 #'   figure of the paper).
 #' @references
@@ -109,7 +109,7 @@
 #' d <- df_variance(x, max_constr = 3)
 #' d              # df = 2 (two accepted lags)
 #' \donttest{
-#' plot(d)        # the variance-reduction path and the permutation p-values
+#' plot(d)        # the variance-reduction path and the permutation p values
 #' }
 df_variance <- function(x, max_constr = 6L, k = NULL, widths = NULL, alpha = 0.05, tol = 0.02,
                         n_perm = 49L, k_perm = 5L, min_n = 5L, seed = NULL, cores = getOption("Rcausality.cores", 1L)) {
@@ -257,7 +257,12 @@ plot.dfvar <- function(x, main = NULL, ...) {
 # reduce the conditional variance of effect[t] beyond the effect's own
 # `history` past (and the controls)?  Statistic = relative reduction of the
 # conditional sd; null = local permutation (Runge, 2018).
-.df_pair <- function(effect, cause, controls, lags, history, k, n_perm, k_perm = 5L, cores = 1L) {
+# Reference distribution of the directed test (`reference`): "shift", conditional shifts of the lags of the cause given
+# the constraints (the past of the effect and of the controls; see .cond_split() and .cmi_pair()), one shift per
+# replicate for all lags; or "local", local permutations (Runge 2018), which do not keep the serial dependence of the
+# cause: for two independent first-order autoregressions of 300 time points with coefficients 0.5 and 0.9 the p value
+# of the test with local permutations was below 0.05 in 9.5% and 26% of the pairs.
+.df_pair <- function(effect, cause, controls, lags, history, k, n_perm, k_perm = 5L, cores = 1L, reference = "local", own = 0L) {
   n <- length(effect)
   Lmax <- max(lags, history); t_idx <- (Lmax + 1):n; ne <- length(t_idx)
   ys <- effect / stats::sd(effect); xs <- cause / stats::sd(cause)
@@ -268,12 +273,36 @@ plot.dfvar <- function(x, main = NULL, ...) {
     cs <- controls[, j] / stats::sd(controls[, j])
     for (l in seq_len(history)) Cz <- cbind(Cz, cs[t_idx - l])
   }
+  if (reference == "shift" && n_perm > 0L) {
+    X <- .num_mat(vapply(lags, function(tau) xs[t_idx - tau], numeric(ne)))
+    base <- .cond_var_knn(pres, Cz, k)
+    stat <- function(M) vapply(seq_len(ncol(M)), function(j) base - .cond_var_knn(pres, cbind(Cz, M[, j]), k), 0)
+    sp <- .cond_split(.cond_extra(Cz, ys, t_idx, history, own), X); det <- .determined(sp$r2)
+    if (!det) {
+      obs <- stat(X); shifts <- .cmi_shifts(ne, n_perm, by = length(lags))
+      null <- do.call(rbind, .plapply(shifts, function(s) stat(.cond_surr(sp, ((seq_len(ne) + s - 1L) %% ne) + 1L)), cores = cores))
+      pl <- (1 + colSums(null >= rep(obs, each = nrow(null)))) / (nrow(null) + 1); pl[obs <= 0] <- 1
+      null_max <- apply(null, 1L, max); b <- which.max(obs)
+      # (the test asks for a reduction of the conditional variance: without one the p value is 1.  In a deterministic
+      # system an unrelated constraint only spoils the neighbourhoods, a shifted one more than the observed one.)
+      return(list(lag = lags[b], statistic = 1 - exp(-obs[b] / 2),
+                  p_value = if (obs[b] <= 0) 1 else (1 + sum(null_max >= obs[b])) / (length(null_max) + 1),
+                  n_eff = ne, by_lag = data.frame(lag = lags, statistic = 1 - exp(-obs / 2), p = pl), null = 1 - exp(-null_max / 2),
+                  reference = "conditional shifts"))
+    }
+    # The constraints determine the cause (a deterministic system, in which the driven series reconstructs its driver):
+    # no conditional surrogate differs from the cause.  The method is made for such systems, and its own reference, the
+    # local permutations of the order tests, is used for the directed test (the caller reports it).
+    local_fallback <- TRUE
+  } else local_fallback <- FALSE
   tests <- lapply(lags, function(tau) .cv_test(pres, Cz, list(xs[t_idx - tau]), k, n_perm, k_perm, cores))
-  obs <- vapply(tests, `[[`, 0, "statistic"); pl <- vapply(tests, `[[`, 0, "p_value")
+  obs <- vapply(tests, `[[`, 0, "statistic"); pl <- vapply(tests, `[[`, 0, "p_value"); pl[obs <= 0] <- 1
   null_max <- do.call(pmax, lapply(tests, `[[`, "null"))        # max-statistic test over the lags
   b <- which.max(obs)
-  list(lag = lags[b], statistic = 1 - exp(-obs[b] / 2), p_value = (1 + sum(null_max >= obs[b])) / (length(null_max) + 1),
-       n_eff = ne, by_lag = data.frame(lag = lags, statistic = 1 - exp(-obs / 2), p = pl), null = 1 - exp(-null_max / 2))
+  list(lag = lags[b], statistic = 1 - exp(-obs[b] / 2),
+       p_value = if (obs[b] <= 0) 1 else (1 + sum(null_max >= obs[b])) / (length(null_max) + 1),
+       n_eff = ne, by_lag = data.frame(lag = lags, statistic = 1 - exp(-obs / 2), p = pl), null = 1 - exp(-null_max / 2),
+       reference = if (local_fallback) "local permutations (the constraints determine the cause)" else "local permutations")
 }
 
 # Table 2 of Telcs, Kurbucz & Jakovac (2025): orders of x, y and the joint.

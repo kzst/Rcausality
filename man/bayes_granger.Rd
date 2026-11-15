@@ -12,7 +12,8 @@ bayes_granger(
   control = bayes_control(),
   prior_prob = 0.5,
   seed = NULL,
-  cores = getOption("Rcausality.cores", 1L)
+  cores = getOption("Rcausality.cores", 1L),
+  own = lag
 )
 }
 \arguments{
@@ -20,7 +21,8 @@ bayes_granger(
 
 \item{controls}{optional matrix of control series (conditional Granger).}
 
-\item{lag}{lag order.}
+\item{lag}{lag order: the number of lags of the cause (and of the
+controls).}
 
 \item{control}{a \code{\link[=bayes_control]{bayes_control()}} list.}
 
@@ -31,6 +33,10 @@ bayes_granger(
 \item{seed}{optional RNG seed.}
 
 \item{cores}{CPU cores: the chains run in parallel (see \link{Rcausality-parallel}).}
+
+\item{own}{number of lags of the effect (at least \code{lag}, the default;
+\code{\link[=rcausality]{rcausality()}} passes the order that it selects for the effect, see
+"The memory of the effect" there).}
 }
 \value{
 An object of class \code{bayes_granger}: \code{bf10}, \code{post_prob} (computed

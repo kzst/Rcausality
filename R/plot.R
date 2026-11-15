@@ -36,7 +36,7 @@
 #' @export
 #' @examples
 #' # a VAR where x drives y: the network shows one arrow x -> y with its lag
-#' # and p-value, the matrix the p-value of every directed test, the lag scan
+#' # and p value, the matrix the p value of every directed test, the lag scan
 #' # the F statistic over the candidate lags
 #' d <- sim_var(300, "x_to_y", seed = 1)
 #' r <- rcausality(d)
@@ -102,7 +102,7 @@ plot.causres <- function(x, type = c("network", "matrix", "heatmap", "bars", "la
 }
 
 # evidence per directed pair: -log10 adjusted p, log10 BF10, or -- for the
-# posterior / verdict based methods without p-values -- the posterior
+# posterior / verdict based methods without p values -- the posterior
 # probability or the statistic itself
 .evid <- function(P, evidence) {
   e <- if (evidence == "p") -log10(pmax(P$p_adj, 1e-300)) else log10(pmax(P$bf10, 1e-300))

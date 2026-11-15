@@ -9,7 +9,12 @@
 #' @param n number of observations returned.
 #' @param scenario causal scenario (see Details).
 #' @param coupling coupling strength (maps: coupled as
-#'   `(1-c) f(y) + c f(x)`; strong coupling synchronises the systems).
+#'   `(1-c) f(y) + c f(x)`; strong coupling synchronises the systems). The
+#'   default of `sim_logistic` is 0.2 and that of `sim_henon` 0.3, except
+#'   for `scenario = "bidirectional"`, where both use 0.05: mutually coupled
+#'   logistic maps lock into a common cycle from about 0.1 and are identical
+#'   from about 0.2, mutually coupled Henon maps from about 0.12 and 0.2. A
+#'   warning is given when the two series of a data set are identical.
 #' @param noise standard deviation of additive observational noise
 #'   (relative to the signal sd).
 #' @param seed optional RNG seed.
@@ -108,16 +113,25 @@ sim_var <- function(n = 500, scenario = "x_to_y", coupling = 0.4, noise = 0,
   }
   X <- X[-seq_len(burn), , drop = FALSE]
   X <- X[, 1:2]; colnames(X) <- c("x", "y")
-  if (max(abs(X[, 1] - X[, 2])) < 1e-6)
-    warning("The two systems synchronised; lower 'coupling'.", call. = FALSE)
+  .sync_check(X[, 1], X[, 2], "coupling")
   .finish(X, scenario, noise)
+}
+
+# Two coupled maps that synchronise completely give the same series twice (not a pair with a mutual link, and no
+# analysis of the package accepts exactly collinear series): the simulators say so.
+.synchronised <- function(x, y) isTRUE(max(abs(x - y)) < 1e-6)
+.sync_check <- function(x, y, arg = "coupling") {
+  if (.synchronised(x, y))
+    warning(sprintf("The two systems synchronised: the two series are identical. Lower '%s'.", arg), call. = FALSE)
+  invisible(NULL)
 }
 
 #' @rdname simulators
 #' @param r growth parameter of the logistic / tent map.
 #' @export
-sim_logistic <- function(n = 500, scenario = "x_to_y", coupling = 0.2, noise = 0,
+sim_logistic <- function(n = 500, scenario = "x_to_y", coupling = NULL, noise = 0,
                          r = 3.9, seed = NULL, burn = 200L) {
+  if (is.null(coupling)) coupling <- if (identical(scenario, "bidirectional")) 0.05 else 0.2
   .coupled_map(function(u) r * u * (1 - u), n, scenario, coupling, noise, seed, burn)
 }
 
@@ -130,8 +144,9 @@ sim_tent <- function(n = 500, scenario = "x_to_y", coupling = 0.2, noise = 0,
 
 #' @rdname simulators
 #' @export
-sim_henon <- function(n = 500, scenario = "x_to_y", coupling = 0.3, noise = 0,
+sim_henon <- function(n = 500, scenario = "x_to_y", coupling = NULL, noise = 0,
                       seed = NULL, burn = 500L) {
+  if (is.null(coupling)) coupling <- if (identical(scenario, "bidirectional")) 0.05 else 0.3
   .local_seed(seed)
   stopifnot(scenario %in% .scenarios)
   A <- .coupling_mat(scenario, coupling)
@@ -147,6 +162,7 @@ sim_henon <- function(n = 500, scenario = "x_to_y", coupling = 0.3, noise = 0,
   }
   X <- X[-seq_len(burn), 1:2, drop = FALSE]; colnames(X) <- c("x", "y")
   if (any(!is.finite(X))) stop("Henon trajectory diverged; reduce coupling.", call. = FALSE)
+  .sync_check(X[, 1], X[, 2], "coupling")
   .finish(X, scenario, noise)
 }
 
@@ -359,11 +375,19 @@ sim_logistic_bdc <- function(n = 10000, scenario = c("x_to_y", "y_to_x", "bidire
          bidirectional = { B[1, 2] <- beta; B[2, 1] <- beta },
          common_cause = { B[1, 3] <- beta; B[2, 3] <- beta }, independent = NULL)
   fold <- function(z) abs((z - 1) - 2 * floor((z - 1) / 2) - 1)
-  N <- n + burn; X <- matrix(0, N, 3); X[1, ] <- stats::runif(3)
-  for (t in 1:(N - 1)) {
-    x <- X[t, ]
-    X[t + 1, ] <- fold(r * x * (1 - x - as.vector(B %*% x)))
+  N <- n + burn
+  # Mutually coupled maps can synchronise completely (identical series from some initial values: 8 of 50 data sets of
+  # 1000 points with beta = 0.5).  Such a pair is one series observed twice and no example of a mutual link: new
+  # initial values are drawn (at most 20 times), and a pair that still coincides is returned with a warning.
+  for (try in seq_len(20L)) {
+    X <- matrix(0, N, 3); X[1, ] <- stats::runif(3)
+    for (t in 1:(N - 1)) {
+      x <- X[t, ]
+      X[t + 1, ] <- fold(r * x * (1 - x - as.vector(B %*% x)))
+    }
+    if (scenario != "bidirectional" || !.synchronised(X[(burn + 1):N, 1], X[(burn + 1):N, 2])) break
   }
+  .sync_check(X[(burn + 1):N, 1], X[(burn + 1):N, 2], "beta")
   d <- data.frame(x = X[(burn + 1):N, 1], y = X[(burn + 1):N, 2])
   attr(d, "truth") <- scenario
   d

@@ -6,14 +6,14 @@
 # ("regression": closed-form or sampled Bayes factors of nested regressions;
 # "surrogate": the statistic against its surrogate / asymptotic null through
 # surrogate_bf(); "posterior": posterior over the causal cases; "verdict":
-# one verdict per pair, no directed p-values; "external": PCMCI), the tuning
+# one verdict per pair, no directed p values; "external": PCMCI), the tuning
 # settings the method reads, whether a pooled (stacked) panel estimator
 # exists, and the reference shown by causal_methods().
 
 .method_registry <- list(
-  granger        = list(label = "Granger causality (F-test)", short = "Granger causality (F-test)",
+  granger        = list(label = "Granger causality (F test)", short = "Granger causality (F test)",
                         stat = "F", family = "regression", conditional = TRUE, type = "linear", pooled = TRUE, min_n = 12L,
-                        desc = "F-test of the cause's lags in the autoregression of the effect",
+                        desc = "F test of the cause's lags in the autoregression of the effect",
                         ref = "Granger (1969)", tuning = character(0)),
   bayes_granger  = list(label = "Bayesian Granger causality", short = "Bayesian Granger causality (Bayes factor)",
                         stat = "F", family = "regression", conditional = TRUE, type = "linear", pooled = TRUE, min_n = 8L,
@@ -123,12 +123,13 @@
 
 .method_arg_defaults <- list(
   granger        = list(vcov = "classical"),
-  cmi            = list(reference = "shift"),
-  cmi_lag        = list(reference = "shift"),
+  cmi            = list(reference = "conditional"),
+  cmi_lag        = list(reference = "conditional"),
   toda_yamamoto  = list(d_max = 1L, vcov = "classical"),
   diks_panchenko = list(eps = NULL, C = 8, filter = "none", reference = "conditional"),
-  te             = list(reference = "circular"),
-  pid            = list(reference = "permutation"),
+  te             = list(reference = "conditional"),
+  df             = list(reference = "conditional"),
+  pid            = list(reference = "conditional"),
   rf_granger     = list(num_trees = 200L, mtry = "all", min_node_size = "auto", folds = 5L, shadow = TRUE,
                         importance = TRUE)
 )
@@ -213,16 +214,17 @@ causal_methods <- function(method = NULL) {
 
 #' @export
 print.causal_methods <- function(x, ...) {
-  if (!all(c("method", "type", "conditional", "pooled", "needs", "description") %in% names(x)))     # a subset of the columns
+  if (!all(c("method", "type", "conditional", "pooled", "needs", "description", "min_length") %in% names(x)))     # a subset of the columns
     return(invisible(print.data.frame(x, row.names = FALSE, right = FALSE)))
   .out("Causality methods of Rcausality: rcausality(x, method = <name>, bayes = TRUE / FALSE, cores = <n>)\n")
   tb <- data.frame(method = x$method, type = x$type, conditional = ifelse(x$conditional, "yes", "-"),
-                   pooled.panel = ifelse(x$pooled, "yes", "-"), needs = x$needs, description = x$description,
+                   pooled.panel = ifelse(x$pooled, "yes", "-"), min.length = x$min_length, needs = x$needs, description = x$description,
                    stringsAsFactors = FALSE)
   print(tb, row.names = FALSE, right = FALSE)
   .out("  every method has a Bayesian variant (bayes = TRUE; in panels all but rf_granger) and unit- and group-level\n",
       " panel tests (id = , time = );\n",
-      " pooled.panel: a pooled estimator on the stacked units exists.  causal_methods(\"<name>\") lists the settings.\n", sep = "")
+      " pooled.panel: a pooled estimator on the stacked units exists; min.length: advisable length of a series (a warning below it).\n",
+      " causal_methods(\"<name>\") lists the settings.\n", sep = "")
   invisible(x)
 }
 

@@ -58,7 +58,7 @@ alternative settings and reports, for every directed link, in how many of
 them it is declared:
 \itemize{
 \item \code{lags}: fixed lag orders instead of the selected one;
-\item \code{adjust}: other multiplicity corrections of the same p-values (e.g.
+\item \code{adjust}: other multiplicity corrections of the same p values (e.g.
 Benjamini-Hochberg FDR control instead of Holm's family-wise control;
 no re-run needed);
 \item \code{subsamples}: \code{n_sub} contiguous blocks of \code{fraction} of the

@@ -72,6 +72,51 @@ select_lag <- function(data, max_lag = 8L, criterion = c("BIC", "AIC", "HQ")) {
   which.min(crit)
 }
 
+# ---- the memory of the effect ----------------------------------------------------------------------------------------
+# A test of "the cause does not drive the effect" conditions on a finite past of the effect, and its null hypothesis
+# is the one with that past.  Without the link it is true only when the past holds what the effect remembers of
+# itself: when the effect depends on earlier values of its own than the test conditions on, and the cause depends on
+# them too (as in the reverse direction of a link), the cause is informative given the short past although it does
+# not drive the effect.  Example: x[t] = 0.4 x[t-1] + 0.4 x[t-2] + noise drives y; the hypothesis "y does not help to
+# predict x given one value of each" is false.  The order of the VAR by the BIC is no safeguard: the past of the driven
+# series stands in for the missing lag of the driver, the first-order VAR fits nearly as well, and the criterion
+# charges four coefficients for the one that matters (it chose order one in 82%, 27% and 0% of such pairs of 100, 300
+# and 1000 time points, and the F test of the reverse direction then rejected in 56%, 31% and 8% of all pairs).
+# .own_order(): the order of the autoregression of the effect alone, orders 0 to max_lag compared on the same sample
+# by the corrected AIC (Hurvich and Tsai 1989).  It does not depend on the cause, so that it selects nothing in favour
+# of the tested link; and the AIC rather than the BIC, because an order that is too long costs a little power and one
+# that is too short makes the null hypothesis false (a series observed with noise has an autoregression of infinite
+# order, for which the BIC stops early).
+# Every test keeps its statistic for the lags of the cause and conditions on the past of the effect up to that order:
+# the regression tests include that many lags of the effect itself (.granger_pair(): own lags), and the tests with
+# conditional surrogates let the surrogates of the cause depend on the longer past (.cond_extra()).  The order of the
+# test, the lags of the cause, is chosen as before.  A numeric `lag` of the user gives the regression of that order.
+# options(Rcausality.own_memory = FALSE) switches the rule off (order 0: the tests of the versions up to 0.0.11); it
+# is not meant for analyses, the simulation study of the accompanying paper uses it to show what the rule changes.
+.own_order <- function(e, max_lag = 8L) {
+  if (isFALSE(getOption("Rcausality.own_memory"))) return(0L)
+  e <- as.numeric(e); n <- length(e)
+  if (n < 12L || anyNA(e) || !is.finite(stats::sd(e)) || stats::sd(e) == 0) return(0L)
+  pm <- max(1L, min(as.integer(max_lag), (n - 1L) %/% 4L)); m <- n - pm
+  Lm <- cbind(1, .lagmat(e, pm)); y <- e[(pm + 1L):n]
+  crit <- vapply(0:pm, function(p) {
+    rss <- sum(stats::lm.fit(Lm[, seq_len(p + 1L), drop = FALSE], y)$residuals^2); k <- p + 2L
+    if (rss <= 0 || m - k - 1L < 1L) Inf else m * log(rss / m) + 2 * k * m / (m - k - 1L)
+  }, 0)
+  as.integer(which.min(crit) - 1L)
+}
+# the lags `from`..`to` of v at the time points t_idx; time points before the start of the series take its first value
+.hist_pad <- function(v, t_idx, from, to) {
+  if (to < from) return(matrix(0, length(t_idx), 0L))
+  do.call(cbind, lapply(from:to, function(l) v[pmax(t_idx - l, 1L)]))
+}
+# the conditioning vector of the conditional surrogates: `W`, the conditioning vector of the statistic, which holds
+# `have` lags of the effect, with the further lags of the effect up to its own order `own` (standardized)
+.cond_extra <- function(W, effect, t_idx, have, own) {
+  if (is.null(own) || !is.finite(own) || own <= have) return(W)
+  cbind(W, .hist_pad(.std(effect), t_idx, have + 1L, as.integer(own)))
+}
+
 #' Time-delay embedding
 #'
 #' @param x numeric vector.

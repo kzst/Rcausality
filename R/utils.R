@@ -44,9 +44,17 @@ NULL
   n <- length(X)
   if (n == 0L) return(list())
   streams <- .rng_streams(n)
-  f <- function(i) .with_stream(streams[[i]], function() FUN(X[[i]], ...))
+  # the generator of the session, for the seeded calls inside a unit of work (.seed_set())
+  kinds <- getOption("Rcausality.rng_kind"); if (is.null(kinds)) kinds <- RNGkind()
+  f0 <- function(i) {
+    ok <- options(Rcausality.rng_kind = kinds); on.exit(options(ok), add = TRUE)
+    .with_stream(streams[[i]], function() FUN(X[[i]], ...))
+  }
   nc <- .n_cores(cores)
-  if (nc == 1L || n < 2L) return(lapply(seq_len(n), f))
+  # serial: one core, one unit, or a call made inside a worker of the package
+  # (the number of processes never exceeds `cores`, whatever is nested)
+  if (nc == 1L || n < 2L || isTRUE(getOption("Rcausality.in_worker"))) return(lapply(seq_len(n), f0))
+  f <- function(i) { op <- options(Rcausality.in_worker = TRUE); on.exit(options(op), add = TRUE); f0(i) }
   nw <- min(nc, n)
   out <- if (inherits(cores, "cluster")) {
     .cluster_run(cores, nw, seq_len(n), f)
@@ -68,9 +76,12 @@ NULL
 .n_cores <- function(cores) {
   if (inherits(cores, "cluster")) return(length(cores))
   if (is.null(cores) || identical(cores, "auto")) {
-    cores <- max(1L, parallel::detectCores(logical = FALSE) - 1L)
-    chk <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
-    if (nzchar(chk) && !identical(chk, "false")) cores <- min(cores, 2L)
+    cores <- parallel::detectCores(logical = FALSE)
+    cores <- if (is.na(cores)) 1L else max(1L, cores - 1L)
+    chk <- tolower(Sys.getenv("_R_CHECK_LIMIT_CORES_", ""))
+    if (nzchar(chk) && chk != "false") cores <- min(cores, 2L)
+    lim <- suppressWarnings(as.integer(Sys.getenv("OMP_THREAD_LIMIT", "")))   # a limit set by the environment
+    if (!is.na(lim) && lim >= 1L) cores <- min(cores, lim)
   }
   cores <- suppressWarnings(as.integer(cores)[1])
   if (is.na(cores) || cores < 1L) stop("`cores` must be a positive integer, \"auto\" or a cluster from parallel::makeCluster().", call. = FALSE)
@@ -167,11 +178,21 @@ NULL
   for (nm in ls(env)) tryCatch(force(get(nm, envir = env, inherits = FALSE)), error = function(e) NULL)
   invisible(NULL)
 }
+# A seed is set with the generator of the session, also inside a unit of work of .plapply(), which runs on a
+# L'Ecuyer-CMRG stream: set.seed() keeps the kind in force, so that the same seed would give other numbers there.
+# .plapply() records the kinds of the session in the option "Rcausality.rng_kind" for the duration of a unit of work.
+# A seeded call then gives the same result wherever it is made: directly, inside compare_methods() or
+# benchmark_methods(), serially or in a worker; and data that a simulator generates for a given seed are the same
+# data when the call is an argument that is evaluated inside a unit of work.
+.seed_set <- function(seed) {
+  k <- getOption("Rcausality.rng_kind")
+  if (is.null(k)) set.seed(seed) else suppressWarnings(set.seed(seed, kind = k[1L], normal.kind = k[2L], sample.kind = k[3L]))
+}
 .rng_setup <- function(seed) {
   if (is.null(seed)) return(NULL)
   .force_args(parent.frame())
   old <- .rng_get()
-  set.seed(seed)
+  .seed_set(seed)
   old
 }
 .rng_restore <- function(old) {
@@ -255,7 +276,7 @@ NULL
   if (is.null(seed)) return(invisible(NULL))
   .force_args(parent.frame())
   old <- .rng_get()
-  set.seed(seed)
+  .seed_set(seed)
   do.call(on.exit, list(bquote(.rng_put(.(old))), add = TRUE), envir = parent.frame())
   invisible(NULL)
 }

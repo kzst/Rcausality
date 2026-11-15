@@ -1,7 +1,7 @@
 # Bayesian Granger regression with a hierarchical Minnesota prior --------------
 # For short series the unrestricted regression of the effect on the lags of
 # all involved series has few residual degrees of freedom (or none), and the
-# F-test loses its power or cannot be computed.  The Minnesota prior
+# F test loses its power or cannot be computed.  The Minnesota prior
 # (Litterman 1986) shrinks the coefficients towards zero, more strongly for
 # distant lags; its overall tightness is integrated out under the hyperprior
 # of Giannone, Lenza and Primiceri (2015), so that the Bayes factor of
@@ -29,14 +29,15 @@
 
 .logsumexp <- function(v) { m <- max(v); if (!is.finite(m)) m else m + log(sum(exp(v - m))) }
 
-.bayes_granger_minnesota <- function(effect, cause, controls, lag, control, prior_prob, cores = 1L) {
-  ys <- .std(effect); xs <- .std(cause); n <- length(ys)
+# (`own`: lags of the effect itself, at least `lag`; see .granger_pair())
+.bayes_granger_minnesota <- function(effect, cause, controls, lag, control, prior_prob, cores = 1L, own = lag) {
+  ys <- .std(effect); xs <- .std(cause); n <- length(ys); Q <- max(lag, as.integer(own), na.rm = TRUE)
   cs <- if (is.null(controls)) NULL else apply(as.matrix(controls), 2, .std)
-  own <- .lagmat(ys, lag); Xc <- .lagmat(xs, lag); colnames(Xc) <- paste0("lag", seq_len(lag))
-  cz <- if (is.null(cs)) NULL else do.call(cbind, lapply(seq_len(ncol(cs)), function(j) .lagmat(cs[, j], lag)))
-  yd <- ys[(lag + 1):n] - control$own_mean * own[, 1]          # prior mean of the first own lag moved into y
+  own <- .lagmat(ys, Q); Xc <- .lags_upto(xs, lag, Q); colnames(Xc) <- paste0("lag", seq_len(lag))
+  cz <- if (is.null(cs)) NULL else do.call(cbind, lapply(seq_len(ncol(cs)), function(j) .lags_upto(cs[, j], lag, Q)))
+  yd <- ys[(Q + 1):n] - control$own_mean * own[, 1]            # prior mean of the first own lag moved into y
   l_dec <- seq_len(lag)^(-2 * control$decay)
-  ds <- c(l_dec / .ar_scale(ys, lag)^2,
+  ds <- c(seq_len(Q)^(-2 * control$decay) / .ar_scale(ys, Q)^2,
           if (!is.null(cs)) unlist(lapply(seq_len(ncol(cs)), function(j) control$cross^2 * l_dec / .ar_scale(cs[, j], lag)^2)))
   dc <- control$cross^2 * l_dec / .ar_scale(xs, lag)^2
   out <- .minnesota_core(yd, matrix(1, length(yd), 1L), cbind(own, cz), ds, Xc, dc, control, prior_prob, cores)

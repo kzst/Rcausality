@@ -17,7 +17,7 @@ observed over time (\code{id}), or the causal drivers of one explained variable
 \section{Families of methods}{
 
 \itemize{
-\item Granger causality and its generalisations: the F-test (\code{"granger"}), the
+\item Granger causality and its generalisations: the F test (\code{"granger"}), the
 Bayesian regression comparison with spike-and-slab, Minnesota (short
 series), g, hyper-g or BIC priors (\code{"bayes_granger"}, \code{\link[=bayes_granger]{bayes_granger()}},
 \code{\link[=bayes_control]{bayes_control()}}), the Toda-Yamamoto test for integrated series

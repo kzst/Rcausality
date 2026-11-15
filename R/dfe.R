@@ -180,7 +180,7 @@ dfe_train <- function(n_per_class = 200L, lengths = c(200L, 500L, 1000L, 2000L, 
   Fm <- as.data.frame(do.call(rbind, rows)); Fm$class <- factor(design$class, levels = .dfe_classes)
   rf <- ranger::ranger(class ~ ., data = Fm, num.trees = num_trees, probability = TRUE,
                        num.threads = max(1L, .n_cores(cores)))
-  oob <- stats::predict(rf, data = Fm)$predictions   # in-sample; the OOB error is in rf$prediction.error
+  oob <- stats::predict(rf, data = Fm, num.threads = max(1L, .n_cores(cores)))$predictions   # in-sample; the OOB error is in rf$prediction.error
   structure(list(rf = rf, features = setdiff(names(Fm), "class"), Lmax = Lmax, Kmax = Kmax,
                  n_per_class = n_per_class, lengths = lengths, oob_error = rf$prediction.error,
                  confusion = table(truth = Fm$class, predicted = factor(.dfe_classes[apply(oob, 1, which.max)], .dfe_classes))),
@@ -253,7 +253,7 @@ dfe_classify <- function(x, y, model = NULL, lag = 0L, ...) {
   bx <- .binarize_mean(x); by <- .binarize_mean(y)
   f <- .dfe_features(bx, by, model$Lmax, model$Kmax)
   Fm <- as.data.frame(as.list(f))[, model$features, drop = FALSE]
-  sc <- stats::predict(model$rf, data = Fm)$predictions[1, ]
+  sc <- stats::predict(model$rf, data = Fm, num.threads = 1L)$predictions[1, ]
   sc <- sc[.dfe_classes]
   structure(list(scores = sc, best = names(sc)[which.max(sc)], features = f,
                  entropy = .ce_curves(bx, by, model$Lmax, model$Kmax), n = length(bx), lag = lag),

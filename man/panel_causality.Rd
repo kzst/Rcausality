@@ -48,12 +48,12 @@ the Granger family (at most 99).}
 An object of class \code{causpanel} (inheriting from
 \code{\link[=causres-class]{causres}}) with, in addition to the slots of a
 \code{causres}: \code{units} (one row per unit and directed pair: lag, statistic,
-p-value, Bayes factor, \code{nominal} decision of the unit, \code{q_value},
+p value, Bayes factor, \code{nominal} decision of the unit, \code{q_value},
 \code{post_pooled} and the error-controlled decision \code{significant}; for the
 Granger family also the uncalibrated \code{p_ftest} and \code{bf10_raw}), \code{panel}
 (the group- and pooled-level tests, with a \code{detail} text), \code{prevalence}
 (share of units with the link: observed, and the posterior under the
-prevalence model), \code{dependence} (the CD statistic, its p-value and the
+prevalence model), \code{dependence} (the CD statistic, its p value and the
 mean correlation between the units for every variable; \code{NULL} when the
 settings account for the dependence), \code{id}, \code{time}. Methods: \code{print}, \code{summary}, \code{plot}
 (see \code{\link[=plot.causpanel]{plot.causpanel()}}), \code{as.matrix}, \code{predict}.
@@ -125,7 +125,7 @@ as observed, and \code{resample = "periods"} uses the same resampled periods
 in all units, which keeps the dependence between the units): the
 bootstrap sample is the null sample of the group test, and it gives the
 empirical null (a normal location-scale fit to the bootstrap scores) with
-which the unit p-values and the pooled p-value are calibrated -- the
+which the unit p values and the pooled p value are calibrated -- the
 calibration can only make a test more conservative. The Bayes factors use
 the prior of \code{\link[=bayes_control]{bayes_control()}}: the unit Bayes factors as in
 \code{\link[=rcausality]{rcausality()}}, except that the BIC form is replaced by the exact Bayes
@@ -149,7 +149,12 @@ mutual information (\code{"cmi"}, \code{"cmi_lag"}), the binned transfer entropy
 2015). Their null distribution comes from surrogate panels in which the
 cause is delayed circularly within every unit; with \code{bayes = TRUE} the
 statistic is compared with its surrogates by \code{\link[=surrogate_bf]{surrogate_bf()}} (the
-random forest has no Bayesian panel variant). These
+random forest has no Bayesian panel variant). The unit tests of \code{"te"}
+and \code{"pid"} use circular shifts and permutations within the coded past
+in a panel analysis, unless \code{method_args} names a \code{reference}: for
+series of a few dozen points the statistic of conditional surrogates
+lies slightly below the observed one on average, which the test of one
+series does not notice and the group test adds over the units. These
 estimators use all \verb{units x periods} delay vectors, so they work with
 units that are far too short for a unit-by-unit analysis (see
 \code{min_length} in \code{\link[=causal_methods]{causal_methods()}}); within short units the shifted
@@ -178,9 +183,9 @@ plot(pg, "prevalence")
 # the same call through rcausality(), Bayesian variant (closed-form Bayes factors)
 rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = "bic", seed = 1)
 # a nonlinear coupling in a short panel: the pooled conditional mutual information
-pn <- sim_panel(n_units = 30, n_time = 20, scenario = "x_to_y", nonlinear = TRUE,
+pn <- sim_panel(n_units = 20, n_time = 20, scenario = "x_to_y", nonlinear = TRUE,
                 coupling = 0.8, seed = 2)
-rcausality(pn, id = "unit", time = "time", method = "cmi", n_perm = 100, seed = 1, cores = 2)
+rcausality(pn, id = "unit", time = "time", method = "cmi", n_perm = 80, seed = 1, cores = 2)
 }
 }
 \references{

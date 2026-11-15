@@ -56,11 +56,13 @@ every unit of work has its own random stream, so the results are
 \link{Rcausality-parallel}).}
 
 \item{lag}{integer lag order, \code{"auto"} (selected by \code{lag_criterion} on
-the VAR of the involved series; the lag with the largest statistic for
-the methods that scan the lags) or \code{"first"} (Granger family: the
+the VAR of the involved series; the regressions then include the lags
+of the effect itself up to the order of its own autoregression, see
+the section on the memory of the effect; the lag with the largest
+statistic for the methods that scan the lags) or \code{"first"} (Granger family: the
 smallest order at which the test is significant at level
 \verb{alpha / (number of orders)}, i.e. the delay after which the cause first
-helps; the reported p-value is the Bonferroni-corrected minimum over the
+helps; the reported p value is the Bonferroni-corrected minimum over the
 orders \verb{1..max_lag}; for Bayes-factor decisions the first order with
 \code{bf10 > bf_threshold}, and the reported Bayes factor is that of "a link
 at one of the orders", the average over the orders). In panels \code{"auto"}
@@ -80,7 +82,7 @@ methods that support it), otherwise tests are pairwise.}
 x -> y and y -> x; \code{"forward"} only the causes-in-\code{x}, effects-in-\code{y}
 direction. Ignored when \code{y} is \code{NULL} (all ordered pairs are tested).}
 
-\item{alpha}{significance level (applied to adjusted p-values).}
+\item{alpha}{significance level (applied to adjusted p values).}
 
 \item{adjust}{multiple-testing correction passed to
 \code{\link[stats:p.adjust]{stats::p.adjust()}} (default \code{"holm"}; \code{"none"} disables it).}
@@ -157,7 +159,7 @@ method allows, pooled over the units (see \code{\link[=panel_causality]{panel_ca
 \code{\link[=causal_methods]{causal_methods()}} lists the methods; \code{causal_methods("<name>")} shows the
 settings of one of them.
 \itemize{
-\item Granger family: \code{"granger"} (F-test, default), \code{"bayes_granger"} (the
+\item Granger family: \code{"granger"} (F test, default), \code{"bayes_granger"} (the
 Bayesian Granger regression, i.e. \verb{method = "granger", bayes = TRUE}),
 \code{"toda_yamamoto"} (lag-augmented test for integrated series; setting
 \code{d_max}), \code{"diks_panchenko"} (nonparametric, nonlinear; settings \code{eps},
@@ -197,7 +199,8 @@ given directly in \code{...}, as before.
 the VAR order of the pair, at most 5; too short a history lets the
 cause's lags stand in for the effect's own deeper past and produces
 spurious reverse links), \code{reference} (the reference distribution:
-\code{"shift"}, the default, uses conditional shifts: the lags of the cause
+\code{"conditional"}, the default (\code{"shift"} up to version 0.0.11, still
+accepted), uses conditional shifts: the lags of the cause
 are written as location plus scale times a standardized residual, with
 location and scale estimated as functions of the conditioning vector
 (see the section on conditional shifts), and the residuals are shifted
@@ -206,9 +209,9 @@ circularly, which keeps the serial dependence of the cause;
 \code{k_perm} nearest neighbours in the conditioning space, which do not
 keep it and reject too often for strongly autocorrelated series). With
 \code{lag = "auto"} the lags \verb{1..max_lag} are tested at once (with
-\code{reference = "shift"} the scan is limited as for \code{"te"}): the reported
+conditional shifts the scan is limited as for \code{"te"}): the reported
 lag is the one
-with the largest statistic and the p-value is that of the maximal
+with the largest statistic and the p value is that of the maximal
 statistic against the maximum of the replicated statistics over the
 lags (the same max-statistic test is used by \code{"te"}, \code{"pid"} and
 \code{"df"}). Series are standardised.
@@ -217,34 +220,37 @@ lags (the same max-statistic test is used by \code{"te"}, \code{"pid"} and
 shifts of a scan over \code{L} lags are spaced by \code{L}, which leaves about
 \verb{0.8 n / L} replicates; the scan is limited to the lags for which
 enough of them remain (at least 40, and as many as the smallest
-p-value needs to pass a Holm or Bonferroni correction over the tests of
+p value needs to pass the correction over the tests of
 the analysis; a message reports the limit). A numeric \code{lag} tests one
-lag with all shifts. \code{reference}: \code{"circular"} (default), circular
-shifts of the coded cause, which generate the hypothesis that the two
-series are independent; \code{"conditional"}, conditional shifts of the cause
-given the past of the effect, coded after the shift, for series on a
-continuous scale. In the reverse direction of a strong link whose
-driver is persistent the past of the cause is a function of the past
-of the effect, which a few symbols do not resolve: with circular
-shifts the test then rejects too often in long series (a warning names
-the situation), with conditional shifts it does not.
+lag with all shifts. \code{reference}: \code{"conditional"} (default),
+conditional shifts of the cause given the past of the effect, coded
+after the shift (series with at most \code{bins} distinct values are
+symbolic and are shifted circularly); \code{"circular"}, circular shifts of
+the coded cause, which generate the hypothesis that the two series are
+independent (the default up to version 0.0.11). In the reverse
+direction of a link whose driver is persistent the past of the cause
+is a function of the past of the effect, which a few symbols do not
+resolve: with circular shifts the test then rejects too often in long
+series (a warning describes such pairs), with conditional shifts it
+does not.
 \item \code{"ccm"} (see \code{\link[=ccm]{ccm()}}): \code{m}, \code{tau} (embedding); a link needs a
 significant and converging cross-map skill.
 \item \code{"pid"} (see \code{\link[=marpid]{marpid()}}): \code{k_target}, \code{k_source} (binarisation depths),
-\code{history}. \code{reference}: \code{"permutation"} (default), the cause is permuted
-within the levels of the coded own past of the effect, an exact test
-for the coded variables; \code{"conditional"}, conditional shifts of the
-cause given the past of the effect, coded after the shift, for series
-on a continuous scale. The code does not resolve a persistent past:
-in the reverse direction of a strong link whose driver is persistent
+\code{history}. \code{reference}: \code{"conditional"} (default), conditional shifts
+of the cause given the past of the effect, coded after the shift
+(series with at most \code{2^k_source} distinct values are permuted);
+\code{"permutation"}, the cause is permuted within the levels of the coded
+own past of the effect, an exact test for the coded variables (the
+default up to version 0.0.11). The code does not resolve a persistent
+past: in the reverse direction of a link whose driver is persistent
 the permutation test rejects too often, the more so the longer the
-series (a warning names the situation); the test with conditional
+series (a warning describes such pairs); the test with conditional
 shifts does not.
 \item \code{"dc"} (see \code{\link[=dimensional_causality]{dimensional_causality()}}): \code{m}, \code{tau}, \code{k_range}, \code{prep};
 decisions by posterior probabilities (\code{prob_threshold}).
 \item \code{"hirata"} (see \code{\link[=hirata_rp]{hirata_rp()}}): \code{m}, \code{tau}, \code{rate} (recurrence rate),
 \code{theta} (coverage-index threshold). \code{"cd"} (see \code{\link[=krakovska_cd]{krakovska_cd()}}): \code{m},
-\code{tau}; bootstrap z-tests at level \code{alpha}. Both give verdicts per pair.
+\code{tau}; bootstrap z tests at level \code{alpha}. Both give verdicts per pair.
 \item \code{"ccdh"} (see \code{\link[=ccdh]{ccdh()}}): \code{m}, \code{tau}, \code{K} (NSRPS steps), \code{n_surr}
 (circular-shift surrogates), \code{theta} (reconstruction-index threshold);
 a numeric \code{lag} aligns the pair.
@@ -254,7 +260,14 @@ a numeric \code{lag} aligns the pair.
 number of constrained past lags). The orders (\verb{$df}) give the Table-2
 reading of the paper (including the common-driver case), which decides
 a pair whenever it is determinate; the other pairs are decided by the
-directed variance-reduction tests (\verb{$pairs}).
+directed variance-reduction tests (\verb{$pairs}). \code{reference}:
+\code{"conditional"} (default; conditional shifts for the directed tests) or
+\code{"local"} (local permutations, the reference of the order tests). When
+the past of the effect determines the cause, as in the deterministic
+systems for which the method is made, a directed test uses local
+permutations (a message says so; \verb{$extra$reference} records the
+reference of every test). A directed test whose statistic is not
+positive (no reduction of the conditional variance) has p value 1.
 \item \code{"markov"}: \code{memory} (\code{"auto"} from the PACF), \code{iid_injection}
 (\code{"allowed"} or \code{"forbidden"} in the decision table), \code{k_nn}, \code{n_bins},
 \code{n_markov}, \code{k}, \code{k_perm}. Lags are fixed to 1.
@@ -292,10 +305,11 @@ example when the dependence is nonlinear.
 
 \section{Conditional shifts}{
 
-The tests of \code{"cmi"}, \code{"cmi_lag"}, \code{"rf_granger"} and
-\code{"diks_panchenko"} (and of \code{"te"} and \code{"pid"} with \code{reference = "conditional"}) refer
+The tests of \code{"cmi"}, \code{"cmi_lag"}, \code{"te"}, \code{"pid"}, \code{"rf_granger"},
+\code{"diks_panchenko"} and the directed test of \code{"df"} refer
 their statistic to surrogates of the cause that keep its location and scale
-given the conditioning vector. Every
+given the conditioning vector (\code{reference = "conditional"}, the default
+of all of them). Every
 lag of the cause is written as \verb{g(w) + s(w) e}, with the conditioning
 vector \code{w} (the past of the effect and of the controls), a location \code{g},
 a scale \code{s} and a standardized residual \code{e}; a surrogate keeps \code{g} and
@@ -314,12 +328,39 @@ Shah and Peters 2020).
 
 When \code{w} explains 99\% or more of the variance of a lag of the cause, no
 surrogate differs from the cause by more than the error of the fit: no
-test is carried out (p-value 1, Bayes factor 1), and a warning says so.
+test is carried out (p value 1, Bayes factor 1), and a warning says so.
 This is the case of redundant series, of series with a common trend, and
 of noise-free deterministic systems, in which the driver is a function of
 the past of the driven series (Takens 1981). For deterministic systems
-\code{"te"} and the state-space methods (\code{"ccm"}, \code{"dc"}, \code{"cd"}, \code{"ccdh"},
-\code{"hirata"}) are the tools.
+the state-space methods (\code{"ccm"}, \code{"dc"}, \code{"cd"}, \code{"ccdh"},
+\code{"hirata"}) and \code{"te"} with circular shifts are the tools.
+}
+
+\section{The memory of the effect}{
+
+A test of "the cause does not drive the effect" conditions on a finite
+past of the effect, and without the link its null hypothesis is true only
+when that past holds what the effect remembers of itself. If the effect
+depends on earlier values of its own than the test conditions on, and
+the cause depends on them too, as in the reverse direction of a link,
+the cause is informative given the short past although it does not
+drive the effect. The package therefore estimates the order of the
+autoregression of the effect alone (orders 0 to \code{max_lag}, corrected
+AIC), which does not depend on the cause. When the package chooses the
+order of a regression test (\code{lag = "auto"} or \code{"first"}; \code{"granger"},
+\code{"toda_yamamoto"}, \code{"rf_granger"}, the Bayesian regressions), the
+regressions include the lags of the effect itself up to this order
+(\verb{$extra$own_lags}), while the lags of the cause, the order that is
+tested and reported, are chosen as before; a numeric \code{lag} gives the
+regression of exactly that order. The tests with conditional shifts
+keep their statistic and let the surrogates of the cause depend on the
+past of the effect up to this order. In panels the order of a link is
+chosen by the BIC of its pooled regression, a criterion of that one
+equation with the observations of all units. A series
+that is observed with noise has an autoregression of infinite order:
+the null hypothesis of every test with a finite past is then false in
+the reverse direction of a link, by an amount that the selected order
+keeps small but not zero (Newbold 1978).
 }
 
 \section{Bayesian variants}{
@@ -344,7 +385,7 @@ unit-information prior (\code{prior = "g"} with its default scale; columns
 \examples{
 # --- two series, Granger causality --------------------------------------
 # A VAR where x drives y.  The print shows both directed tests (lag chosen
-# by BIC, F statistic, p-value, Bayes factor) and the class of the pair.
+# by BIC, F statistic, p value, Bayes factor) and the class of the pair.
 d <- sim_var(400, scenario = "x_to_y", seed = 1)
 r <- rcausality(d$x, d$y)
 r
@@ -356,7 +397,7 @@ d3 <- sim_var(400, n_series = 3, seed = 2)
 rcausality(d3, method = "granger", bayes = TRUE, prior = "bic")$classes
 \donttest{
 summary(r)
-plot(r, "all")                    # network, p-value matrix and lag scan
+plot(r, "all")                    # network, p value matrix and lag scan
 rcausality(d3, method = "bayes_granger", control = bayes_control(n_iter = 300),
            seed = 1)$bayes                         # spike-and-slab: BF10, effect interval, R-hat
 
@@ -365,21 +406,24 @@ rcausality(d3, method = "bayes_granger", control = bayes_control(n_iter = 300),
 nl <- sim_nonlinear(300, "x_to_y", seed = 2)       # stochastic, no linear trace of the link
 rcausality(nl, method = "cmi", max_lag = 2, n_perm = 50, seed = 1)$classes   # kNN conditional MI
 lg <- sim_logistic(200, "x_to_y", seed = 2)        # deterministic maps
-rcausality(lg, method = "te", n_perm = 100, seed = 1, cores = 2)$classes$relation
-rcausality(lg, method = "te", method_args = list(bins = 6), n_perm = 100, seed = 1)$pairs
+# (noise-free maps: plain circular shifts; the conditional tests carry out no test)
+rcausality(lg, method = "te", method_args = list(reference = "circular"), n_perm = 100,
+           seed = 1, cores = 2)$classes$relation
+rcausality(lg, method = "te", method_args = list(reference = "circular", bins = 6),
+           n_perm = 100, seed = 1)$pairs
 rcausality(lg, method = "ccm", n_perm = 50, seed = 1)$classes$relation  # convergent cross mapping
-rcausality(sim_logistic_bdc(500, "x_to_y", seed = 1), method = "dc")$classes$relation
 
 # --- conditional (multivariate) Granger causality and blocks of series ---
 rcausality(d3, conditional = TRUE)$classes$relation
 rcausality(d3[, 1:2], d3[, 3, drop = FALSE], directions = "forward")
 
 # --- the Bayesian variant of a surrogate method ---------------------------
-rcausality(lg, method = "te", bayes = TRUE, n_perm = 100, seed = 1)$bayes
+rcausality(lg, method = "te", bayes = TRUE, lag = 1, method_args = list(reference = "circular"),
+           seed = 1)$bayes
 
 # --- generalisations of the Granger test ----------------------------------
 rcausality(d, method = "toda_yamamoto", method_args = list(d_max = 1))$classes  # integrated series
-rcausality(lg, method = "diks_panchenko")$classes                             # nonlinear
+rcausality(lg, method = "diks_panchenko", n_perm = 50, seed = 1)$classes       # nonlinear
 rcausality(d, lag = "first")$pairs[, c("cause", "effect", "lag", "p_value")]  # first order
 # short series: the hierarchical Minnesota prior (tightness integrated out)
 rcausality(sim_var(30, seed = 3), method = "bayes_granger", prior = "minnesota",
@@ -394,6 +438,10 @@ rcausality(pd, id = "unit", time = "time", method = "granger", bayes = TRUE, pri
 }
 }
 \references{
+Hurvich, C. M. and Tsai, C.-L. (1989). Regression and time series model selection in small samples. \emph{Biometrika}, 76(2), 297-307. \doi{10.1093/biomet/76.2.297}
+
+Newbold, P. (1978). Feedback induced by measurement errors. \emph{International Economic Review}, 19(3), 787-791.
+
 Granger, C. W. J. (1969). Investigating causal relations by econometric models and cross-spectral methods. \emph{Econometrica}, 37(3), 424-438. \doi{10.2307/1912791}
 
 Liang, F., Paulo, R., Molina, G., Clyde, M. A. and Berger, J. O. (2008). Mixtures of g priors for Bayesian variable selection. \emph{Journal of the American Statistical Association}, 103(481), 410-423. \doi{10.1198/016214507000001337}

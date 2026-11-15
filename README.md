@@ -31,6 +31,16 @@ panel bootstrap, and adds a heteroskedasticity-consistent form of the F
 test and resampling of common periods for panels with cross-sectional
 dependence (see `NEWS.md`; several results change, among them those of
 `"cmi"` and `"rf_granger"` on noise-free deterministic systems).
+Versions 0.0.6 to 0.0.11 add diagnostics and warnings (dependence between
+the units of a panel, persistent series, the resolution of surrogate
+tests), make conditional shifts the reference of the kernel test and scale
+the conditional surrogates by local variances.
+Version 0.0.12 accounts for the memory of the effect: the regression tests
+include the own lags of the effect up to the order of its autoregression,
+the conditional surrogates condition on that past, and conditional shifts
+are the default reference of `"te"` and `"pid"`; the group test of panels
+with jointly resampled periods is referred to the bootstrap panels (see
+`NEWS.md`; results of the default settings change).
 Every method from the group's papers has a reproduction of a published
 result in `inst/reproduce/` and a section below ("Reproductions of
 published results") stating what was and what was not reproduced.
@@ -70,7 +80,7 @@ r
 **What you see.** The header names the method, the number of series and of
 directed tests and the decision rule (adjusted p < 0.05, Holm). Then one row
 per *directed test* (`x -> y` and `y -> x`): the lag order used, the F
-statistic with its degrees of freedom, the raw and the adjusted p-value, the
+statistic with its degrees of freedom, the raw and the adjusted p value, the
 BIC-approximated Bayes factor `BF10`, the posterior probability of the link
 and the decision (`sig`, starred by strength). Below the tests comes the
 *classification of the pair* -- one of `x_to_y`, `y_to_x`, `bidirectional`,
@@ -113,7 +123,7 @@ same shape:
 
 `as.matrix(r, "p_adj")` gives the cause x effect matrix of any column of
 `$pairs`, `as.data.frame(r)` the tests, and `plot(r, type)` draws the
-network, the p-value matrix, the lag scan, the embeddings or the posterior
+network, the p value matrix, the lag scan, the embeddings or the posterior
 panel (see "Plots" below).
 
 ## A walkthrough on a known network
@@ -133,13 +143,13 @@ plot_series(net, n_last = 150)        # the last 150 observations, one panel per
 ### Granger causality on all ordered pairs
 
 `rcausality(net)` tests every ordered pair of the four series; `lag = "auto"`
-picks the VAR order of each pair by BIC and the p-values are Holm-adjusted
+picks the VAR order of each pair by BIC and the p values are Holm-adjusted
 over all tests.
 
 ```r
 g <- rcausality(net, method = "granger")
 summary(g)                            # five-class verdict per unordered pair
-as.matrix(g, "p_adj")                 # cause (rows) x effect (columns): adjusted p-values
+as.matrix(g, "p_adj")                 # cause (rows) x effect (columns): adjusted p values
 plot(g, "matrix")                     # the same matrix as a picture, starred = significant
 ```
 
@@ -154,7 +164,7 @@ the test used, not necessarily the lag at which the coupling acts;
 `plot(g, "lags")` shows the F statistic of every pair over the candidate
 lags.
 
-### Decision by Bayes factors instead of p-values
+### Decision by Bayes factors instead of p values
 
 `method = "bayes_granger"` decides by the Bayes factor `BF10` of the link
 (labels of `bf_evidence()`, the categories of Jeffreys in the wording of
@@ -162,9 +172,9 @@ Lee and Wagenmakers: 1-3 anecdotal, 3-10 moderate, 10-30 strong, 30-100
 very strong, > 100 decisive, and the same against the link for the
 reciprocal values); a link needs `BF10 > bf_threshold` (3 by default).
 With `prior = "bic"` the factor is the closed-form BIC approximation of the
-same regressions as the F-test; without `prior` the spike-and-slab
+same regressions as the F test; without `prior` the spike-and-slab
 regression of `bayes_granger()` is sampled for every pair (see "Bayesian
-variants" below). Unlike a p-value, `BF10 < 1` is evidence *for* the
+variants" below). Unlike a p value, `BF10 < 1` is evidence *for* the
 absence of a link.
 
 ```r
@@ -219,8 +229,8 @@ past of the driven series (Takens 1981), so that given this past the
 driver has nothing to add: a conditional test is not informative, and
 `"cmi"` and `"rf_granger"` say so with a warning instead of a test. The
 state-space methods (`"ccm"`, `"dc"`, `"cd"`, `"ccdh"`, `"hirata"`), which
-use exactly this reconstruction, and `"te"` with plain circular shifts are
-the tools there. With observational noise both kinds of methods work.
+use exactly this reconstruction, and `"te"` with plain circular shifts
+(`method_args = list(reference = "circular")`) are the tools there. With observational noise both kinds of methods work.
 
 ### kNN conditional mutual information (`"cmi"`)
 
@@ -237,7 +247,7 @@ is permuted within neighbourhoods of the conditioning set, are available
 with `method_args = list(reference = "local")`; they do not keep the
 serial dependence of the cause and reject too often for strongly
 autocorrelated series. With `lag = "auto"` the lags are tested at once and
-the p-value is a max-statistic test over the lags, so no further
+the p value is a max-statistic test over the lags, so no further
 correction is needed; the scan is limited to the lags for which enough
 circular shifts remain (a message reports the limit).
 
@@ -250,13 +260,13 @@ rcausality(nl, method = "granger")                         # no linear link; war
 rcausality(nl, method = "granger", method_args = list(vcov = "HC3"))
 lg <- sim_logistic(300, scenario = "x_to_y", seed = 1)    # noise-free coupled logistic maps
 rcausality(lg, method = "cmi", seed = 1)                   # warns: the past of y determines x, no test
-rcausality(lg, method = "te", seed = 1)                    # plain shifts: x -> y
+rcausality(lg, method = "te", method_args = list(reference = "circular"), seed = 1)   # plain shifts: x -> y
 ```
 
 **What to look for.** The `x -> y` row has a clearly positive CMI (in
-nats) with a small p-value and the reported lag is the one with the largest
+nats) with a small p value and the reported lag is the one with the largest
 CMI; the `y -> x` row is at the level of the surrogates (a CMI around zero,
-p near 1). The linear F-test has no power for this link, whose linear
+p near 1). The linear F test has no power for this link, whose linear
 projection is zero; what it does notice is that the variance of its errors
 depends on the regressors, and the classical F statistic can then reject
 for the wrong reason (a warning names the heteroskedasticity-consistent
@@ -297,12 +307,12 @@ series is not (its driver acts as hidden memory), and the lagged joint
 `(x[t], y[t+1])` is Markov again. `rcausality(method = "markov")` runs the
 Markov-property tests of `x`, `y` and the joint, the two directed CMI tests
 and the contemporaneous test, and maps their outcomes through the decision
-table of the paper (`$markov` shows the six p-values and the case).
+table of the paper (`$markov` shows the six p values and the case).
 
 ```r
 mk <- sim_markov01(600, scenario = "x_to_y", seed = 1)     # coupled binary chains
 rm <- rcausality(mk, method = "markov", n_perm = 100, n_markov = 49, seed = 1)
-rm$markov                                                  # Markov p-values of x, y, joint; the case
+rm$markov                                                  # Markov p values of x, y, joint; the case
 rm$classes
 markov_test(mk$x, m = 1, n_perm = 49)$p_value              # the driver alone is Markov: large p
 ```
@@ -398,9 +408,10 @@ marpid(target = d$y[-1], s1 = d$x[-nrow(d)], s2 = d$y[-nrow(d)], n_surr = 100, s
 
 ### Baselines: transfer entropy and convergent cross mapping
 
-`"te"` is Schreiber's transfer entropy on quantile-binned series with
-circular-shift surrogates (and the effective TE, the surrogate mean
-subtracted); `"ccm"` is Sugihara's convergent cross mapping, which declares
+`"te"` is Schreiber's transfer entropy on quantile-binned series, tested
+against conditional shifts of the cause given the past of the effect
+(plain circular shifts with `method_args = list(reference = "circular")`),
+with the effective TE (the surrogate mean subtracted); `"ccm"` is Sugihara's convergent cross mapping, which declares
 `x -> y` when the cross-map skill of `y xmap x` is significant *and*
 converges with the library size.
 
@@ -483,7 +494,7 @@ surrogate_bf(3.1, rnorm(200))                               # the generic Bayes 
 
 **What to look for.** In `$bayes`, `BF10` far above 1 with a posterior
 probability near 1 is a link; `BF10` below 1 is evidence for its absence (a
-p-value cannot say that). The `effect` column is the posterior mean and
+p value cannot say that). The `effect` column is the posterior mean and
 credible interval of the effect (Geweke's measure for the regression family,
 the shift in surrogate standard deviations for the surrogate family). For
 the sampled variants `R-hat` close to 1 means that the chains agree; raise
@@ -510,7 +521,7 @@ plot(bm)                                      # accuracy per method and scenario
 **What to look for.** In the comparison, pairs on which the methods
 disagree deserve a look at the individual results (`cmp$results$cmi`, say).
 On the VAR network above `granger`, `cmi` and `te` agree on the three true
-links, except that the pairwise F-test also reports the indirect
+links, except that the pairwise F test also reports the indirect
 `v1 -> v3`; `dc` calls every pair independent, because it assumes
 deterministic dynamics and a stochastic VAR is outside its domain -- a
 reminder that each method answers its own question. In the benchmark,
@@ -544,7 +555,7 @@ options of every call -- for time series and for panels:
 ```r
 causal_methods()                                    # the methods and what they can do
 causal_methods("te")                                # the settings of one method
-rcausality(d, method = "te", bayes = TRUE, cores = 4, method_args = list(bins = 6))
+rcausality(d, method = "te", bayes = TRUE, cores = 2, method_args = list(bins = 6))
 ```
 
 **Panel data** (long format: one row per unit and period). Every method is
@@ -560,7 +571,7 @@ pg                               # units with the link, group and pooled tests, 
 plot(pg)                         # heat map: links x units, with the panel-level tests
 plot(pg, "units"); plot(pg, "prevalence"); plot(pg, "network")
 rcausality(pd, id = "unit", time = "time", bayes = TRUE, prior = "hyper_g")   # Bayes factors, posterior prevalence
-rcausality(pd, id = "unit", time = "time", method = "cmi", cores = 4)         # a model-free method, pooled over the units
+rcausality(pd, id = "unit", time = "time", method = "cmi", cores = 2)         # a model-free method, pooled over the units
 placebo_test(pg); robustness(pg); predict(pg, h = 4)                          # checks and forecasts for panels
 compare_methods(pd, methods = c("granger", "toda_yamamoto", "cmi"), id = "unit", time = "time")
 ```
@@ -592,7 +603,7 @@ cd <- causal_drivers(d, target = "y")     # = rcausality(d, target = "y")
 cd                                        # lag, importance, direct / indirect (via), feedback
 plot(cd)                                  # the lag ladder with the explanatory graph
 plot(cd, "importance")
-causal_drivers(d, target = "y", method = "cmi", bayes = TRUE, cores = 4)
+causal_drivers(d, target = "y", method = "cmi", bayes = TRUE, cores = 2)
 cp <- causal_drivers(sim_panel(30, 30, "drivers", seed = 1), target = "y", id = "unit", time = "time")
 plot(cp, "heatmap")                       # the drivers in every unit and in the panel
 ```
@@ -621,7 +632,7 @@ rcausality(short, method = "bayes_granger", prior = "minnesota", lag = 3, condit
 which every series is shifted circularly, with offsets that keep every
 pair of series apart (its own
 dynamics kept, the lead-lag structure destroyed) and reports the placebo
-distribution of the number of links, a placebo p-value per link and, with
+distribution of the number of links, a placebo p value per link and, with
 `reverse = TRUE`, the time-reversed Granger score (a genuine `x -> y` turns
 around when time is reversed). `robustness()` repeats the analysis with
 other lags, corrections (Holm / Benjamini-Hochberg), subsamples and methods.
@@ -666,12 +677,12 @@ as many pairs as cores, otherwise the permutations of every test, so a
 two-series analysis on eight cores also uses all eight. Every unit of work
 has its own random stream, so **the results are identical for any number of
 cores** given the seed: parallelisation changes the running time, never a
-p-value, a Bayes factor or a verdict. See `?Rcausality-parallel`.
+p value, a Bayes factor or a verdict. See `?Rcausality-parallel`.
 
 ```r
-rcausality(net, method = "cmi", cores = 4, seed = 1)       # four forked workers (socket workers on Windows)
+rcausality(net, method = "cmi", cores = 2, seed = 1)       # two forked workers (socket workers on Windows)
 rcausality(net, method = "cmi", cores = "auto", seed = 1)  # all physical cores but one
-options(Rcausality.cores = 4)                              # the default for every call of the session
+options(Rcausality.cores = 2)                              # the default for every call of the session
 cl <- parallel::makeCluster(4)                             # or a cluster you manage yourself
 rcausality(net, method = "cmi", cores = cl, seed = 1); parallel::stopCluster(cl)
 ```
@@ -764,7 +775,7 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
 * **Implementation notes:** continuous states use Algorithm 1-2 of the paper
   (kNN conditions of size sqrt(n), local random projections, 2 bins,
   Yates-corrected modified log-likelihood test, local-permutation surrogates
-  of the futures). The local p-values are aggregated by a clipped geometric
+  of the futures). The local p values are aggregated by a clipped geometric
   mean instead of the paper's harmonic mean: the harmonic mean is dominated
   by the few perfectly dependent neighbourhoods that smooth deterministic
   dynamics produce and then rejects the Markov property of the driver
@@ -961,7 +972,7 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
   coincide. `krakovska_cd()` / `method = "cd"` -- Grassberger-Procaccia
   correlation dimensions of X, Y, the joint and an independent joint, with
   the dimension relations of Krakovska (the same table as the dimensional
-  causality method) tested by bootstrap z-tests plus a 10 % relative
+  causality method) tested by bootstrap z tests plus a 10 % relative
   tolerance.
 * **Code:** `inst/reproduce/hirata_krakovska.R`.
 * **Result:** on the five logistic-map scenarios of Benko et al. (n = 1500,
@@ -983,7 +994,7 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
   around the authors' Python package **tigramite** (reached through
   reticulate; both are optional, `pcmci_available()` tells whether they are
   installed). The MCI test statistics, raw and Benjamini-Hochberg adjusted
-  p-values and (for PCMCI+) the contemporaneous links are mapped onto the
+  p values and (for PCMCI+) the contemporaneous links are mapped onto the
   `causres` object, so the result prints, plots and compares like the native
   methods.
 * **Code:** `inst/reproduce/runge2019_pcmci.R`.

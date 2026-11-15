@@ -23,7 +23,7 @@ sim_var(
 sim_logistic(
   n = 500,
   scenario = "x_to_y",
-  coupling = 0.2,
+  coupling = NULL,
   noise = 0,
   r = 3.9,
   seed = NULL,
@@ -42,7 +42,7 @@ sim_tent(
 sim_henon(
   n = 500,
   scenario = "x_to_y",
-  coupling = 0.3,
+  coupling = NULL,
   noise = 0,
   seed = NULL,
   burn = 500L
@@ -74,7 +74,12 @@ sim_markov01(
 \item{scenario}{causal scenario (see Details).}
 
 \item{coupling}{coupling strength (maps: coupled as
-\verb{(1-c) f(y) + c f(x)}; strong coupling synchronises the systems).}
+\verb{(1-c) f(y) + c f(x)}; strong coupling synchronises the systems). The
+default of \code{sim_logistic} is 0.2 and that of \code{sim_henon} 0.3, except
+for \code{scenario = "bidirectional"}, where both use 0.05: mutually coupled
+logistic maps lock into a common cycle from about 0.1 and are identical
+from about 0.2, mutually coupled Henon maps from about 0.12 and 0.2. A
+warning is given when the two series of a data set are identical.}
 
 \item{noise}{standard deviation of additive observational noise
 (relative to the signal sd).}

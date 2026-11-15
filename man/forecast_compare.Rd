@@ -52,7 +52,7 @@ the units in every hold-out period.}
 \value{
 An object of class \code{causfcomp}: \code{table} (one row per method and
 series: causes, RMSE, gain over the own-lags model, Diebold-Mariano
-statistic and p-value), \code{summary} (mean gain per method), \code{holdout},
+statistic and p value), \code{summary} (mean gain per method), \code{holdout},
 \code{model}. Methods: \code{print}, \code{plot}.
 }
 \description{

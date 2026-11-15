@@ -58,7 +58,7 @@ lags, from the step tests), \code{df_profile} (the reading of the
 sigma-versus-width profile as in the figures of the paper: the first
 number of constraints whose line is proportional to the window width,
 otherwise the number of distinct saturated levels), \code{steps} (per number of constraints: conditional sd, relative
-reduction, p-value), \code{profile} (data frame: \code{n_constr}, \code{width}, \code{sigma},
+reduction, p value), \code{profile} (data frame: \code{n_constr}, \code{width}, \code{sigma},
 \code{n}), \code{n}, \code{k}, \code{call}. Methods: \code{print}, \code{plot} (the sigma-versus-width
 figure of the paper).
 }
@@ -92,7 +92,7 @@ x <- as.numeric(stats::arima.sim(list(ar = c(0.5, 0.3)), 300))
 d <- df_variance(x, max_constr = 3)
 d              # df = 2 (two accepted lags)
 \donttest{
-plot(d)        # the variance-reduction path and the permutation p-values
+plot(d)        # the variance-reduction path and the permutation p values
 }
 }
 \references{

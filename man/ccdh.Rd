@@ -73,7 +73,7 @@ for bidirectional coupling, neither for a hidden common cause.
 The excess complexity \code{Delta_x = mean_k (cr_k(J_xxy) - cr_k(X))} is
 compared with the excess obtained with \code{n_surr} circularly shifted
 copies of \code{y} (no shared information): \code{p_share} is the surrogate
-p-value that \code{y} carries information about \code{X} at all, and the
+p value that \code{y} carries information about \code{X} at all, and the
 reconstruction index \verb{s_x = Delta_x / mean(Delta_x*)} is 0 when \code{y} is
 perfectly reconstructible from \code{X} and 1 when \code{y} is as uninformative as a
 surrogate. A direction is accepted when the shared information is

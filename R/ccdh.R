@@ -37,7 +37,7 @@
 #' The excess complexity `Delta_x = mean_k (cr_k(J_xxy) - cr_k(X))` is
 #' compared with the excess obtained with `n_surr` circularly shifted
 #' copies of `y` (no shared information): `p_share` is the surrogate
-#' p-value that `y` carries information about `X` at all, and the
+#' p value that `y` carries information about `X` at all, and the
 #' reconstruction index `s_x = Delta_x / mean(Delta_x*)` is 0 when `y` is
 #' perfectly reconstructible from `X` and 1 when `y` is as uninformative as a
 #' surrogate. A direction is accepted when the shared information is

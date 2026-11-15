@@ -9,7 +9,7 @@
   ifelse(effect == target, "to_target", ifelse(cause == target, "feedback", "among"))
 
 # family-wise multiplicity correction of a pairs-like table computed with
-# adjust = "none": the p-values are corrected within the families (drivers ->
+# adjust = "none": the p values are corrected within the families (drivers ->
 # target, target -> drivers, among the drivers); Bayes-factor, posterior and
 # verdict decisions are kept
 .family_adjust <- function(P, fam, adjust, alpha, use_bf) {
@@ -74,7 +74,7 @@
   if (!length(drivers)) stop("No explanatory variable besides the target.", call. = FALSE)
   A1 <- A; A1["target"] <- list(NULL); A1$adjust <- "none"; A1$directions <- "both"
   fam_fun <- function(cause, effect) .family_of(cause, effect, target)
-  # the p-values are corrected within the families (links to the target, from the target, among the drivers): the
+  # the p values are corrected within the families (links to the target, from the target, among the drivers): the
   # size of its family decides how many replicates the lag scan of a pair must leave
   nd <- length(drivers)
   if (A$adjust %in% c("holm", "bonferroni"))

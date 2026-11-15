@@ -52,7 +52,7 @@ ones), to keep the recurrence plots legible.}
 An object of class \code{hirata}: \code{coverage} (\code{x_to_y} =
 \code{P(R_X | R_Y)}, \code{y_to_x}), \code{index} (normalised coverages), \code{excess}
 (joint rate over the product of the rates), \code{p_values} (surrogate
-p-values of the two coverages and of the excess), \code{verdict},
+p values of the two coverages and of the excess), \code{verdict},
 \code{embedding} (the embedded series and thresholds). Methods: \code{print},
 \code{plot} (the two recurrence plots and the coverage picture).
 }

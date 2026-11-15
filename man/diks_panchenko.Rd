@@ -46,7 +46,7 @@ conditioning variables.}
 An object of class \code{diks_panchenko}: a data frame \code{tests} (one
 row per direction: statistic \code{T_n}, z-score (with conditional shifts:
 the statistic standardized by mean and standard deviation of its
-surrogate values), one-sided p-value, bandwidth, effective sample size,
+surrogate values), one-sided p value, bandwidth, effective sample size,
 reference) and the settings. Method: \code{print}.
 }
 \description{
@@ -72,7 +72,7 @@ vector, and standardized residuals, which are shifted circularly (see
 on the effect's past, which the null hypothesis allows. When the
 conditioning vector determines the cause (99\% of its variance or more,
 as in noise-free deterministic systems), no test is carried out and the
-p-value is 1.
+p value is 1.
 
 \code{reference = "normal"} is the asymptotic test of Diks and Panchenko
 (2006), which needs no surrogates. Its normal limit is proved for one

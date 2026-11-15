@@ -34,7 +34,7 @@
 #' @return An object of class `hirata`: `coverage` (`x_to_y` =
 #'   `P(R_X | R_Y)`, `y_to_x`), `index` (normalised coverages), `excess`
 #'   (joint rate over the product of the rates), `p_values` (surrogate
-#'   p-values of the two coverages and of the excess), `verdict`,
+#'   p values of the two coverages and of the excess), `verdict`,
 #'   `embedding` (the embedded series and thresholds). Methods: `print`,
 #'   `plot` (the two recurrence plots and the coverage picture).
 #' @references
@@ -202,7 +202,7 @@ corr_dim <- function(M, q = c(0.02, 0.2), n_r = 12L, n_boot = 20L, max_points = 
 #' the independent joint `a X + Y*` with time-shuffled `Y*`, as in Benko et
 #' al. (2024), so that all four dimensions carry the same embedding bias;
 #' relations are tested with the bootstrap standard errors of the estimates
-#' (z-tests at level `alpha`).
+#' (z tests at level `alpha`).
 #'
 #' @param x,y numeric vectors.
 #' @param E,tau embedding dimension and delay.
@@ -260,7 +260,7 @@ print.krakovska <- function(x, digits = 2, ...) {
   .out(sprintf("  embedding E = %d, tau = %d\n", x$settings$E, x$settings$tau))
   print(data.frame(manifold = c("X", "Y", "joint (a x + y)", "independent joint"), D2 = round(x$d2, digits), se = round(x$se, digits)),
         row.names = FALSE, right = FALSE)
-  .out(sprintf("  relations (z-tests): joint = X: %s, joint = Y: %s, X = Y: %s, joint = independent joint: %s\n",
+  .out(sprintf("  relations (z tests): joint = X: %s, joint = Y: %s, X = Y: %s, joint = independent joint: %s\n",
               x$tests[["joint_eq_x"]], x$tests[["joint_eq_y"]], x$tests[["x_eq_y"]], x$tests[["joint_eq_indep"]]))
   .out(sprintf("  verdict: %s\n", x$verdict))
   invisible(x)

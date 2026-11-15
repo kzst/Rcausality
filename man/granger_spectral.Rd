@@ -38,7 +38,7 @@ significant bands).}
 An object of class \code{granger_spectral}: \code{spectrum} (one row per
 direction and frequency: \code{freq} (radians), \code{cycles} (per time unit),
 \code{period}, \code{geweke}, \code{F}, \code{df1}, \code{p_value}), \code{time_domain} (Geweke's
-measure and the F-test of each direction), \code{bands} (frequency bands
+measure and the F test of each direction), \code{bands} (frequency bands
 where the pointwise test rejects at \code{alpha}), \code{lag}, \code{n}. Methods:
 \code{print}, \code{plot}.
 }
@@ -53,7 +53,7 @@ VAR; its average over \verb{(-pi, pi)} equals the time-domain measure
 \verb{log(sigma^2_restricted / sigma^2_full)} for a stationary VAR;
 \item the Breitung-Candelon (2006) test of \verb{H0: no causality at frequency w},
 the linear restrictions \verb{sum_l b_l cos(l w) = sum_l b_l sin(l w) = 0} on
-the cause coefficients of the effect equation (an F-test with two
+the cause coefficients of the effect equation (an F test with two
 numerator degrees of freedom, one at \code{w = 0} and \code{w = pi}; informative
 for \code{p >= 3}).
 }

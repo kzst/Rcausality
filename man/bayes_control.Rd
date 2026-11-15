@@ -42,7 +42,7 @@ the link is the event that at least one lag is included), \code{"normal"}
 of the surrogate family (\code{sd0} = standard deviation of the surrogate
 statistics): \code{"half_cauchy"} (default; heavy tails make the Bayes
 factor and the effect posterior robust when the effect is far larger
-than the surrogate spread, as in the JZS t-test of Rouder et al. 2009),
+than the surrogate spread, as in the JZS t test of Rouder et al. 2009),
 \code{"half_normal"} (one-sided; the alternative shifts the statistic in the
 direction of the effect) or \code{"normal"}, \code{"cauchy"} (two-sided).}
 

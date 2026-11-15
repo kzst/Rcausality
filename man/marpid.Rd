@@ -24,7 +24,7 @@ length; the rows are the joint observations.}
 
 \item{k_target, k_source}{binarisation depths (1 bit = median split).}
 
-\item{n_surr}{number of permutation replicates for the p-values. The
+\item{n_surr}{number of permutation replicates for the p values. The
 replicates for the atoms of source 1 (\code{unique_1}, \code{synergy} and the novel
 information \verb{novel_1 = unique_1 + synergy = I(target; s1 | s2)}) permute
 \code{s1} within the levels of the coded \code{s2}, which generates the null
@@ -43,7 +43,7 @@ replace the permutations).}
 An object of class \code{marpid}: \code{atoms} (named vector in bits,
 summed over the target bits: \code{redundant}, \code{unique_1}, \code{unique_2},
 \code{synergy}, \code{total}), \code{per_bit} (average per target bit), \code{by_bit}
-(matrix: one row per target bit), \code{p_values} (surrogate p-values of
+(matrix: one row per target bit), \code{p_values} (surrogate p values of
 \code{unique_1}, \code{unique_2}, \code{synergy}, \code{novel_1}, \code{novel_2}), \code{null} (the
 surrogate draws of the same quantities, per target bit), \code{settings}.
 Method: \code{print}.
@@ -67,7 +67,7 @@ set.seed(1); a <- rbinom(2000, 1, 0.5); b <- rbinom(2000, 1, 0.5)
 marpid(target = (a + b) \%\% 2, s1 = a, s2 = b, k_target = 1, k_source = 1)   # pure synergy
 marpid(target = a, s1 = a, s2 = a, k_target = 1, k_source = 1)             # pure redundancy
 \donttest{
-# continuous variables are binarised to k bits; surrogates give p-values of
+# continuous variables are binarised to k bits; surrogates give p values of
 # the unique and synergistic atoms (here s1 is informative, s2 is noise)
 t <- rnorm(1000); s1 <- t + rnorm(1000); s2 <- rnorm(1000)
 marpid(t, s1, s2, k_target = 2, k_source = 2, n_surr = 50, seed = 1)

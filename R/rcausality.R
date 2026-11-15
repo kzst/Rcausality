@@ -17,7 +17,7 @@
 #' @section Methods:
 #' [causal_methods()] lists the methods; `causal_methods("<name>")` shows the
 #' settings of one of them.
-#' * Granger family: `"granger"` (F-test, default), `"bayes_granger"` (the
+#' * Granger family: `"granger"` (F test, default), `"bayes_granger"` (the
 #'   Bayesian Granger regression, i.e. `method = "granger", bayes = TRUE`),
 #'   `"toda_yamamoto"` (lag-augmented test for integrated series; setting
 #'   `d_max`), `"diks_panchenko"` (nonparametric, nonlinear; settings `eps`,
@@ -51,7 +51,8 @@
 #'   the VAR order of the pair, at most 5; too short a history lets the
 #'   cause's lags stand in for the effect's own deeper past and produces
 #'   spurious reverse links), `reference` (the reference distribution:
-#'   `"shift"`, the default, uses conditional shifts: the lags of the cause
+#'   `"conditional"`, the default (`"shift"` up to version 0.0.11, still
+#'   accepted), uses conditional shifts: the lags of the cause
 #'   are written as location plus scale times a standardized residual, with
 #'   location and scale estimated as functions of the conditioning vector
 #'   (see the section on conditional shifts), and the residuals are shifted
@@ -60,9 +61,9 @@
 #'   `k_perm` nearest neighbours in the conditioning space, which do not
 #'   keep it and reject too often for strongly autocorrelated series). With
 #'   `lag = "auto"` the lags `1..max_lag` are tested at once (with
-#'   `reference = "shift"` the scan is limited as for `"te"`): the reported
+#'   conditional shifts the scan is limited as for `"te"`): the reported
 #'   lag is the one
-#'   with the largest statistic and the p-value is that of the maximal
+#'   with the largest statistic and the p value is that of the maximal
 #'   statistic against the maximum of the replicated statistics over the
 #'   lags (the same max-statistic test is used by `"te"`, `"pid"` and
 #'   `"df"`). Series are standardised.
@@ -71,34 +72,37 @@
 #'   shifts of a scan over `L` lags are spaced by `L`, which leaves about
 #'   `0.8 n / L` replicates; the scan is limited to the lags for which
 #'   enough of them remain (at least 40, and as many as the smallest
-#'   p-value needs to pass a Holm or Bonferroni correction over the tests of
+#'   p value needs to pass the correction over the tests of
 #'   the analysis; a message reports the limit). A numeric `lag` tests one
-#'   lag with all shifts. `reference`: `"circular"` (default), circular
-#'   shifts of the coded cause, which generate the hypothesis that the two
-#'   series are independent; `"conditional"`, conditional shifts of the cause
-#'   given the past of the effect, coded after the shift, for series on a
-#'   continuous scale. In the reverse direction of a strong link whose
-#'   driver is persistent the past of the cause is a function of the past
-#'   of the effect, which a few symbols do not resolve: with circular
-#'   shifts the test then rejects too often in long series (a warning names
-#'   the situation), with conditional shifts it does not.
+#'   lag with all shifts. `reference`: `"conditional"` (default),
+#'   conditional shifts of the cause given the past of the effect, coded
+#'   after the shift (series with at most `bins` distinct values are
+#'   symbolic and are shifted circularly); `"circular"`, circular shifts of
+#'   the coded cause, which generate the hypothesis that the two series are
+#'   independent (the default up to version 0.0.11). In the reverse
+#'   direction of a link whose driver is persistent the past of the cause
+#'   is a function of the past of the effect, which a few symbols do not
+#'   resolve: with circular shifts the test then rejects too often in long
+#'   series (a warning describes such pairs), with conditional shifts it
+#'   does not.
 #' * `"ccm"` (see [ccm()]): `m`, `tau` (embedding); a link needs a
 #'   significant and converging cross-map skill.
 #' * `"pid"` (see [marpid()]): `k_target`, `k_source` (binarisation depths),
-#'   `history`. `reference`: `"permutation"` (default), the cause is permuted
-#'   within the levels of the coded own past of the effect, an exact test
-#'   for the coded variables; `"conditional"`, conditional shifts of the
-#'   cause given the past of the effect, coded after the shift, for series
-#'   on a continuous scale. The code does not resolve a persistent past:
-#'   in the reverse direction of a strong link whose driver is persistent
+#'   `history`. `reference`: `"conditional"` (default), conditional shifts
+#'   of the cause given the past of the effect, coded after the shift
+#'   (series with at most `2^k_source` distinct values are permuted);
+#'   `"permutation"`, the cause is permuted within the levels of the coded
+#'   own past of the effect, an exact test for the coded variables (the
+#'   default up to version 0.0.11). The code does not resolve a persistent
+#'   past: in the reverse direction of a link whose driver is persistent
 #'   the permutation test rejects too often, the more so the longer the
-#'   series (a warning names the situation); the test with conditional
+#'   series (a warning describes such pairs); the test with conditional
 #'   shifts does not.
 #' * `"dc"` (see [dimensional_causality()]): `m`, `tau`, `k_range`, `prep`;
 #'   decisions by posterior probabilities (`prob_threshold`).
 #' * `"hirata"` (see [hirata_rp()]): `m`, `tau`, `rate` (recurrence rate),
 #'   `theta` (coverage-index threshold). `"cd"` (see [krakovska_cd()]): `m`,
-#'   `tau`; bootstrap z-tests at level `alpha`. Both give verdicts per pair.
+#'   `tau`; bootstrap z tests at level `alpha`. Both give verdicts per pair.
 #' * `"ccdh"` (see [ccdh()]): `m`, `tau`, `K` (NSRPS steps), `n_surr`
 #'   (circular-shift surrogates), `theta` (reconstruction-index threshold);
 #'   a numeric `lag` aligns the pair.
@@ -108,7 +112,14 @@
 #'   number of constrained past lags). The orders (`$df`) give the Table-2
 #'   reading of the paper (including the common-driver case), which decides
 #'   a pair whenever it is determinate; the other pairs are decided by the
-#'   directed variance-reduction tests (`$pairs`).
+#'   directed variance-reduction tests (`$pairs`). `reference`:
+#'   `"conditional"` (default; conditional shifts for the directed tests) or
+#'   `"local"` (local permutations, the reference of the order tests). When
+#'   the past of the effect determines the cause, as in the deterministic
+#'   systems for which the method is made, a directed test uses local
+#'   permutations (a message says so; `$extra$reference` records the
+#'   reference of every test). A directed test whose statistic is not
+#'   positive (no reduction of the conditional variance) has p value 1.
 #' * `"markov"`: `memory` (`"auto"` from the PACF), `iid_injection`
 #'   (`"allowed"` or `"forbidden"` in the decision table), `k_nn`, `n_bins`,
 #'   `n_markov`, `k`, `k_perm`. Lags are fixed to 1.
@@ -143,11 +154,11 @@
 #'   example when the dependence is nonlinear.
 #'
 #' @section Conditional shifts:
-#' The tests of `"cmi"`, `"cmi_lag"`, `"rf_granger"` and
-#' `"diks_panchenko"` (and of `"te"` and `"pid"` with `reference =
-#' "conditional"`) refer
+#' The tests of `"cmi"`, `"cmi_lag"`, `"te"`, `"pid"`, `"rf_granger"`,
+#' `"diks_panchenko"` and the directed test of `"df"` refer
 #' their statistic to surrogates of the cause that keep its location and scale
-#' given the conditioning vector. Every
+#' given the conditioning vector (`reference = "conditional"`, the default
+#' of all of them). Every
 #' lag of the cause is written as `g(w) + s(w) e`, with the conditioning
 #' vector `w` (the past of the effect and of the controls), a location `g`,
 #' a scale `s` and a standardized residual `e`; a surrogate keeps `g` and
@@ -166,12 +177,37 @@
 #'
 #' When `w` explains 99% or more of the variance of a lag of the cause, no
 #' surrogate differs from the cause by more than the error of the fit: no
-#' test is carried out (p-value 1, Bayes factor 1), and a warning says so.
+#' test is carried out (p value 1, Bayes factor 1), and a warning says so.
 #' This is the case of redundant series, of series with a common trend, and
 #' of noise-free deterministic systems, in which the driver is a function of
 #' the past of the driven series (Takens 1981). For deterministic systems
-#' `"te"` and the state-space methods (`"ccm"`, `"dc"`, `"cd"`, `"ccdh"`,
-#' `"hirata"`) are the tools.
+#' the state-space methods (`"ccm"`, `"dc"`, `"cd"`, `"ccdh"`,
+#' `"hirata"`) and `"te"` with circular shifts are the tools.
+#'
+#' @section The memory of the effect:
+#' A test of "the cause does not drive the effect" conditions on a finite
+#' past of the effect, and without the link its null hypothesis is true only
+#' when that past holds what the effect remembers of itself. If the effect
+#' depends on earlier values of its own than the test conditions on, and
+#' the cause depends on them too, as in the reverse direction of a link,
+#' the cause is informative given the short past although it does not
+#' drive the effect. The package therefore estimates the order of the
+#' autoregression of the effect alone (orders 0 to `max_lag`, corrected
+#' AIC), which does not depend on the cause. When the package chooses the
+#' order of a regression test (`lag = "auto"` or `"first"`; `"granger"`,
+#' `"toda_yamamoto"`, `"rf_granger"`, the Bayesian regressions), the
+#' regressions include the lags of the effect itself up to this order
+#' (`$extra$own_lags`), while the lags of the cause, the order that is
+#' tested and reported, are chosen as before; a numeric `lag` gives the
+#' regression of exactly that order. The tests with conditional shifts
+#' keep their statistic and let the surrogates of the cause depend on the
+#' past of the effect up to this order. In panels the order of a link is
+#' chosen by the BIC of its pooled regression, a criterion of that one
+#' equation with the observations of all units. A series
+#' that is observed with noise has an autoregression of infinite order:
+#' the null hypothesis of every test with a finite past is then false in
+#' the reverse direction of a link, by an amount that the selected order
+#' keeps small but not zero (Newbold 1978).
 #'
 #' @section Bayesian variants:
 #' With `bayes = TRUE` (settings in `control`, see [bayes_control()])
@@ -206,11 +242,13 @@
 #'   *identical* for any number of cores given the `seed` (see
 #'   [Rcausality-parallel]).
 #' @param lag integer lag order, `"auto"` (selected by `lag_criterion` on
-#'   the VAR of the involved series; the lag with the largest statistic for
-#'   the methods that scan the lags) or `"first"` (Granger family: the
+#'   the VAR of the involved series; the regressions then include the lags
+#'   of the effect itself up to the order of its own autoregression, see
+#'   the section on the memory of the effect; the lag with the largest
+#'   statistic for the methods that scan the lags) or `"first"` (Granger family: the
 #'   smallest order at which the test is significant at level
 #'   `alpha / (number of orders)`, i.e. the delay after which the cause first
-#'   helps; the reported p-value is the Bonferroni-corrected minimum over the
+#'   helps; the reported p value is the Bonferroni-corrected minimum over the
 #'   orders `1..max_lag`; for Bayes-factor decisions the first order with
 #'   `bf10 > bf_threshold`, and the reported Bayes factor is that of "a link
 #'   at one of the orders", the average over the orders). In panels `"auto"`
@@ -225,7 +263,7 @@
 #' @param directions for two series / two blocks: `"both"` (default) tests
 #'   x -> y and y -> x; `"forward"` only the causes-in-`x`, effects-in-`y`
 #'   direction. Ignored when `y` is `NULL` (all ordered pairs are tested).
-#' @param alpha significance level (applied to adjusted p-values).
+#' @param alpha significance level (applied to adjusted p values).
 #' @param adjust multiple-testing correction passed to
 #'   [stats::p.adjust()] (default `"holm"`; `"none"` disables it).
 #' @param bf_threshold Bayes factor above which a link is declared in the
@@ -264,6 +302,10 @@
 #' @return An object of class [`causres`][causres-class]; with `target` also
 #'   of class `causdrivers`, with `id` of class `causpanel`.
 #' @references
+#' Hurvich, C. M. and Tsai, C.-L. (1989). Regression and time series model selection in small samples. *Biometrika*, 76(2), 297-307. \doi{10.1093/biomet/76.2.297}
+#'
+#' Newbold, P. (1978). Feedback induced by measurement errors. *International Economic Review*, 19(3), 787-791.
+#'
 #' Granger, C. W. J. (1969). Investigating causal relations by econometric models and cross-spectral methods. *Econometrica*, 37(3), 424-438. \doi{10.2307/1912791}
 #'
 #' Liang, F., Paulo, R., Molina, G., Clyde, M. A. and Berger, J. O. (2008). Mixtures of g priors for Bayesian variable selection. *Journal of the American Statistical Association*, 103(481), 410-423. \doi{10.1198/016214507000001337}
@@ -308,7 +350,7 @@
 #' @examples
 #' # --- two series, Granger causality --------------------------------------
 #' # A VAR where x drives y.  The print shows both directed tests (lag chosen
-#' # by BIC, F statistic, p-value, Bayes factor) and the class of the pair.
+#' # by BIC, F statistic, p value, Bayes factor) and the class of the pair.
 #' d <- sim_var(400, scenario = "x_to_y", seed = 1)
 #' r <- rcausality(d$x, d$y)
 #' r
@@ -320,7 +362,7 @@
 #' rcausality(d3, method = "granger", bayes = TRUE, prior = "bic")$classes
 #' \donttest{
 #' summary(r)
-#' plot(r, "all")                    # network, p-value matrix and lag scan
+#' plot(r, "all")                    # network, p value matrix and lag scan
 #' rcausality(d3, method = "bayes_granger", control = bayes_control(n_iter = 300),
 #'            seed = 1)$bayes                         # spike-and-slab: BF10, effect interval, R-hat
 #'
@@ -329,21 +371,24 @@
 #' nl <- sim_nonlinear(300, "x_to_y", seed = 2)       # stochastic, no linear trace of the link
 #' rcausality(nl, method = "cmi", max_lag = 2, n_perm = 50, seed = 1)$classes   # kNN conditional MI
 #' lg <- sim_logistic(200, "x_to_y", seed = 2)        # deterministic maps
-#' rcausality(lg, method = "te", n_perm = 100, seed = 1, cores = 2)$classes$relation
-#' rcausality(lg, method = "te", method_args = list(bins = 6), n_perm = 100, seed = 1)$pairs
+#' # (noise-free maps: plain circular shifts; the conditional tests carry out no test)
+#' rcausality(lg, method = "te", method_args = list(reference = "circular"), n_perm = 100,
+#'            seed = 1, cores = 2)$classes$relation
+#' rcausality(lg, method = "te", method_args = list(reference = "circular", bins = 6),
+#'            n_perm = 100, seed = 1)$pairs
 #' rcausality(lg, method = "ccm", n_perm = 50, seed = 1)$classes$relation  # convergent cross mapping
-#' rcausality(sim_logistic_bdc(500, "x_to_y", seed = 1), method = "dc")$classes$relation
 #'
 #' # --- conditional (multivariate) Granger causality and blocks of series ---
 #' rcausality(d3, conditional = TRUE)$classes$relation
 #' rcausality(d3[, 1:2], d3[, 3, drop = FALSE], directions = "forward")
 #'
 #' # --- the Bayesian variant of a surrogate method ---------------------------
-#' rcausality(lg, method = "te", bayes = TRUE, n_perm = 100, seed = 1)$bayes
+#' rcausality(lg, method = "te", bayes = TRUE, lag = 1, method_args = list(reference = "circular"),
+#'            seed = 1)$bayes
 #'
 #' # --- generalisations of the Granger test ----------------------------------
 #' rcausality(d, method = "toda_yamamoto", method_args = list(d_max = 1))$classes  # integrated series
-#' rcausality(lg, method = "diks_panchenko")$classes                             # nonlinear
+#' rcausality(lg, method = "diks_panchenko", n_perm = 50, seed = 1)$classes       # nonlinear
 #' rcausality(d, lag = "first")$pairs[, c("cause", "effect", "lag", "p_value")]  # first order
 #' # short series: the hierarchical Minnesota prior (tightness integrated out)
 #' rcausality(sim_var(30, seed = 3), method = "bayes_granger", prior = "minnesota",
@@ -398,7 +443,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (method == "bayes_granger") bayes <- TRUE
   sampler <- bayes && method %in% c("granger", "bayes_granger") && prior %in% c("spike_slab", "normal", "minnesota")
   if (bayes && method == "granger" && !sampler) method <- "bayes_granger"
-  if (sampler) method <- "granger"                      # the F-test run supplies the lags; the sampler adds the evidence
+  if (sampler) method <- "granger"                      # the F test run supplies the lags; the sampler adds the evidence
   old_rng <- .rng_setup(A$seed); on.exit(.rng_restore(old_rng), add = TRUE)   # the seed also covers the Bayesian stage
   run_args <- A[intersect(names(A), names(formals(.rcausality_run)))]
   # The Bayes factor that accompanies a frequentist regression test is the exact one of the unit-information prior
@@ -417,6 +462,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   .determined_check(r)
   if (!bayes) .coarse_check(r)
   if (sampler) r <- .bayes_granger_pairs(r, control, A$prior_prob, A$bf_threshold, A$prob_threshold, A$conditional, A$cores,
+                                         max_lag = A$max_lag,
                                          lag = A$lag)
   else if (bayes && method != "bayes_granger") r <- .bayes_postprocess(r, control, A$prior_prob, A$bf_threshold, A$prob_threshold)
   # a requested order that the data cannot carry is reduced by the regression methods: say so
@@ -427,6 +473,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
             call. = FALSE)
   r$settings$bayes <- bayes
   if (!is.null(r$pairs$bf10)) r$pairs$bf10[is.nan(r$pairs$bf10)] <- NA_real_     # (tests that involve a constant series)
+  r <- .constant_rows(r, A$prior_prob)
   # the BIC approximation of a Bayes factor presupposes many more observations than coefficients
   ty_fallback <- bayes && method == "toda_yamamoto" && !prior %in% c("bic", "g", "hyper_g")
   if (ty_fallback)
@@ -441,6 +488,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     # the lag-augmented regressions have closed-form Bayes factors only: any other prior falls back to the BIC one
     r$settings$prior <- if (ty_fallback) "bic" else prior
     r$settings$bayes_control <- control; r$settings$decision <- control$decision
+    r$settings$prob_threshold <- A$prob_threshold; r$settings$prior_prob <- A$prior_prob
   }
   # the full argument list, so that the analysis can be repeated on other data
   # (predict(refit = TRUE), placebo_test(), robustness(), benchmark_methods())
@@ -464,13 +512,33 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
                     who, paste(names(share)[share > 0.1], collapse = ", ")), call. = FALSE)
   invisible(bad)
 }
+# A test that involves a constant series is not defined (.note_series() warns): its rows carry no evidence in either
+# direction, p = 1 and BF10 = 1, whatever the method computed from the degenerate regression or statistic.
+.constant_rows <- function(r, prior_prob = 0.5) {
+  D <- r$data; P <- r$pairs
+  if (is.null(D) || is.null(P) || !nrow(P) || !all(c("cause", "effect") %in% names(P))) return(r)
+  s <- vapply(D, function(v) if (is.numeric(v) || is.logical(v)) stats::sd(as.numeric(v)) else NA_real_, 0)
+  const <- names(D)[is.finite(s) & s == 0]
+  k <- P$cause %in% const | P$effect %in% const
+  if (!any(k)) return(r)
+  for (cn in intersect(c("statistic", "effect_size", "r2_gain", "sign"), names(P))) P[[cn]][k] <- NA_real_
+  for (cn in intersect(c("p_value", "p_adj"), names(P))) if (!all(is.na(P[[cn]]))) P[[cn]][k] <- 1
+  if ("bf10" %in% names(P) && !all(is.na(P$bf10))) {
+    P$bf10[k] <- 1
+    if ("post_prob" %in% names(P)) P$post_prob[k] <- prior_prob
+    if ("evidence" %in% names(P)) P$evidence[k] <- as.character(bf_evidence(1))
+  }
+  if ("significant" %in% names(P)) P$significant[k] <- FALSE
+  r$pairs <- P
+  r
+}
 # constant and exactly collinear series, and series shorter than the advisable minimal length of the method
 .note_series <- function(D, method) {
   if (nrow(D) < 8L) stop(sprintf("The series have %d time points; no method of the package can be applied to fewer than 8.", nrow(D)), call. = FALSE)
   s <- vapply(D, function(v) stats::sd(v), 0)
   if (any(!is.finite(s) | s == 0))
-    warning(sprintf("Constant series (%s): no test involving them is meaningful.", paste(names(D)[!is.finite(s) | s == 0], collapse = ", ")),
-            call. = FALSE)
+    warning(sprintf("Constant series (%s): no test involving them is meaningful (their rows are set to p = 1 and BF10 = 1).",
+                    paste(names(D)[!is.finite(s) | s == 0], collapse = ", ")), call. = FALSE)
   ok <- which(is.finite(s) & s > 0)
   if (length(ok) >= 2L && nrow(D) >= 3L) {
     R <- abs(stats::cor(D[, ok, drop = FALSE])); diag(R) <- 0
@@ -511,22 +579,26 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (adjust %in% stepup) {
     # a step-up correction can declare links only when several tests attain the smallest p value together
     need <- as.integer(ceiling(M / ((min(B) + 1) * alpha)))
-    warning(sprintf(paste0("%s: with the smallest attainable p-value, 1/%d, the %s correction over %d tests can declare a link at alpha = %g ",
+    warning(sprintf(paste0("%s: with the smallest attainable p value, 1/%d, the %s correction over %d tests can declare a link at alpha = %g ",
                            "only when at least %d tests attain that value together%s. Use longer series, more replicates where the ",
                            "number of circular shifts allows, or fewer series at once."),
                     s$method, min(B) + 1L, adjust, M, alpha, need, if (need > M) " (which is impossible here)" else ""), call. = FALSE)
     return(invisible(NULL))
   }
   shift <- .uses_shifts(r)
-  L <- if (shift && !is.null(r$by_lag) && nrow(r$by_lag)) max(1L, max(table(paste(r$by_lag$cause, r$by_lag$effect)))) else 1L   # lags of a scan
-  warning(sprintf(paste0("%s: the smallest attainable p-value, 1/%d, cannot pass the %s correction over %d tests at alpha = %g, ",
+  # lags of a scan (the methods whose shifts are spaced by the number of scanned lags; `by_lag` of the other methods
+  # holds library sizes or single orders)
+  L <- if (shift && s$method %in% c("te", "cmi", "cmi_lag", "pid", "df") && !is.null(r$by_lag) && nrow(r$by_lag))
+         max(1L, max(table(paste(r$by_lag$cause, r$by_lag$effect)))) else 1L
+  warning(sprintf(paste0("%s: the smallest attainable p value, 1/%d, cannot pass the %s correction over %d tests at alpha = %g, ",
                          "so that no link can be declared. %s"),
                   s$method, min(B) + 1L, adjust, M, alpha,
                   if (shift) sprintf(paste0("A series of length %d has only %d admissible circular shifts%s; about %d time points ",
                                             "would be needed. Use longer series, test fewer series at once%s, or use a method ",
                                             "with a permutation or analytic reference distribution%s."),
                                      s$n, min(B), if (L > 1L) sprintf(" for a scan of %d lags", L) else "",
-                                     ceiling(1.25 * M * L / alpha), if (L > 1L) ", fix the lag" else "",
+                                     # (the length at which the present share of admissible shifts gives M L / alpha of them)
+                                     as.integer(ceiling(s$n * (M * L / alpha) / (L * min(B)))) + 1L, if (L > 1L) ", fix the lag" else "",
                                      if (s$method %in% c("cmi", "cmi_lag"))
                                        " (for weakly autocorrelated series: method_args = list(reference = \"local\"))"
                                      else if (s$method == "diks_panchenko")
@@ -553,21 +625,23 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
 .uses_shifts <- function(r) {
   s <- r$settings
   s$method %in% c("te", "ccm", "rf_granger", "ccdh", "hirata", "markov") ||
-    (s$method %in% c("cmi", "cmi_lag") && !identical(.method_args(s$method, s$method_args)$reference, "local")) ||
+    (s$method %in% c("cmi", "cmi_lag", "df") && !identical(.cmi_ref_arg(.method_args(s$method, s$method_args)$reference), "local")) ||
     (s$method %in% c("diks_panchenko", "pid") && any(r$extra$reference == "conditional shifts", na.rm = TRUE))
 }
 
 # Persistence of the series and circular shifts.  Neighbouring shifts of autocorrelated series give dependent
-# replicates: for two series with first-order autocorrelations r1 and r2 a cross-dependence statistic decorrelates over
-# about (1 + r1 r2) / (1 - r1 r2) shifts (the variance inflation of a cross-correlation, Bartlett 1946), so that the
-# S admissible shifts are worth about S (1 - r1 r2) / (1 + r1 r2) independent ones.  A test at level alpha needs
-# 1 / alpha of them at the very least.  In simulations (two independent first-order autoregressions with coefficient
-# 0.9) the tests reject in 6 to 10% of the cases at the 5% level with about 8 independent shifts (100 time points), in
-# 5 to 8% with about 25 (300 time points) and in 4 to 6% with about 84 (1000 time points): the warning is given below
-# 2 / alpha.
+# replicates, and in short series of persistent pairs the tests with shifted series reject true null hypotheses too
+# often.  The persistence of a pair is measured by an empirical rule, S_eff = S (1 - r1 r2) / (1 + r1 r2): the number S
+# of admissible shifts times a factor that falls with the product of the first-order autocorrelations r1 and r2 of the
+# two series (the inverse of the inflation of the sampling variance of a cross-correlation of two autoregressions,
+# Bartlett 1946).  It is a measure of the persistence of the pair, not a count of independent replicates: it has the
+# product form because the rejection rates do (one persistent series next to one without memory leaves the tests at
+# their level).  The warning is given below .seff_limit / alpha; the rejection rates by S_eff are in the simulation
+# study of the accompanying paper.
 .acf1 <- function(D) vapply(D, function(v) {
   a <- tryCatch(stats::acf(v, 1L, plot = FALSE, na.action = stats::na.pass)$acf[2L], error = function(e) NA_real_)
   if (is.finite(a)) min(max(a, 0), 0.999) else 0 }, 0)
+.seff_limit <- 2                                         # the warning is given for S_eff < .seff_limit / alpha
 .shift_eff <- function(D, cause, effect) {
   rho <- .acf1(D)
   pr <- rho[cause] * rho[effect]
@@ -620,28 +694,29 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (!any(ok)) return(invisible(NULL))
   # (short series that are not autocorrelated are the business of the length and the resolution warnings)
   rho <- .acf1(D); pr <- unname(rho[P$cause[ok]] * rho[P$effect[ok]])
-  se <- .shift_eff(D, P$cause[ok], P$effect[ok]); low <- se < 2 / s$alpha & pr > 0.2
+  se <- .shift_eff(D, P$cause[ok], P$effect[ok]); low <- se < .seff_limit / s$alpha & pr > 0.2
   if (!any(low)) return(invisible(NULL))
   lab <- sprintf("%s -> %s", P$cause[ok][low], P$effect[ok][low])
-  if (s$method == "pid" && !identical(s$method_args$reference, "conditional")) {
+  if (s$method == "pid" && identical(.pid_ref_arg(s$method_args$reference), "permutation")) {
     # the permutation within the levels of the coded own past keeps the conditioning but not the serial dependence of
     # the cause (two independent first-order autoregressions with coefficient 0.9: 10% and 7% rejections at the 5%
     # level for 100 and 300 time points)
-    warning(sprintf(paste0("pid: the series of %s are strongly autocorrelated for their length (the diagnostic of the shift-based tests ",
-                           "gives about %d independent replicates, fewer than 2/alpha = %d). The permutation of this test does not keep ",
-                           "the serial dependence of the cause, and its p-values can then be too small. Longer series, differenced or ",
+    warning(sprintf(paste0("pid: the series of %s are strongly autocorrelated for their length (the persistence measure of the shift-based ",
+                           "tests, S_eff, is about %d, below the limit %d). The permutation of this test does not keep ",
+                           "the serial dependence of the cause, and its p values can then be too small. Longer series, differenced or ",
                            "filtered series, or a regression-based method are advisable."),
                     if (length(lab) > 3L) sprintf("%s and %d further pairs", paste(lab[1:3], collapse = ", "), length(lab) - 3L)
-                    else paste(lab, collapse = ", "), as.integer(floor(min(se[low]))), as.integer(ceiling(2 / s$alpha))), call. = FALSE)
+                    else paste(lab, collapse = ", "), as.integer(floor(min(se[low]))), as.integer(ceiling(.seff_limit / s$alpha))), call. = FALSE)
     return(invisible(NULL))
   }
-  warning(sprintf(paste0("%s: the series of %s are strongly autocorrelated for their length: their circular shifts are worth about %d ",
-                         "independent replicates, fewer than the 2/alpha = %d from which the tests were close to their level in ",
-                         "simulations, and the p-values of %s can be too small. Longer series, differenced or filtered series%s, or a regression-based method ",
+  warning(sprintf(paste0("%s: the series of %s are strongly autocorrelated for their length: the persistence measure of the tests with ",
+                         "shifted series (S_eff: the number of admissible shifts, reduced by the product of the first-order ",
+                         "autocorrelations) is about %d, below the limit %d from which the tests were close to their level in ",
+                         "simulations, and the p values of %s can be too small. Longer series, differenced or filtered series%s, or a regression-based method ",
                          "(\"granger\", \"toda_yamamoto\") are advisable."),
                   s$method, if (length(lab) > 3L) sprintf("%s and %d further pairs", paste(lab[1:3], collapse = ", "), length(lab) - 3L)
                             else paste(lab, collapse = ", "),
-                  as.integer(floor(min(se[low]))), as.integer(ceiling(2 / s$alpha)),
+                  as.integer(floor(min(se[low]))), as.integer(ceiling(.seff_limit / s$alpha)),
                   if (length(lab) > 1L) "these pairs" else "this pair",
                   if (s$method == "diks_panchenko") " (method_args = list(filter = \"var\"))" else ""), call. = FALSE)
   invisible(NULL)
@@ -723,7 +798,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     if (method == "ccdh") {
       if (n_surr < need) {
         message("ccdh: n_surr raised from ", n_surr, " to ", need,
-                " so that the surrogate p-values can reach significance after multiple-testing correction.")
+                " so that the surrogate p values can reach significance after multiple-testing correction.")
         n_surr <- need
       }
     } else if (n_perm < need) {
@@ -731,7 +806,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
       shifts_bind <- method %in% c("te", "ccm", "rf_granger", "cmi", "cmi_lag", "diks_panchenko") && 0.8 * nrow(all) < need
       if (!shifts_bind)
         message(method, ": n_perm raised from ", n_perm, " to ", need,
-                " so that the smallest attainable p-value can pass the multiple-testing correction.")
+                " so that the smallest attainable p value can pass the multiple-testing correction.")
       n_perm <- need
     }
   }
@@ -742,6 +817,9 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     vapply(seq_len(nrow(grid)), function(i)
       max(1L, min(5L, as.integer(max_lag), select_lag(all[, c(grid$effect[i], grid$cause[i])], max_lag, lag_criterion))), 0L)
   } else rep(max(1L, as.integer(history)), nrow(grid))
+  # the own order of every effect: the conditional surrogates of its causes depend on that much of its past (.own_order())
+  own_of <- vapply(unique(c(grid$effect, grid$cause)), function(v) .own_order(all[[v]], max_lag), 0L)
+  own_vec <- unname(own_of[grid$effect])
   if (is.null(k)) k <- if (method == "df") 10L else 5L
   if (is.null(theta)) theta <- if (method == "hirata") 0.4 else 0.45
   if (length(method_args) && !method %in% names(.method_arg_defaults))
@@ -805,24 +883,27 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
       null_fun = function(r, k) list(statistic = if (k == "x_to_y") r$d2[["y"]] - r$d2[["x"]] else r$d2[["x"]] - r$d2[["y"]],
                                      null = list(mean = 0, sd = sqrt(r$se[["x"]]^2 + r$se[["y"]]^2)), alternative = "greater")))
   }
-  pid_ref <- if (method == "pid") .pid_ref_arg(.method_args("pid", method_args)$reference) else "permutation"
+  pid_ref <- if (method == "pid") .pid_ref_arg(.method_args("pid", method_args)$reference) else "conditional"
   if (method == "pid" && conditional) stop("method = \"pid\" supports pairwise analysis only.", call. = FALSE)
   if (method == "pid" && pid_ref == "permutation")
     return(.rcausality_pid(all, grid, causes, effects, alpha, adjust, lags = cand_lags, history = hist_vec,
                            k_target = as.integer(k_target), k_source = as.integer(k_source), n_perm = n_perm,
                            cl = cl, cores = cores))
-  cmi_ref <- if (method %in% c("cmi", "cmi_lag")) match.arg(.method_args(method, method_args)$reference, c("shift", "local")) else "local"
-  te_ref <- if (method == "te") .te_ref_arg(.method_args("te", method_args)$reference) else "circular"
+  cmi_ref <- if (method %in% c("cmi", "cmi_lag")) .cmi_ref_arg(.method_args(method, method_args)$reference) else "local"
+  te_ref <- if (method == "te") .te_ref_arg(.method_args("te", method_args)$reference) else "conditional"
+  df_ref <- if (method == "df") .cmi_ref_arg(.method_args("df", method_args)$reference) else "local"
   pair_lags <- rep(list(cand_lags), nrow(grid))                    # the lags scanned for every pair
-  if (method %in% c("te", "pid") || (method %in% c("cmi", "cmi_lag") && cmi_ref == "shift")) {
+  if (method %in% c("te", "pid") || (method %in% c("cmi", "cmi_lag") && cmi_ref == "shift") || (method == "df" && df_ref == "shift")) {
     # The shifts of a scan over L lags are spaced by L (see .te_scan()), so that a scan leaves S / L replicates of the S
     # admissible shifts.  The scan is limited so that enough of them remain: at least 40, and as many as the smallest
-    # p-value needs to pass a Holm or Bonferroni correction over the tests of the analysis.
+    # p value needs to pass the correction over the tests of the analysis (a Holm or Bonferroni correction needs that
+    # many; a step-up correction such as Benjamini-Hochberg can do with fewer when several tests are significant
+    # together, and is given the same resolution so that it does not depend on that).
     # (m_family: a target analysis corrects within its families of tests -- the links to the target, from the target,
     # among the drivers -- and passes a function that gives the size of the family of every pair, so that the scan of
     # a small family is not limited by a large one; a single number applies to all pairs)
     m_pair <- if (is.function(m_family)) as.integer(m_family(grid$cause, grid$effect))
-              else rep(if (!is.null(m_family)) as.integer(m_family) else if (adjust %in% c("holm", "bonferroni")) nrow(grid) else 0L,
+              else rep(if (!is.null(m_family)) as.integer(m_family) else if (!identical(adjust, "none")) nrow(grid) else 0L,
                        nrow(grid))
     need_pair <- pmax(40L, as.integer(ceiling(m_pair / alpha)))
     if (is.null(fixed_lag)) {
@@ -845,11 +926,12 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (method == "pid")                                             # (with conditional shifts: the scan is limited as above)
     return(.rcausality_pid(all, grid, causes, effects, alpha, adjust, lags = pair_lags, history = hist_vec,
                            k_target = as.integer(k_target), k_source = as.integer(k_source), n_perm = n_perm,
-                           cl = cl, cores = cores, reference = pid_ref))
+                           cl = cl, cores = cores, reference = pid_ref, own_order = own_vec))
   if (method == "te") {
     if (conditional) stop("method = \"te\" supports pairwise analysis only.", call. = FALSE)
     return(.rcausality_te(all, grid, causes, effects, alpha, adjust, conditional, lags = pair_lags,
-                          history = hist_vec, bins = as.integer(bins), n_perm = n_perm, cl = cl, cores = cores, reference = te_ref))
+                          history = hist_vec, bins = as.integer(bins), n_perm = n_perm, cl = cl, cores = cores, reference = te_ref,
+                          own = own_vec))
   }
   if (method == "ccm") {
     if (conditional) stop("method = \"ccm\" supports pairwise analysis only.", call. = FALSE)
@@ -875,9 +957,9 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
                           prob_threshold = prob_threshold, cl = cl, cores = cores))
   }
   if (method == "df") {
-    return(.rcausality_df(all, grid, causes, effects, alpha, adjust, conditional, lags = cand_lags,
+    return(.rcausality_df(all, grid, causes, effects, alpha, adjust, conditional, lags = pair_lags,
                           history = hist_vec, k = k, k_perm = k_perm, n_perm = n_perm,
-                          max_constr = as.integer(max_constr), cl = cl, cores = cores))
+                          max_constr = as.integer(max_constr), cl = cl, cores = cores, reference = df_ref, own = own_vec))
   }
   if (method == "markov") {
     if (conditional) stop("method = \"markov\" supports pairwise analysis only.", call. = FALSE)
@@ -893,7 +975,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
       g <- .cmi_pair(all[[ef]], all[[cs]],
                      if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL,
                      lags = pair_lags[[i]], history = hist_vec[i], k = k, k_perm = k_perm, n_perm = n_perm,
-                     cause_past = (method == "cmi_lag"), cores = inner_cores, reference = cmi_ref)
+                     cause_past = (method == "cmi_lag"), cores = inner_cores, reference = cmi_ref, own = own_vec[i])
       return(list(row = data.frame(cause = cs, effect = ef, lag = g$lag,
                                    statistic = g$statistic, df1 = NA_real_, df2 = NA_real_,
                                    p_value = g$p_value, bf10 = NA_real_,
@@ -907,7 +989,9 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     ctrl <- if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL
     # the test at every candidate order (cheap): the lag plot and the "first" rule
     lags <- seq_len(max(1L, min(as.integer(max_lag), cap)))
-    scan <- lapply(lags, function(l) .granger_pair(all[[ef]], all[[cs]], ctrl, l, prior = prior, prior_par = prior_par, vcov = vc))
+    # own lags of the effect: its own order when the package chooses the order of the test (.own_order())
+    q <- if (is.null(fixed_lag)) min(own_vec[i], max(lags)) else 0L
+    scan <- lapply(lags, function(l) .granger_pair(all[[ef]], all[[cs]], ctrl, l, prior = prior, prior_par = prior_par, vcov = vc, own = max(l, q)))
     bl <- data.frame(cause = cs, effect = ef, lag = lags, statistic = vapply(scan, `[[`, 0, "statistic"),
                      p = vapply(scan, `[[`, 0, "p_value"), stringsAsFactors = FALSE)
     if (first_lag) {
@@ -916,7 +1000,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     } else {
       p <- if (is.null(fixed_lag)) select_lag(inv, max_lag, lag_criterion) else fixed_lag
       p <- max(1L, min(p, cap))
-      g <- if (p %in% lags) scan[[match(p, lags)]] else .granger_pair(all[[ef]], all[[cs]], ctrl, p, prior = prior, prior_par = prior_par, vcov = vc)
+      g <- if (p %in% lags) scan[[match(p, lags)]] else .granger_pair(all[[ef]], all[[cs]], ctrl, p, prior = prior, prior_par = prior_par, vcov = vc, own = max(p, q))
     }
     list(row = data.frame(cause = cs, effect = ef, lag = p,
                           statistic = g$statistic, df1 = g$df1, df2 = g$df2,
@@ -924,7 +1008,7 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
                           effect_size = g$effect_size, r2_gain = g$r2_gain,
                           sign = g$sign, n_eff = g$n_eff,
                           stringsAsFactors = FALSE),
-         by_lag = bl, het = g$het_p)
+         by_lag = bl, het = g$het_p, own = g$own)
   }
   vc <- if (method == "granger") .vcov_arg(.method_args("granger", method_args)$vcov) else "classical"
   res <- .plapply(seq_len(nrow(grid)), one_pair, cores = pair_cores)
@@ -941,7 +1025,8 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
       hp <- max(hist_vec[(grid$cause == up$v1[i] & grid$effect == up$v2[i]) | (grid$cause == up$v2[i] & grid$effect == up$v1[i])])
       g <- .cmi_instant(all[[up$v1[i]]], all[[up$v2[i]]],
                         if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL,
-                        hp, k, k_perm, n_perm, cores = inner_cores, reference = cmi_ref)
+                        hp, k, k_perm, n_perm, cores = inner_cores, reference = cmi_ref,
+                        own = c(own_of[[up$v1[i]]], own_of[[up$v2[i]]]))
       list(row = data.frame(var1 = up$v1[i], var2 = up$v2[i], cmi = g$cmi, p_value = g$p_value, stringsAsFactors = FALSE),
            null = list(statistic = g$cmi, null = g$null, alternative = "greater"))
     }, cores = pair_cores)
@@ -960,11 +1045,14 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (method %in% c("cmi", "cmi_lag")) {
     out$null <- stats::setNames(lapply(res, `[[`, "null"), paste(pairs$cause, "->", pairs$effect))
     out$null_instant <- null_instant
-    out$settings$method_args <- list(reference = cmi_ref)
+    out$settings$method_args <- list(reference = if (cmi_ref == "shift") "conditional" else "local")
+    out$extra <- data.frame(cause = pairs$cause, effect = pairs$effect,
+                            reference = if (cmi_ref == "shift") "conditional shifts" else "local permutations", stringsAsFactors = FALSE)
   }
   if (method == "granger") {
     out$extra <- data.frame(cause = pairs$cause, effect = pairs$effect, vcov = vc, stringsAsFactors = FALSE,
-                            het_p = vapply(res, function(z) if (is.null(z$het)) NA_real_ else z$het, 0))
+                            het_p = vapply(res, function(z) if (is.null(z$het)) NA_real_ else z$het, 0),
+                            own_lags = vapply(res, function(z) if (is.null(z$own)) NA_integer_ else as.integer(z$own), 0L))
     out$settings$method_args <- list(vcov = vc)
   }
   out
@@ -991,11 +1079,12 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   lab <- names(v)[bad]
   warning(sprintf(paste0("%s: for %s the past of the cause is a function of the conditioning past (the past of the effect%s explains ",
                          "%s of its variance), so that no surrogate of the cause differs from it. No test is carried out ",
-                         "(p-value 1; Bayes factor 1): a conditional test of predictability is not informative here. Either the cause ",
+                         "(p value 1; Bayes factor 1): a conditional test of predictability is not informative here. Either the cause ",
                          "is redundant given the conditioning series, or the series share a trend (difference them), or they behave as ",
                          "a deterministic system, in which the driver is reconstructed from the driven series. For deterministic ",
                          "systems the state-space methods (\"ccm\", \"dc\", \"cd\", \"ccdh\", \"hirata\") or \"te\" with circular ",
-                         "shifts are the tools; a shorter history%s leaves the reconstruction incomplete."),
+                         "shifts (method_args = list(reference = \"circular\")) are the tools; a shorter history%s leaves the ",
+                         "reconstruction incomplete."),
                   s$method, if (length(lab) > 3L) sprintf("%s and %d further links", paste(lab[1:3], collapse = ", "), length(lab) - 3L)
                             else paste(lab, collapse = ", "),
                   if (isTRUE(s$conditional)) " and of the other series" else "",
@@ -1038,17 +1127,17 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (!length(bad)) return(invisible(NULL))
   lab <- sprintf("%s -> %s", P$cause[bad], P$effect[bad])
   how <- switch(s$method,
-    te = paste0("Four symbols do not resolve such a past, and the test with circular shifts can then reject without a link, more often ",
-                "the longer the series. method_args = list(reference = \"conditional\") refers the statistic to surrogates that keep ",
-                "the dependence of the cause on the past of the effect; method = \"cmi\" conditions on the values themselves."),
-    pid = paste0("The binary code does not resolve such a past, and the permutation of this test can then reject without a link, more ",
-                 "often the longer the series. method_args = list(reference = \"conditional\") refers the statistic to surrogates ",
-                 "that keep the dependence of the cause on the past of the effect; method = \"cmi\" conditions on the values themselves."),
-    paste0("The kernel window does not resolve such a past, and the normal reference then rejects without a link. The default ",
-           "reference (conditional shifts) keeps the dependence of the cause on the past of the effect."))
+    te = paste0("Four symbols do not resolve such a past, and the test with circular shifts then rejects in the direction without a ",
+                "link as well, more often the longer the series. The default reference (conditional shifts) refers the statistic to ",
+                "surrogates that keep the dependence of the cause on the past of the effect."),
+    pid = paste0("The binary code does not resolve such a past, and the permutation of this test then rejects in the direction without ",
+                 "a link as well, more often the longer the series. The default reference (conditional shifts) refers the statistic ",
+                 "to surrogates that keep the dependence of the cause on the past of the effect."),
+    paste0("The kernel window does not resolve such a past, and the normal reference then rejects in the direction without a link ",
+           "as well. The default reference (conditional shifts) keeps the dependence of the cause on the past of the effect."))
   warning(sprintf(paste0("%s: for %s the past of the cause is largely a function of the past of the effect (which explains %s of its ",
-                         "variance), and the effect is strongly autocorrelated, as in the reverse direction of a link whose driver is ",
-                         "persistent. %s"),
+                         "variance), and the effect is strongly autocorrelated. Both directions of a link whose driver is persistent are ",
+                         "of this kind, the true one included: the warning describes the pair and does not say which direction is false. %s"),
                   s$method, if (length(lab) > 3L) sprintf("%s and %d further links", paste(lab[1:3], collapse = ", "), length(lab) - 3L)
                             else paste(lab, collapse = ", "),
                   sprintf("%.0f%%", 100 * min(r2[is.finite(r2) & r2 > .coarse_r2])), how), call. = FALSE)
@@ -1066,7 +1155,8 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
                          "link, for example when the dependence is nonlinear. method_args = list(vcov = \"HC3\") uses a ",
                          "heteroskedasticity-consistent covariance, and vcov = \"HAC\" one that is also consistent when the ",
                          "regression is misspecified and its errors are serially dependent; the nonlinear methods ",
-                         "(\"rf_granger\", \"cmi\", \"te\", \"diks_panchenko\") test for dependence of any form."),
+                         "(\"rf_granger\", \"cmi\", \"te\", \"diks_panchenko\") test for dependence of any form (a volatility that the ",
+                         "series share is such a dependence: they then report it as a link, usually in both directions)."),
                   s$method, if (length(bad) > 1L) "s" else "",
                   if (length(lab) > 3L) sprintf("%s and %d further pairs", paste(lab[1:3], collapse = ", "), length(lab) - 3L) else paste(lab, collapse = ", "),
                   min(E$het_p[bad])), call. = FALSE)
@@ -1129,27 +1219,33 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
 
 # df (degrees of freedom) method driver -------------------------------------
 .rcausality_df <- function(all, grid, causes, effects, alpha, adjust, conditional, lags, history,
-                           k, k_perm, n_perm, max_constr, cl, cores) {
-  n <- nrow(all)
+                           k, k_perm, n_perm, max_constr, cl, cores, reference = "local", own = NULL) {
+  n <- nrow(all); if (is.null(own)) own <- rep(0L, nrow(grid))
   sc <- .split_cores(nrow(grid), cores); pair_cores <- sc$outer; inner_cores <- sc$inner
   res <- .plapply(seq_len(nrow(grid)), function(i) {
     cs <- grid$cause[i]; ef <- grid$effect[i]
     ctrl_names <- if (conditional) setdiff(names(all), c(cs, ef)) else character(0)
     g <- .df_pair(all[[ef]], all[[cs]],
                   if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL,
-                  lags, history[i], k, n_perm, k_perm, cores = inner_cores)
+                  if (is.list(lags)) lags[[i]] else lags, history[i], k, n_perm, k_perm, cores = inner_cores, reference = reference, own = own[i])
     list(row = data.frame(cause = cs, effect = ef, lag = g$lag, statistic = g$statistic,
                           df1 = NA_real_, df2 = NA_real_, p_value = g$p_value, bf10 = NA_real_,
                           effect_size = g$statistic, r2_gain = g$statistic, sign = NA_real_,
                           n_eff = g$n_eff, stringsAsFactors = FALSE),
-         by_lag = cbind(cause = cs, effect = ef, g$by_lag),
-         null = list(statistic = g$statistic, null = g$null, alternative = "greater", cond_r2 = g$cond_r2))
+         by_lag = cbind(cause = cs, effect = ef, g$by_lag), reference = g$reference,
+         null = list(statistic = g$statistic, null = g$null, alternative = "greater"))
   }, cores = pair_cores)
   pairs <- do.call(rbind, lapply(res, `[[`, "row"))
   by_lag <- do.call(rbind, lapply(res, `[[`, "by_lag")); rownames(by_lag) <- NULL
   pairs$p_adj <- if (adjust == "none") pairs$p_value else stats::p.adjust(pairs$p_value, method = adjust)
   pairs$post_prob <- NA_real_; pairs$evidence <- NA_character_
   pairs$significant <- pairs$p_adj < alpha
+  ref_used <- vapply(res, function(z) if (is.null(z$reference)) NA_character_ else z$reference, "")
+  fb <- grepl("determine", ref_used)
+  if (any(fb))
+    message("df: for ", paste(sprintf("%s -> %s", pairs$cause[fb], pairs$effect[fb]), collapse = ", "), " the past of the effect determines ",
+            "the cause (a deterministic relation), so that no conditional surrogate differs from the cause; the directed test",
+            if (sum(fb) > 1L) "s use" else " uses", " local permutations, the reference of the order tests.")
   # orders of x, y and the joint (Table 2 of the paper), per unordered pair
   up <- .unordered_pairs(grid, all)
   t_idx <- (max_constr + 1):n
@@ -1194,5 +1290,6 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
                       adjust = adjust, n = n, call = cl, data = all, instant = instant,
                       by_lag = by_lag, df = dfo)
   out$null <- stats::setNames(lapply(res, `[[`, "null"), paste(pairs$cause, "->", pairs$effect))
+  out$extra <- data.frame(cause = pairs$cause, effect = pairs$effect, reference = ref_used, stringsAsFactors = FALSE)
   out
 }

@@ -1,6 +1,6 @@
 # Granger-type directed test (one ordered pair, optional controls) ----------
 
-# Returns F-test (classical) and BIC-approximated Bayes factor (BF10, evidence
+# Returns F test (classical) and BIC-approximated Bayes factor (BF10, evidence
 # for "cause helps predict effect").
 # Heteroskedasticity.  The F test presupposes errors whose variance does not depend on the regressors.  When it does --
 # for example when the effect depends on the square of the cause, so that the linear regression is misspecified -- the
@@ -36,22 +36,26 @@
   list(statistic = W / length(i), residuals = e)
 }
 
-.granger_pair <- function(effect, cause, controls = NULL, lag, prior = "bic", prior_par = NULL, vcov = "classical") {
-  n <- length(effect)
-  N <- n - lag
-  yd <- effect[(lag + 1):n]
-  own <- .lagmat(effect, lag)
+# `own`: the number of lags of the effect itself (at least `lag`, the number of lags of the cause and of the controls).
+# With the order chosen by the package it is the order of the autoregression of the effect (.own_order()), so that the
+# regression holds what the effect remembers of itself; a numeric `lag` of the user gives the regression of that order.
+.lags_upto <- function(v, lag, Q) .lagmat(v, Q)[, seq_len(lag), drop = FALSE]     # lags 1..lag on the time points Q + 1..n
+.granger_pair <- function(effect, cause, controls = NULL, lag, prior = "bic", prior_par = NULL, vcov = "classical", own = lag) {
+  n <- length(effect); Q <- max(as.integer(lag), as.integer(own), na.rm = TRUE)
+  N <- n - Q
+  yd <- effect[(Q + 1):n]
+  own <- .lagmat(effect, Q)
   cz <- if (is.null(controls)) NULL else
-    do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lagmat(controls[, j], lag)))
+    do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lags_upto(controls[, j], lag, Q)))
   Xr <- cbind(own, cz)
-  Xu <- cbind(Xr, .lagmat(cause, lag))
+  Xu <- cbind(Xr, .lags_upto(cause, lag, Q))
   rss_r <- .rss(yd, Xr); rss_u <- .rss(yd, Xu)
   ku <- ncol(Xu) + 1L; kr <- ncol(Xr) + 1L
   q <- ku - kr; df2 <- N - ku
   if (df2 < 1 || rss_u <= 0) {
     return(list(statistic = NA_real_, df1 = q, df2 = df2, p_value = NA_real_,
                 bf10 = NA_real_, effect_size = NA_real_, r2_gain = NA_real_,
-                sign = NA_real_, n_eff = N))
+                sign = NA_real_, n_eff = N, own = Q))
   }
   Fst <- ((rss_r - rss_u) / q) / (rss_u / df2)
   pv <- stats::pf(Fst, q, df2, lower.tail = FALSE)
@@ -76,7 +80,7 @@
        bf10 = exp(min(log_bf, 700)), log_bf10 = log_bf,
        effect_size = log(rss_r / rss_u),          # Geweke's F-measure
        r2_gain = 1 - rss_u / rss_r,
-       sign = sign(sum(cc, na.rm = TRUE)), n_eff = N, het_p = het_p)
+       sign = sign(sum(cc, na.rm = TRUE)), n_eff = N, het_p = het_p, own = Q)
 }
 
 #' Evidence category of a Bayes factor
@@ -149,16 +153,16 @@ bf_evidence <- function(bf) {
 .prior_par <- function(control) list(g_scale = if (is.null(control$scale)) 1 else control$scale,
                                      a = if (is.null(control$hyper_a)) 3 else control$hyper_a)
 
-#' Calibrated Bayes-factor bound from a p-value
+#' Calibrated Bayes-factor bound from a p value
 #'
-#' The Sellke-Bayarri-Berger calibration: for a p-value `p < 1/e` the Bayes
+#' The Sellke-Bayarri-Berger calibration: for a p value `p < 1/e` the Bayes
 #' factor in favour of the alternative is at most `1 / (-e p log p)` over a
-#' wide class of alternatives; the bound is `1` for larger p-values. It
-#' turns the permutation / surrogate p-values of the model-free methods
+#' wide class of alternatives; the bound is `1` for larger p values. It
+#' turns the permutation / surrogate p values of the model-free methods
 #' into a Bayes factor (an upper bound, i.e. the most favourable reading of
 #' the evidence) and a posterior probability of a link.
 #'
-#' @param p numeric vector of p-values.
+#' @param p numeric vector of p values.
 #' @param prior_prob prior probability of the alternative (a causal link).
 #' @return A data frame with `bf10` (the bound) and `post_prob`.
 #' @references

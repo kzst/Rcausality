@@ -9,7 +9,7 @@
 #' [causal_methods()] lists the methods and their settings.
 #'
 #' @section Families of methods:
-#' * Granger causality and its generalisations: the F-test (`"granger"`), the
+#' * Granger causality and its generalisations: the F test (`"granger"`), the
 #'   Bayesian regression comparison with spike-and-slab, Minnesota (short
 #'   series), g, hyper-g or BIC priors (`"bayes_granger"`, [bayes_granger()],
 #'   [bayes_control()]), the Toda-Yamamoto test for integrated series

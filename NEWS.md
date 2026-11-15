@@ -1,3 +1,130 @@
+# Rcausality 0.0.12
+
+Several results of the default settings change in this version; the first
+three items say which.
+
+* **The memory of the effect in the regression tests.** A Granger-type
+  test asks whether the past of the cause improves the prediction of the
+  effect beyond the past of the effect itself. With `lag = "auto"` the
+  number of lags is selected for the pair by the BIC of the vector
+  autoregression, and both series entered with that number of lags. When
+  the effect remembers more of its own past than that order holds (a driver
+  that follows an autoregression of order two, or a persistent driver
+  observed with noise, tested in the reverse direction of its link), the
+  past of the other series stands in for the missing own lags, and the test
+  declares a link that does not exist (Newbold, 1978). In pilot simulations
+  of the reverse direction of such links (400 series of 300 time points) the
+  F test rejected at the 5% level in 27% to 31% (driver of order two) and in
+  89% (persistent driver with observation noise) of the series. With
+  `lag = "auto"` (and `"first"`) the regression tests (`"granger"`,
+  `"toda_yamamoto"`, `"rf_granger"`, the Bayesian regressions and the
+  Minnesota prior) now include the own lags of the effect up to the order
+  of its autoregression by the corrected AIC (Hurvich and Tsai, 1989), at
+  most `max_lag`; the tested lags of the cause are selected as before. The
+  rates of the same series are 3% and 5%; the true direction was declared
+  in every series before and after. A numeric `lag` is used for both series
+  as it is. `$extra$own_lags` records the own lags of every test. Results
+  with `lag = "auto"` change for effects whose own order exceeds the
+  selected order; the order rule of panel analyses (the pooled BIC of the
+  regression of the link) is unchanged.
+* **The memory of the effect in the surrogate tests.** The conditional
+  shifts of `"diks_panchenko"`, `"te"`, `"pid"`, `"cmi"`, `"cmi_lag"`,
+  `"markov"` and `"df"` keep the dependence of the cause on the past of the
+  effect that the statistic conditions on. They now also condition on the
+  further past of the effect, up to the order above; the statistics are
+  unchanged. In the two designs of the previous item the kernel test
+  rejected in 93% and 57% of the series before and in 3% and 4% now.
+* **`"te"` and `"pid"`: conditional shifts are the default reference.**
+  Circular shifts of the cause (`"te"`) and permutations within the coded
+  past (`"pid"`) do not keep the dependence of the cause on the past of the
+  effect; in the two designs transfer entropy with circular shifts rejected
+  in 6% to 11% and in 24% to 26% of the series, with conditional shifts in
+  4% and 6%. `method_args = list(reference = "circular")` (`"te"`,
+  `transfer_entropy()`) and `list(reference = "permutation")` (`"pid"`)
+  give the former tests. For a noise-free deterministic map the past of the
+  effect determines the cause, the conditional test has nothing to shift
+  and reports that no test is carried out; `reference = "circular"` is the
+  setting for such systems, and the message says so. In panel analyses the
+  unit tests of the two methods keep their former references unless
+  `method_args` names one: for series of a few dozen points the statistic
+  of conditional surrogates lies about a tenth of a standard deviation
+  below the observed one on average, which the test of one series does not
+  notice and the group test adds over the units (11% and 21% rejections in
+  100 pilot panels of 30 independent units and 50 periods with
+  autoregressive coefficients 0.5 and 0.9).
+* `"cmi"`, `"cmi_lag"` and `"df"`: the reference of the tests is named
+  `"conditional"` (default; `"shift"` is still accepted) or `"local"`, as
+  for the other methods, and is recorded in `$extra$reference`. The directed
+  test of `"df"` uses conditional shifts by default: with local
+  permutations, which do not keep the serial dependence of the cause, its
+  p value was below 0.05 in 22% of pilot pairs of independent first-order
+  autoregressions with coefficient 0.9 (300 time points), with conditional
+  shifts in 5%. When the past of the effect determines the cause, as in
+  the deterministic systems for which the method is made, the directed
+  test uses local permutations as before, with a message; a directed test
+  without a reduction of the conditional variance has p value 1.
+* **Panels with `panel_control(resample = "periods")`: the group test.**
+  With jointly resampled periods the bootstrap panels keep the dependence
+  between the units, but the group statistic was referred to a combination
+  of the unit references that treats the units as independent. It is now
+  referred to its own values in the bootstrap panels, whose number is
+  raised (with a message) so that the smallest attainable p value can pass
+  the correction for the number of links. In pilot simulations (150 panels
+  of 30 units and 20 periods with a common factor of autocorrelation 0.5)
+  the group test rejected in 11% of the panels before and in 2% now.
+* Panel analyses: the warning for strongly persistent or trending units is
+  also given for the Bayesian variants and for `"rf_granger"` (whose group
+  test adds the excess of its unit tests over the units as that of `"cmi"`
+  does: 40% rejections in a pilot of 40 panels of 30 independent units and
+  50 periods with autoregressive coefficient 0.9, against 3% for its pooled
+  test), and its measure of persistence is corrected for the length of the
+  units; a warning says
+  when the smallest attainable p value of the unit tests cannot pass the
+  correction over the units, or can pass it only if several units attain it
+  together; `vcov` is not used in panel analyses, and a warning says so;
+  the warning on dependence between the units states its limit; gaps in a
+  daily date index are detected.
+* **Seeded calls inside comparisons and benchmarks.** Inside a unit of work
+  of the package (a method of `compare_methods()`, a replication of
+  `benchmark_methods()`, a parallel worker) the random numbers come from a
+  L'Ecuyer-CMRG stream, and a seed that was set there kept that generator.
+  A seeded analysis therefore gave other numbers inside `compare_methods()`
+  than the same call made directly, and a simulator call that was given as
+  the data argument (`compare_methods(sim_var(200, seed = 3), ...)`) was
+  evaluated inside the first unit of work and generated other data than
+  the same call on its own. Seeds are now set with the generator of the
+  session everywhere, and the data arguments are evaluated before the work
+  is distributed. Results of `compare_methods()` and `benchmark_methods()`
+  for a given seed change; a replication of a benchmark can be repeated by
+  hand from its seed.
+* Tests that involve a constant series are not carried out: their rows have
+  p = 1 and a Bayes factor of 1, with a warning.
+* The lag scan of the surrogate tests is limited to what the number of
+  surrogates can resolve for every multiplicity correction (`"BH"` and
+  `"BY"` as for `"holm"`).
+* Bayesian variant of `"df"`: the side condition of the classical decision
+  is applied. Bayesian variants of the surrogate tests warn when links are
+  declared with Bayes factors beyond the range that the replicates support.
+* Simulators: mutually coupled maps can synchronise, and the two series are
+  then identical. `sim_logistic()` and `sim_henon()` use a weaker default
+  coupling for `"bidirectional"` (0.05) and warn when the series
+  synchronise; `sim_logistic_bdc()` redraws such pairs.
+* `placebo_test()` returns `any_rate`, the share of the placebo data sets
+  with at least one declared link, which is the quantity to compare with
+  the level of the analysis, and prints it.
+* Output: the decision line of a Bayesian analysis names the prior
+  probability and the Bayes factor that the threshold implies; the scale of
+  the effect sizes is named; `causal_methods()` prints the advisable series
+  length; "p value" and "F test" are written without hyphens; the
+  prevalence of a panel analysis is printed as a table of its own.
+* CRAN: the `Description` field quotes software names only and explains its
+  acronyms. The package never starts more processes or threads than
+  `cores`: a call made inside a worker runs serially, the forest
+  predictions of `"dfe"` are given the number of threads explicitly (they
+  used all cores before), `cores = "auto"` also respects a limit set by the
+  environment (`OMP_THREAD_LIMIT`) and no longer fails when the number of
+  cores cannot be determined; examples and vignettes use at most two cores.
+
 # Rcausality 0.0.11
 
 * **Panels: a warning for strongly persistent units with `"cmi"`,

@@ -38,7 +38,7 @@
 #'   of the surrogate family (`sd0` = standard deviation of the surrogate
 #'   statistics): `"half_cauchy"` (default; heavy tails make the Bayes
 #'   factor and the effect posterior robust when the effect is far larger
-#'   than the surrogate spread, as in the JZS t-test of Rouder et al. 2009),
+#'   than the surrogate spread, as in the JZS t test of Rouder et al. 2009),
 #'   `"half_normal"` (one-sided; the alternative shifts the statistic in the
 #'   direction of the effect) or `"normal"`, `"cauchy"` (two-sided).
 #' @param scale prior scale: the slab standard deviation relative to `sigma`
@@ -247,7 +247,7 @@ print.bayes_control <- function(x, ...) {
 #' set.seed(1)
 #' surrogate_bf(3.2, rnorm(200))
 #' # A statistic inside the null distribution: BF10 < 1 is evidence *for* H0,
-#' # which a p-value cannot express.
+#' # which a p value cannot express.
 #' surrogate_bf(0.3, rnorm(200), scale = 0.5)
 surrogate_bf <- function(statistic, null, alternative = c("greater", "less", "two.sided"),
                          effect_prior = c("half_cauchy", "half_normal", "normal", "cauchy"), scale = 1,
@@ -414,7 +414,11 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'
 #' @param effect,cause numeric vectors.
 #' @param controls optional matrix of control series (conditional Granger).
-#' @param lag lag order.
+#' @param lag lag order: the number of lags of the cause (and of the
+#'   controls).
+#' @param own number of lags of the effect (at least `lag`, the default;
+#'   [rcausality()] passes the order that it selects for the effect, see
+#'   "The memory of the effect" there).
 #' @param control a [bayes_control()] list.
 #' @param prior_prob prior probability of the link (for `"normal"`, `"g"`,
 #'   `"hyper_g"` and `"bic"`; the spike-and-slab prior implies its own,
@@ -460,23 +464,23 @@ print.surrogate_bf <- function(x, digits = 3, ...) {
 #'               seed = 1, cores = 2)
 #' }
 bayes_granger <- function(effect, cause, controls = NULL, lag = 1L, control = bayes_control(), prior_prob = 0.5,
-                          seed = NULL, cores = getOption("Rcausality.cores", 1L)) {
+                          seed = NULL, cores = getOption("Rcausality.cores", 1L), own = lag) {
   .local_seed(seed)
-  lag <- max(1L, as.integer(lag)); n <- length(effect)
+  lag <- max(1L, as.integer(lag)); n <- length(effect); Q <- max(lag, as.integer(own), na.rm = TRUE)
   if (is.null(control$prior)) control <- bayes_control()
-  if (identical(control$prior, "minnesota")) return(.bayes_granger_minnesota(effect, cause, controls, lag, control, prior_prob, cores))
+  if (identical(control$prior, "minnesota")) return(.bayes_granger_minnesota(effect, cause, controls, lag, control, prior_prob, cores, own = Q))
   if (control$prior %in% c("g", "hyper_g", "bic")) {
-    g <- .granger_pair(effect, cause, controls, lag, prior = control$prior, prior_par = .prior_par(control))
+    g <- .granger_pair(effect, cause, controls, lag, prior = control$prior, prior_par = .prior_par(control), own = Q)
     bf <- g$bf10
     return(structure(list(bf10 = bf, post_prob = bf * prior_prob / (bf * prior_prob + 1 - prior_prob), inclusion = NULL,
                           geweke = c(mean = g$effect_size, lower = NA_real_, upper = NA_real_), coefficients = NULL,
                           draws = NULL, ess = NA_real_, n = g$n_eff,
                           settings = list(prior = control$prior, lag = lag, prior_prob = prior_prob)), class = "bayes_granger"))
   }
-  yd <- .std(effect)[(lag + 1):n]
-  own <- .lagmat(.std(effect), lag)
-  cz <- if (is.null(controls)) NULL else do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lagmat(.std(controls[, j]), lag)))
-  Xc <- .lagmat(.std(cause), lag); colnames(Xc) <- paste0("lag", seq_len(lag))
+  yd <- .std(effect)[(Q + 1):n]
+  own <- .lagmat(.std(effect), Q)
+  cz <- if (is.null(controls)) NULL else do.call(cbind, lapply(seq_len(ncol(controls)), function(j) .lags_upto(.std(controls[, j]), lag, Q)))
+  Xc <- .lags_upto(.std(cause), lag, Q); colnames(Xc) <- paste0("lag", seq_len(lag))
   X0 <- cbind(1, own, cz); d0 <- NULL                                    # intercept and always-in terms: flat priors
   .bayes_reg_core(yd, X0, d0, Xc, control, prior_prob, cores, lag)
 }
@@ -719,6 +723,7 @@ print.bayes_granger <- function(x, digits = 3, ...) {
     P$significant[is.na(P$significant)] <- FALSE
   } else if (!is.null(r$null)) {
     conv <- if (!is.null(r$ccm)) r$ccm$converging[match(key, paste(r$ccm$cause, "->", r$ccm$effect))] else rep(TRUE, nrow(P))
+    ext_bound <- rep(NA_real_, nrow(P))               # Bayes factor at the most extreme replicate, where the statistic lies beyond it
     for (j in seq_along(key)) {
       e <- r$null[[key[j]]]; if (is.null(e)) next
       if (.determined(e$cond_r2)) {                     # no test for a cause that the conditioning past determines
@@ -731,6 +736,7 @@ print.bayes_granger <- function(x, digits = 3, ...) {
                         n_draws = control$n_draws, credible = control$credible,
                         effect_scale = .eff_scale(control), n_eff = .eff_n(P$n_eff[j], s$n))
       P$bf10[j] <- b$bf10; P$post_prob[j] <- b$post_prob
+      if (isTRUE(b$extrapolated)) ext_bound[j] <- b$bound
       rows[[length(rows) + 1L]] <- bf_row(key[j], b$bf10, b$post_prob, b$effect, sprintf("surrogate BF (%s)", control$effect_prior),
                                           bound = if (isTRUE(b$extrapolated)) b$bound else NA_real_)
     }
@@ -742,7 +748,27 @@ print.bayes_granger <- function(x, digits = 3, ...) {
     if (s$method == "hirata" && !is.null(s$theta)) gate <- gate & P$statistic >= s$theta
     if (s$method == "ccdh" && !is.null(s$prob_threshold)) gate <- gate & (1 - P$statistic) <= s$prob_threshold
     if (s$method == "rf_granger") gate <- gate & P$statistic > 0          # an improvement of the prediction
+    if (s$method == "df" && !is.null(r$df) && nrow(r$df)) {
+      # the table of the orders decides a pair whenever it gives a definite case, as in the decision by the tests
+      # (.rcausality_df()): a direction that the table does not claim is not declared
+      for (i in seq_len(nrow(r$df))) {
+        t2 <- r$df$table2[i]; if (is.na(t2) || t2 == "undetermined") next
+        ab <- P$cause == r$df$var1[i] & P$effect == r$df$var2[i]; ba <- P$cause == r$df$var2[i] & P$effect == r$df$var1[i]
+        gate[ab] <- gate[ab] & t2 %in% c("x_to_y", "bidirectional"); gate[ba] <- gate[ba] & t2 %in% c("y_to_x", "bidirectional")
+      }
+    }
     P$significant <- sig %in% TRUE & gate
+    # A decision whose threshold lies beyond what the replicates support rests on the continuation of the tail of the
+    # null distribution (a convention, see surrogate_bf()): with a prior probability that accounts for many links the
+    # threshold of the Bayes factor is large (1.44 M for M links), and B replicates support values of a few units only.
+    thr <- if (control$decision == "bf") bf_threshold else prob_threshold / (1 - prob_threshold) * (1 - prior_prob) / prior_prob
+    tail_dec <- which(P$significant & is.finite(ext_bound) & ext_bound < thr)
+    if (length(tail_dec))
+      warning(sprintf(paste0("%s: %d link(s) are declared with Bayes factors beyond the range that the replicates support (the Bayes factor at ",
+                             "the most extreme replicate is %s at most, the decision needs BF10 > %s): these decisions rest on the normal ",
+                             "continuation of the tail of the null distribution, which is a convention. More replicates (n_perm), where ",
+                             "the number of shifts allows, extend the supported range."),
+                      s$method, length(tail_dec), .fmt_bf(max(ext_bound[tail_dec])), .fmt_bf(thr)), call. = FALSE)
     if (!is.null(r$instant) && !is.null(r$null_instant)) {
       for (i in seq_len(nrow(r$instant))) {
         e <- r$null_instant[[paste(r$instant$var1[i], "~", r$instant$var2[i])]]; if (is.null(e)) next
@@ -783,19 +809,23 @@ print.bayes_granger <- function(x, digits = 3, ...) {
 }
 
 # Bayesian Granger regression for every directed pair of a Granger run: the
-# F-test run supplies the selected lags; the sampler supplies the evidence
+# F test run supplies the selected lags; the sampler supplies the evidence
 .bayes_granger_pairs <- function(r, control, prior_prob, bf_threshold, prob_threshold, conditional, cores = 1L,
-                                 lag = "auto") {
+                                 lag = "auto", max_lag = 8L) {
   P <- r$pairs; D <- r$data; rows <- list()
+  # own lags of the effect: its own order when the order of the test was chosen by the package (.own_order())
+  auto <- is.null(lag) || identical(lag, "auto") || identical(lag, "first")
   # the Minnesota posterior is proper for any lag order: a requested lag is
-  # used as it is, even where the F-test run had to shorten it
+  # used as it is, even where the F test run had to shorten it
   if (identical(control$prior, "minnesota") && !identical(lag, "auto")) P$lag <- rep(max(1L, as.integer(lag)), nrow(P))
   sc <- .split_cores(nrow(P), cores)                 # pairs in parallel, or the chains of each pair
   res <- .plapply(seq_len(nrow(P)), function(j) {
     cs <- P$cause[j]; ef <- P$effect[j]
     ctrl_names <- if (conditional) setdiff(names(D), c(cs, ef)) else character(0)
+    cap <- .cap_lag(nrow(D), 2L + length(ctrl_names))
     bayes_granger(D[[ef]], D[[cs]], if (length(ctrl_names)) as.matrix(D[, ctrl_names, drop = FALSE]) else NULL,
-                  lag = P$lag[j], control = control, prior_prob = prior_prob, cores = sc$inner)
+                  lag = P$lag[j], control = control, prior_prob = prior_prob, cores = sc$inner,
+                  own = if (auto) max(P$lag[j], min(.own_order(D[[ef]], max_lag), cap)) else P$lag[j])
   }, cores = sc$outer)
   for (j in seq_len(nrow(P))) {
     b <- res[[j]]

@@ -14,7 +14,7 @@
 \value{
 A list of class \code{summary.causpanel} with the link table (\code{links}:
 one row per directed link with the unit counts, the group- and
-pooled-level statistics, p-values and Bayes factors, the posterior
+pooled-level statistics, p values and Bayes factors, the posterior
 prevalence and the decisions), the unit table restricted to the units
 with a link after the error control (\code{units}), and the settings.
 }

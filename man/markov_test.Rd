@@ -32,13 +32,13 @@ of the paper's examples).}
 
 \item{k_perm}{neighbourhood size of the local permutation.}
 
-\item{aggregate}{aggregation of the local p-values: \code{"geometric"} (default:
-geometric mean of the local p-values clipped from below at \code{clip}, which
-keeps the broad shift of the local p-values but limits the influence of
+\item{aggregate}{aggregation of the local p values: \code{"geometric"} (default:
+geometric mean of the local p values clipped from below at \code{clip}, which
+keeps the broad shift of the local p values but limits the influence of
 the few extreme neighbourhoods of near-deterministic series),
 \code{"median"}, \code{"mean"} or \code{"harmonic"} (harmonic mean, as in the paper).}
 
-\item{clip}{lower clipping level of the local p-values for
+\item{clip}{lower clipping level of the local p values for
 \code{aggregate = "geometric"}.}
 
 \item{seed}{optional RNG seed.}
@@ -47,7 +47,7 @@ the few extreme neighbourhoods of near-deterministic series),
 }
 \value{
 A list with \code{p_value} (small = not Markov), \code{statistic}
-(harmonic mean of local p-values), \code{m}.
+(harmonic mean of local p values), \code{m}.
 }
 \description{
 After time-delay embedding of dimension \code{m}, tests the Markov property
@@ -56,7 +56,7 @@ contingency-table procedure of Stippinger et al. (2023): for every state
 the \code{k_nn} nearest states are collected, their pasts and futures are
 randomly projected to one dimension and binned, a modified log-likelihood
 (power divergence) test with Yates correction is applied, and the local
-p-values are aggregated (\code{aggregate}: the clipped geometric mean by
+p values are aggregated (\code{aggregate}: the clipped geometric mean by
 default, or their median, mean or harmonic mean -- the latter as in the
 paper). The reference distribution is obtained from
 local-permutation surrogates (Runge 2018; Algorithm 1 of the paper): the
@@ -69,7 +69,7 @@ present state are used instead.
 \examples{
 # An AR(1) process is first-order Markov: given x[t-1], x[t+1] carries no
 # information about x[t-2], and the local permutation test accepts the
-# Markov property (large p-value).
+# Markov property (large p value).
 set.seed(1)
 x <- as.numeric(stats::arima.sim(list(ar = 0.6), 400))
 markov_test(x, m = 1, n_perm = 49)$p_value

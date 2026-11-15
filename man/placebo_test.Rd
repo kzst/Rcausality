@@ -44,9 +44,10 @@ cores (see \link{Rcausality-parallel}).}
 }
 \value{
 An object of class \code{causplacebo}: \code{links} (one row per directed
-test: observed decision and evidence, placebo rate, placebo p-value and,
+test: observed decision and evidence, placebo rate, placebo p value and,
 with \code{reverse}, the net scores and their difference \code{trgc}), \code{counts} (the
-number of links in every placebo run), \code{observed} (number of links of the
+number of links in every placebo run), \code{any_rate} (the share of placebo
+runs with at least one link), \code{observed} (number of links of the
 original analysis), \code{p_global}, \code{settings}. Methods: \code{print}, \code{plot}.
 }
 \description{
@@ -58,10 +59,10 @@ neighbouring lag. The shift keeps the autocorrelation and the marginal distribut
 of every series and destroys the lead-lag relations between them, so the
 placebo runs show what the method finds when there is nothing to find:
 \itemize{
-\item the global placebo p-value compares the number of links of the
+\item the global placebo p value compares the number of links of the
 original analysis with the placebo distribution of the number of links;
-\item the link-level placebo p-value compares the evidence of a link
-(\code{-log10} adjusted p-value, or \code{log10} Bayes factor) with its placebo
+\item the link-level placebo p value compares the evidence of a link
+(\code{-log10} adjusted p value, or \code{log10} Bayes factor) with its placebo
 distribution; the placebo rate is the share of placebo runs in which the
 link is declared.
 With \code{reverse = TRUE} the analysis is also repeated on the time-reversed
@@ -71,12 +72,27 @@ of the data minus the same net score of the reversed data. Reversal turns
 a genuine lead-lag relation around, whereas a link produced by symmetric
 dependence (for instance a common driver observed with noise) does not
 change sign. The check is one-sided: a score that is not positive speaks
-against the direction \code{x -> y}; a positive score does not confirm it
-(about half of the false links of simulated common-driver data have
-one).
+against the direction \code{x -> y}; a positive score does not confirm it.
+A declared direction is the one with the larger effect size, so that its
+score is positive for most declared links whether they are genuine or not
+(in the simulations of the accompanying paper for more than nine in ten
+links declared between unrelated series); the size of the score says
+more than its sign.
 }
 }
 \details{
+How to read the placebo rates. An analysis that corrects for its \code{M}
+tests declares one given link in about \code{alpha / M} of the data sets
+without links, not in \code{alpha} of them, and the rate of one link varies
+between data sets. The quantity with a known reference value is the
+share of placebo data sets with at least one declared link
+(\code{any_rate}): for a valid analysis it is about \code{alpha}. The rate of one
+link can be small although the analysis is not valid for series of this
+kind (a link that the analysis declares between two random walks by
+chance is declared again in few of the shifted data sets), and the
+placebo p value of a link is small for most links that a valid test
+declares by chance: neither confirms a link.
+
 For panel analyses (\code{\link[=panel_causality]{panel_causality()}}) a placebo panel reassigns every
 variable across the units: each unit gets each of its variables from a
 different unit of the same length, which keeps the dynamics of every
@@ -92,12 +108,13 @@ reversal is applied within the units. For an analysis with a \code{target}
 # with the lead-lag structure destroyed the analysis finds (almost) no
 # link, so the detected links are not an artefact of autocorrelation
 d <- sim_var(300, n_series = 3, seed = 2)
-r <- rcausality(d)
+r <- rcausality(d, max_lag = 3)
 pl <- placebo_test(r, n_placebo = 19, seed = 1)
 pl
 \donttest{
 plot(pl)
-placebo_test(r, n_placebo = 99, reverse = TRUE, seed = 1, cores = 2)
+# more placebo data sets (use 99 or more in practice), with the time-reversed analysis
+placebo_test(r, n_placebo = 39, reverse = TRUE, seed = 1, cores = 2)
 }
 }
 \references{

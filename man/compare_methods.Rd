@@ -48,7 +48,7 @@ series pair under every method, with a majority-vote consensus.
 }
 \examples{
 # The same pair under three methods.  A linear VAR coupling is found by the
-# F-test, by the Bayes factor and by the transfer entropy; 'consensus' is
+# F test, by the Bayes factor and by the transfer entropy; 'consensus' is
 # the majority vote and 'agreement' the share of methods behind it.
 d <- sim_var(300, "x_to_y", seed = 1)
 cmp <- compare_methods(d, methods = c("granger", "bayes_granger", "te"), seed = 1)
@@ -58,7 +58,7 @@ plot(cmp)            # tile plot of the verdicts per pair and method
 cmp$results$te       # the complete causres object of one of the methods
 # method-specific arguments go in `args`; the dots reach every method
 compare_methods(d, methods = c("granger", "cmi"), args = list(cmi = list(max_lag = 2)),
-                n_perm = 100, seed = 1)
+                n_perm = 50, seed = 1)
 # panel data: three members of the Granger family side by side
 pd <- sim_panel(n_units = 20, n_time = 25, seed = 1)
 compare_methods(pd, methods = c("granger", "bayes_granger", "toda_yamamoto"), id = "unit",
