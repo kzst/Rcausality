@@ -1,49 +1,50 @@
 # Rcausality
 
-Causality analysis for time series and panel data in R -- a unified interface to Granger
-causality, kNN conditional mutual information (plain and lag-shifted with
-a test of contemporaneous dependence), the Markov-chain approach, the degrees-of-freedom
-(conditional-variance) method, Bayesian dimensional causality, the
-complexity-based CCDH method, the df-entropy / random-forest method,
-finite-resolution MAR-PID, recurrence-plot and correlation-dimension
-criteria, transfer entropy and convergent cross mapping, an optional PCMCI
-wrapper, causality-informed forecasting, tools to compare and benchmark the
-methods -- and a **Bayesian variant of every method** (`bayes = TRUE`, with
-the priors, iterations and decision rules set in `bayes_control()`).
-Version 0.0.2 adds the generalisations of the Granger test to integrated
-series (Toda-Yamamoto), to the frequency domain (Geweke; Breitung-Candelon),
-to nonlinear dependence (the Diks-Panchenko test and a random-forest
-Granger-like test), to **short series** (a hierarchical Minnesota prior) and
-to **panels** (Dumitrescu-Hurlin, pooled and Bayesian panel tests), together
-with placebo, time-reversal and robustness analyses and forecasting with the
-links of any method (linear, Bayesian or random-forest forecast models).
-Version 0.0.3 makes the method, its Bayesian variant and the number of cores
-options of every call, carries **every method to panel data** (units, group
-and pooled level, with Bayesian variants; `rcausality(x, id = )`) and adds
-the analysis of the **causal drivers of one explained variable**
-(`rcausality(x, target = )`), for time series and panels.
-Version 0.0.4 corrects the reference distributions of the surrogate and
-permutation tests and several Bayesian quantities and adds checks of the
-input (see `NEWS.md`; several results change).
-Version 0.0.5 makes the surrogates of the conditional tests keep nonlinear
-and scale dependence on the conditioning set, regenerates the cause in the
-panel bootstrap, and adds a heteroskedasticity-consistent form of the F
-test and resampling of common periods for panels with cross-sectional
-dependence (see `NEWS.md`; several results change, among them those of
-`"cmi"` and `"rf_granger"` on noise-free deterministic systems).
-Versions 0.0.6 to 0.0.11 add diagnostics and warnings (dependence between
-the units of a panel, persistent series, the resolution of surrogate
-tests), make conditional shifts the reference of the kernel test and scale
-the conditional surrogates by local variances.
-Version 0.0.12 accounts for the memory of the effect: the regression tests
-include the own lags of the effect up to the order of its autoregression,
-the conditional surrogates condition on that past, and conditional shifts
-are the default reference of `"te"` and `"pid"`; the group test of panels
-with jointly resampled periods is referred to the bootstrap panels (see
-`NEWS.md`; results of the default settings change).
-Every method from the group's papers has a reproduction of a published
-result in `inst/reproduce/` and a section below ("Reproductions of
-published results") stating what was and what was not reproduced.
+Causality analysis for time series and panel data in R: one interface,
+`rcausality()`, to methods from two traditions.
+
+* **Predictability:** Granger causality and its generalisations to
+  integrated series (Toda-Yamamoto), to the frequency domain (Geweke;
+  Breitung-Candelon), to nonlinear dependence (the Diks-Panchenko test, a
+  random-forest Granger-like test) and to short series (a hierarchical
+  Minnesota prior); kNN conditional mutual information (plain and
+  lag-shifted, with a test of contemporaneous dependence), transfer
+  entropy, finite-resolution MAR-PID, and an optional wrapper of PCMCI.
+* **Dynamical systems:** the Markov-chain approach, the degrees-of-freedom
+  (conditional-variance) method, Bayesian dimensional causality, the
+  complexity-based CCDH method, the df-entropy / random-forest method,
+  recurrence-plot and correlation-dimension criteria, and convergent cross
+  mapping.
+
+Every method returns the same result object, has a **Bayesian variant**
+(`bayes = TRUE`, with the priors and decision rules set in
+`bayes_control()`), and is available for **panel data** (`id = `; units,
+group and pooled level) and for the **causal drivers of one explained
+variable** (`target = `). Further tools compare and benchmark the methods,
+run placebo, time-reversal and robustness analyses, and build forecasts from
+the detected links.
+
+What the results can and cannot say:
+
+* A detected link is a statement about the observed series: the past of
+  one series improves the prediction of another, or the two share
+  reconstructed dynamics. A driver that is not among the series can
+  produce a link between them. Several methods have a class for a hidden
+  common cause and recover it on the systems of their papers; for
+  stochastic series with a slow hidden driver none of them separates it
+  reliably from a link. Series that may drive both belong in the analysis
+  (`conditional = TRUE`).
+* The tests hold their level under conditions that the help pages and the
+  vignettes state (length, persistence, stationarity). The package warns
+  when a result rests on a condition that the data do not meet; these
+  warnings are part of the result.
+* Every method from the group's papers has a reproduction of a published
+  result in `inst/reproduce/`. The section "Reproductions of published
+  results" below states what was reproduced and what was not, and "Open
+  items" what is not implemented.
+
+Changes between versions, including those that change results, are listed
+in `NEWS.md`.
 
 > Author and maintainer: Zsolt T. Kosztyán (<kosztyan.zsolt@gtk.uni-pannon.hu>),
 > University of Pannonia. Bug reports and questions: please open an issue on
@@ -241,7 +242,7 @@ and its location and scale given the conditioning set: every lag of the cause is
 times a standardized residual, location and scale are estimated flexibly
 as functions of the conditioning set, and the residuals are shifted
 circularly (conditional shifts; nonlinear and scale dependence on the
-conditioning set are kept since version 0.0.5). The local permutations of
+conditioning set are kept). The local permutations of
 Runge (2018), in which x's past
 is permuted within neighbourhoods of the conditioning set, are available
 with `method_args = list(reference = "local")`; they do not keep the
@@ -443,7 +444,9 @@ krakovska_cd(lb$x, lb$y, E = 3, seed = 1)
 `pcmci()` wraps the authors' Python package tigramite (reached through
 reticulate; nothing is ported). It needs `install.packages("reticulate")`
 and a Python with `pip install tigramite`; `pcmci_available()` tells whether
-they are found. The result is an ordinary `causres`.
+they are found (`Sys.setenv(RETICULATE_PYTHON = "<path to python>")` or
+`pcmci_available(python = "<path>")` points reticulate at a particular
+Python). The result is an ordinary `causres`.
 
 ```r
 if (pcmci_available()) {
@@ -547,7 +550,7 @@ forecast_causal(net, method = "granger", h = 8)
 model with that of the own-lags model for every series: a driven series
 gains, an undriven one does not (the gain is about 0).
 
-## Panel data and the drivers of one variable (version 0.0.3)
+## Panel data and the drivers of one variable
 
 The causality method, its Bayesian variant and the number of cores are
 options of every call -- for time series and for panels:
@@ -612,7 +615,7 @@ These analyses generalise the panel and explanatory Granger procedures of
 Kosztyán, Mátrai and Kiss (2026), *The World Economy*,
 doi:10.1111/twec.70148.
 
-## Beyond linear Granger causality (version 0.0.2)
+## Beyond linear Granger causality
 
 See `vignette("extensions")` for the full walkthrough with figures.
 
@@ -1107,34 +1110,18 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
 | `predict()` / `forecast_causal()` / `forecast_compare()` | restricted VAR forecasts from the detected links; Luetkepohl (2005), Springer, doi:10.1007/978-3-540-27752-1; Minnesota-prior and random-forest forecast models; Diebold & Mariano (1995), *JBES* 13(3), 253-263 |
 
 ## Open items
-The Markov test for near-deterministic series with observational noise
-(Stippinger et al. 2023, Figs. 3-5); a kd-tree for series longer than about
-10^4 points; the joint x-y constraint scheme of the df method (Telcs et al.
-2025, Fig. 4). Further papers can be added on request; the `causres`
-object, `compare_methods()` and `benchmark_methods()` take any new method.
 
-## Development notes (checking the package inside a cloud-synced folder)
-`devtools::check()` writes `Rcausality.Rcheck/` and lock directories next to
-the package; a syncing client (Dropbox, OneDrive, ...) can re-create files
-while R deletes them, which shows up as "failed to lock directory",
-"conflicted copy" files or "there is no package called 'Rcausality'". These
-are not package errors. Run the check in a temporary directory and reinstall
-afterwards:
+Not implemented from the papers of the methods:
 
-```r
-unlink(file.path(getwd(), "Rcausality.Rcheck"), recursive = TRUE)   # stale check output, if any
-devtools::check(check_dir = tempdir())
-devtools::install()        # the examples and scripts use the installed package
-```
-
-Also delete any `00LOCK-*` directory in the library path (`.libPaths()`) if
-an installation was interrupted. The optional PCMCI wrapper needs
-`install.packages("reticulate")` and a Python with `pip install tigramite`;
-point reticulate at it with `Sys.setenv(RETICULATE_PYTHON = "<path to python>")`
-or `pcmci_available(python = "<path>")`.
+* the Markov test for near-deterministic series with observational noise
+  (Stippinger et al. 2023, Figs. 3-5);
+* the joint x-y constraint scheme of the df method (Telcs et al. 2025,
+  Fig. 4);
+* a kd-tree for the neighbour searches: series longer than about 10^4
+  points are slow with the kNN-based methods.
 
 ## Ported code
-Any code ported from the authors' Python reference implementations
-(`dimensional_causality`, `df_causality`) will be explicitly marked as
-**ported by the Rcausality authors**, in the source header, in `?` help pages
-and in `inst/COPYRIGHTS`.
+
+No code is ported from the authors' reference implementations; the methods
+are implemented from the papers. `pcmci()` calls the Python package
+tigramite and ports nothing.

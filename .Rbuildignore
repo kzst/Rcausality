@@ -1,2 +1,16 @@
+^\.git$
+^\.github$
+^README\.Rmd$
+^\.claude$
+^CLAUDE\.md$
 ^.*\.Rproj$
 ^\.Rproj\.user$
+^Rcausality\.Rcheck$
+^Rplots\.pdf$
+^\.DS_Store$
+^src/.*\.o$
+^src/.*\.so$
+^cran-comments\.md$
+^vignettes/.*\.html$
+^vignettes/.*_cache$
+^tests/testthat/testthat-problems\.rds$
