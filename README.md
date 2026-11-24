@@ -1057,8 +1057,8 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
     the Bayes factor is integrated by importance sampling (`n_draws`) and
     the posterior of the effect is summarised with a credible interval. The
     method-specific side conditions (CCM convergence, the coverage index
-    of the recurrence criterion, the reconstruction index of CCDH) are
-    kept.
+    of the recurrence criterion, the reconstruction index of CCDH, a
+    positive statistic for `rf_granger` and `df`) are kept.
   - *Markov-chain approach*: the six tests of a pair (x, y and the joint
     Markov properties, the two directed and the contemporaneous CMI tests)
     get surrogate Bayes factors; the 64 combinations of their outcomes,

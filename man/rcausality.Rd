@@ -68,7 +68,14 @@ orders \verb{1..max_lag}; for Bayes-factor decisions the first order with
 at one of the orders", the average over the orders). In panels \code{"auto"}
 chooses the order of every link by the BIC of its pooled regression.
 \code{NULL} is \code{"auto"}, except in the time-series analysis of a \code{target}
-with a method of the Granger family, where it is \code{"first"}.}
+with a method of the Granger family, where it is \code{"first"}.
+The regression methods (the Granger family and \code{"rf_granger"}) use at
+most \verb{floor((n - 2 - d) / (2 + 2 K))} lags for \code{K} series of \code{n} time
+points (\code{d = d_max} for \code{"toda_yamamoto"}, otherwise 0), so that the
+unrestricted regression keeps residual degrees of freedom; a larger
+requested order is reduced with a warning, except in the Bayesian
+regression with the Minnesota prior, whose posterior is proper at any
+order.}
 
 \item{max_lag}{largest lag order considered when \code{lag} is not a number.}
 

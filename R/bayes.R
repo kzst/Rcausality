@@ -743,11 +743,13 @@ print.bayes_granger <- function(x, digits = 3, ...) {
     P$evidence <- as.character(bf_evidence(P$bf10))
     sig <- if (control$decision == "bf") P$bf10 > bf_threshold else P$post_prob > prob_threshold
     # the method-specific side conditions stay: CCM convergence, the coverage
-    # index of the recurrence criterion, the reconstruction index of CCDH
+    # index of the recurrence criterion, the reconstruction index of CCDH, and
+    # a positive statistic for the random-forest test and the df method
     gate <- conv %in% TRUE
     if (s$method == "hirata" && !is.null(s$theta)) gate <- gate & P$statistic >= s$theta
     if (s$method == "ccdh" && !is.null(s$prob_threshold)) gate <- gate & (1 - P$statistic) <= s$prob_threshold
     if (s$method == "rf_granger") gate <- gate & P$statistic > 0          # an improvement of the prediction
+    if (s$method == "df") gate <- gate & (P$statistic > 0) %in% TRUE      # a fall of the conditional variance (p = 1 otherwise)
     if (s$method == "df" && !is.null(r$df) && nrow(r$df)) {
       # the table of the orders decides a pair whenever it gives a definite case, as in the decision by the tests
       # (.rcausality_df()): a direction that the table does not claim is not declared
@@ -815,9 +817,10 @@ print.bayes_granger <- function(x, digits = 3, ...) {
   P <- r$pairs; D <- r$data; rows <- list()
   # own lags of the effect: its own order when the order of the test was chosen by the package (.own_order())
   auto <- is.null(lag) || identical(lag, "auto") || identical(lag, "first")
-  # the Minnesota posterior is proper for any lag order: a requested lag is
-  # used as it is, even where the F test run had to shorten it
-  if (identical(control$prior, "minnesota") && !identical(lag, "auto")) P$lag <- rep(max(1L, as.integer(lag)), nrow(P))
+  # the Minnesota posterior is proper for any lag order: a requested numeric
+  # lag is used as it is, even where the F test run had to shorten it
+  # (with lag = "first" the order is the one that the scan selected)
+  if (identical(control$prior, "minnesota") && !auto) P$lag <- rep(max(1L, as.integer(lag)), nrow(P))
   sc <- .split_cores(nrow(P), cores)                 # pairs in parallel, or the chains of each pair
   res <- .plapply(seq_len(nrow(P)), function(j) {
     cs <- P$cause[j]; ef <- P$effect[j]

@@ -255,6 +255,13 @@
 #'   chooses the order of every link by the BIC of its pooled regression.
 #'   `NULL` is `"auto"`, except in the time-series analysis of a `target`
 #'   with a method of the Granger family, where it is `"first"`.
+#'   The regression methods (the Granger family and `"rf_granger"`) use at
+#'   most `floor((n - 2 - d) / (2 + 2 K))` lags for `K` series of `n` time
+#'   points (`d = d_max` for `"toda_yamamoto"`, otherwise 0), so that the
+#'   unrestricted regression keeps residual degrees of freedom; a larger
+#'   requested order is reduced with a warning, except in the Bayesian
+#'   regression with the Minnesota prior, whose posterior is proper at any
+#'   order.
 #' @param max_lag largest lag order considered when `lag` is not a number.
 #' @param lag_criterion `"BIC"`, `"AIC"` or `"HQ"`.
 #' @param conditional logical; if `TRUE` every test conditions on all other

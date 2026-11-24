@@ -1,3 +1,34 @@
+# Rcausality 0.0.13
+
+Two corrections of the Bayesian variants. The frequentist results do not
+change; the Bayesian decisions of `"df"` can declare fewer links.
+
+* **`lag = "first"` with the Minnesota prior.** `rcausality(...,
+  bayes = TRUE, prior = "minnesota", lag = "first")` (and
+  `method = "bayes_granger"` with this prior) stopped with an error
+  (`invalid 'nrow' value`): the rule was read as a number of lags. The
+  Minnesota prior now uses the order that the scan of the rule selects, as
+  the other priors do. A numeric `lag` is used as it is, also where the F
+  test has to shorten it.
+* **The side condition of `"df"` in its Bayesian decision.** The directed
+  test of the degrees-of-freedom method gives a p value of one to a
+  statistic that is not positive: a conditional variance that does not fall
+  when the past of the cause is added is no evidence of a link. The
+  Bayesian decision (`bayes = TRUE`) compared the same statistic with its
+  replicates and could declare a link when the replicates lay further below
+  it, which happens in strongly persistent series. The decision now keeps
+  the condition, as that of `"rf_granger"` keeps a positive gain; the Bayes
+  factor itself is reported as before. In the simulations of the
+  accompanying paper (two independent autoregressions with coefficient 0.9,
+  300 time points), 38 of the 42 Bayes factors above three of the directed
+  test belonged to such statistics.
+* **Documentation.** The documentation of `lag` states the largest order of
+  the regression methods: `floor((n - 2 - d) / (2 + 2 K))` lags for `K`
+  series of `n` time points (`d = d_max` for `"toda_yamamoto"`, otherwise
+  0). A larger requested order is reduced with a warning, as before, except
+  in the Bayesian regression with the Minnesota prior. The README lists the
+  side conditions that the Bayesian surrogate decisions keep.
+
 # Rcausality 0.0.12
 
 Several results of the default settings change in this version; the first

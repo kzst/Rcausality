@@ -1,3 +1,29 @@
+## Rcausality 0.0.13 -- an update with two bug fixes
+
+We are sorry for an update so soon after 0.0.12 (submitted on 2026-11-21).
+While checking the simulations of the paper that accompanies the package we
+found two errors in documented options, and we would rather not leave them
+to the users:
+
+* `rcausality(..., bayes = TRUE, prior = "minnesota", lag = "first")`
+  stopped with an error (`invalid 'nrow' value`).
+* The Bayesian decision of the method `"df"` did not apply a condition of
+  the frequentist test (a statistic that is not positive is no evidence of
+  a link), so that it could declare links that the test rates with p = 1.
+
+Both are corrected, with tests (`tests/testthat/test-fixes-0.0.13.R`). Apart
+from them only the documentation of `lag` (the largest lag order of the
+regression methods) and the README change; see NEWS.md.
+
+Local check (Ubuntu 24.04, R 4.3.3, two cores), `R CMD check --as-cran`:
+0 errors. As for 0.0.12, the two warnings and four of the five notes come
+from the check machine (locale `en_US.UTF-8` not available, missing
+`inconsolata.sty` for the PDF manual and the `.tex` file it leaves behind,
+no `tidy`, system clock not verifiable, a compiler flag); the fifth is the
+installed size (5.1 Mb, of which the compiled code 2.0 Mb and the four
+vignettes 1.5 Mb). Run times: examples 12 s (with `--run-donttest` 45 s),
+tests 42 s, re-building of the vignettes 45 s.
+
 ## Rcausality 0.0.12 -- resubmission after the review of 2026-11-14
 
 Thank you for the review. The three points:
