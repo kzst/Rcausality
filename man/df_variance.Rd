@@ -16,7 +16,8 @@ df_variance(
   k_perm = 5L,
   min_n = 5L,
   seed = NULL,
-  cores = getOption("Rcausality.cores", 1L)
+  cores = getOption("Rcausality.cores", 1L),
+  estimator = c("knn", "gaussian")
 )
 
 \method{plot}{dfvar}(x, main = NULL, ...)
@@ -48,6 +49,19 @@ the step tests (see Details).}
 
 \item{cores}{CPU cores for the permutations (see \link{Rcausality-parallel}).}
 
+\item{estimator}{conditional variance of the step tests: \code{"knn"} (default;
+pooled variance in adaptive windows of \code{k} nearest neighbours,
+nonparametric) or \code{"gaussian"} (residual variance of the least-squares
+regression on the constrained values: the variance of the conditional
+normal distribution, Eqs. 23-24 of the paper with vanishing windows,
+estimated from the sample covariance). The windows of the nearest
+neighbours cannot resolve conditional variances below the spread of the
+present value over a neighbourhood (for 1500 points of the nearly
+deterministic rotation system of the paper, about 6\% of the standard
+deviation); for linear or nearly linear systems the Gaussian estimator
+resolves the orders beyond that floor. The \code{sigma(sigma_W)} profile is
+computed with fixed-width windows in both cases.}
+
 \item{main}{title.}
 
 \item{...}{further arguments (unused).}
@@ -59,7 +73,7 @@ sigma-versus-width profile as in the figures of the paper: the first
 number of constraints whose line is proportional to the window width,
 otherwise the number of distinct saturated levels), \code{steps} (per number of constraints: conditional sd, relative
 reduction, p value), \code{profile} (data frame: \code{n_constr}, \code{width}, \code{sigma},
-\code{n}), \code{n}, \code{k}, \code{call}. Methods: \code{print}, \code{plot} (the sigma-versus-width
+\code{n}), \code{n}, \code{k}, \code{estimator}, \code{call}. Methods: \code{print}, \code{plot} (the sigma-versus-width
 figure of the paper).
 }
 \description{
@@ -70,7 +84,8 @@ Constraints are windows of width \code{sigma_W} (max-norm) around every observed
 past configuration; \code{sigma(sigma_W, n_constr)} is the pooled standard
 deviation of the present values inside the windows (Eqs. 14-15 of the
 paper). The df is read off the adaptive-window (k nearest neighbours)
-profile: constraints are added one lag at a time while the conditional
+profile, or off the Gaussian conditional variances (\code{estimator}):
+constraints are added one lag at a time while the conditional
 standard deviation still drops by more than \code{tol} (relative).
 }
 \details{
@@ -81,7 +96,8 @@ nearest neighbours in the space of the constraints already imposed, cf.
 Runge, 2018) and larger than \code{tol}. In deterministic systems the
 reductions are by orders of magnitude and the procedure reproduces the
 "count the saturated lines" reading of the paper's figures; in stochastic
-systems the test makes the reading objective.
+systems the test makes the reading objective. The local permutations are
+the reference with both estimators.
 }
 \examples{
 # An AR(2) process has two degrees of freedom: constraining x[t-1] and then
@@ -91,6 +107,8 @@ set.seed(1)
 x <- as.numeric(stats::arima.sim(list(ar = c(0.5, 0.3)), 300))
 d <- df_variance(x, max_constr = 3)
 d              # df = 2 (two accepted lags)
+# the same steps with the Gaussian conditional variance (linear systems)
+df_variance(x, max_constr = 3, estimator = "gaussian")$df
 \donttest{
 plot(d)        # the variance-reduction path and the permutation p values
 }

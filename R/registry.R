@@ -128,7 +128,7 @@
   toda_yamamoto  = list(d_max = 1L, vcov = "classical"),
   diks_panchenko = list(eps = NULL, C = 8, filter = "none", reference = "conditional"),
   te             = list(reference = "conditional"),
-  df             = list(reference = "conditional"),
+  df             = list(reference = "conditional", estimator = "knn", search = "auto"),
   pid            = list(reference = "conditional"),
   rf_granger     = list(num_trees = 200L, mtry = "all", min_node_size = "auto", folds = 5L, shadow = TRUE,
                         importance = TRUE)

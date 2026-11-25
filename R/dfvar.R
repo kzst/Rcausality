@@ -10,7 +10,9 @@
 # as a constraint centre and the samples whose past lies within a window of
 # width sigma_W (max-norm) around it form the conditioned sample; the pooled
 # variance of the present values over all centres is sigma(sigma_W, n_constr).
-# The decision level uses adaptive (k-nearest-neighbour) windows.
+# The decision level uses adaptive (k-nearest-neighbour) windows, or, with
+# estimator = "gaussian", the variance of the conditional normal distribution
+# (Sections 6.2-6.4 of the paper, Eqs. 23-24 with vanishing windows).
 
 # Conditional-variance kernels (C++, src/knn.cpp): `C` is the constraint
 # matrix (rows = centres, columns = constrained past values; 0 columns = no
@@ -22,6 +24,33 @@
 .cond_var_radius <- function(pres, C, r, min_n = 5L) {
   v <- cond_var_radius_cpp(C, pres, r, as.integer(min_n)); c(sigma2 = v[1], n = v[2])
 }
+# The Gaussian conditional variance: the residual variance of the least-squares regression of every present value on
+# the constraints (with an intercept), i.e. the variance of the conditional normal distribution estimated from the
+# sample covariance; the same summary as .cond_var_knn (mean over the columns of pres of the log variance).  The windows
+# of the nearest neighbours set a floor to the conditional variance that they can resolve (about the spread of the
+# present value over a neighbourhood: for 1500 points of the nearly deterministic rotation system of the paper, 6% of
+# the standard deviation); the regression has no such floor, and it resolves the orders of linear systems.
+.cond_var_gauss <- function(pres, C) {
+  pres <- as.matrix(pres); X <- cbind(1, C); q <- qr(X); dfr <- nrow(X) - q$rank
+  if (dfr < 2L) return(NA_real_)
+  mean(log(pmax(colSums(qr.resid(q, pres)^2) / dfr, 1e-300)))
+}
+.cond_var <- function(pres, C, k, estimator = "knn")
+  if (identical(estimator, "gaussian")) .cond_var_gauss(pres, C) else .cond_var_knn(pres, C, k)
+# the `estimator` setting of method "df" (rcausality())
+.df_est_arg <- function(v) {
+  v <- tolower(if (is.null(v)) "knn" else as.character(v)[1L])
+  if (!v %in% c("knn", "gaussian")) stop("`estimator` must be \"knn\" or \"gaussian\".", call. = FALSE)
+  v
+}
+# the `search` setting of method "df": "auto" is the minimal search with the Gaussian estimator (whose regressions make
+# it cheap) and the greedy one with the windows of the neighbours
+.df_search_arg <- function(v, estimator) {
+  v <- tolower(if (is.null(v)) "auto" else as.character(v)[1L])
+  if (!v %in% c("auto", "greedy", "minimal")) stop("`search` must be \"auto\", \"greedy\" or \"minimal\".", call. = FALSE)
+  if (v == "auto") v <- if (identical(estimator, "gaussian")) "minimal" else "greedy"
+  v
+}
 .empty_C <- function(n) matrix(numeric(0), n, 0)
 .add_cols <- function(C, cols) do.call(cbind, c(list(C), cols))
 
@@ -31,14 +60,14 @@
 # reduction; null: local permutation of the new columns among the k_perm
 # nearest neighbours in the current constraint space (Runge, 2018; a plain
 # permutation when there is no constraint yet).
-.cv_test <- function(pres, C, newcols, k, n_perm, k_perm = 5L, cores = 1L) {
+.cv_test <- function(pres, C, newcols, k, n_perm, k_perm = 5L, cores = 1L, estimator = "knn") {
   ne <- nrow(pres)
-  base <- .cond_var_knn(pres, C, k)
-  obs <- base - .cond_var_knn(pres, .add_cols(C, newcols), k)
+  base <- .cond_var(pres, C, k, estimator)
+  obs <- base - .cond_var(pres, .add_cols(C, newcols), k, estimator)
   nn <- if (ncol(C) > 0L) knn_idx_cpp(C, as.integer(k_perm)) else NULL
   null <- unlist(.plapply(seq_len(n_perm), function(b) {
     perm <- if (is.null(nn)) sample.int(ne) else .local_perm(nn, k_perm)
-    base - .cond_var_knn(pres, .add_cols(C, lapply(newcols, function(v) v[perm])), k)
+    base - .cond_var(pres, .add_cols(C, lapply(newcols, function(v) v[perm])), k, estimator)
   }, cores = cores))
   list(statistic = obs, p_value = (1 + sum(null >= obs)) / (n_perm + 1),
        sigma_ratio = exp(-obs / 2), C_new = .add_cols(C, newcols), null = null)
@@ -60,7 +89,8 @@
 #' past configuration; `sigma(sigma_W, n_constr)` is the pooled standard
 #' deviation of the present values inside the windows (Eqs. 14-15 of the
 #' paper). The df is read off the adaptive-window (k nearest neighbours)
-#' profile: constraints are added one lag at a time while the conditional
+#' profile, or off the Gaussian conditional variances (`estimator`):
+#' constraints are added one lag at a time while the conditional
 #' standard deviation still drops by more than `tol` (relative).
 #'
 #' @param x numeric vector or matrix (columns = components of one subsystem;
@@ -68,6 +98,18 @@
 #' @param max_constr largest number of past lags constrained.
 #' @param k neighbourhood size of the adaptive windows (default 10; small
 #'   values keep the windows narrow, which matters for deterministic systems).
+#' @param estimator conditional variance of the step tests: `"knn"` (default;
+#'   pooled variance in adaptive windows of `k` nearest neighbours,
+#'   nonparametric) or `"gaussian"` (residual variance of the least-squares
+#'   regression on the constrained values: the variance of the conditional
+#'   normal distribution, Eqs. 23-24 of the paper with vanishing windows,
+#'   estimated from the sample covariance). The windows of the nearest
+#'   neighbours cannot resolve conditional variances below the spread of the
+#'   present value over a neighbourhood (for 1500 points of the nearly
+#'   deterministic rotation system of the paper, about 6% of the standard
+#'   deviation); for linear or nearly linear systems the Gaussian estimator
+#'   resolves the orders beyond that floor. The `sigma(sigma_W)` profile is
+#'   computed with fixed-width windows in both cases.
 #' @param widths window widths (in units of the standard deviation of `x`)
 #'   for the `sigma(sigma_W)` profile; default a geometric grid.
 #' @param alpha significance level of the step tests.
@@ -86,14 +128,15 @@
 #'   Runge, 2018) and larger than `tol`. In deterministic systems the
 #'   reductions are by orders of magnitude and the procedure reproduces the
 #'   "count the saturated lines" reading of the paper's figures; in stochastic
-#'   systems the test makes the reading objective.
+#'   systems the test makes the reading objective. The local permutations are
+#'   the reference with both estimators.
 #' @return An object of class `dfvar`: `df` (estimated degrees of freedom, in
 #'   lags, from the step tests), `df_profile` (the reading of the
 #'   sigma-versus-width profile as in the figures of the paper: the first
 #'   number of constraints whose line is proportional to the window width,
 #'   otherwise the number of distinct saturated levels), `steps` (per number of constraints: conditional sd, relative
 #'   reduction, p value), `profile` (data frame: `n_constr`, `width`, `sigma`,
-#'   `n`), `n`, `k`, `call`. Methods: `print`, `plot` (the sigma-versus-width
+#'   `n`), `n`, `k`, `estimator`, `call`. Methods: `print`, `plot` (the sigma-versus-width
 #'   figure of the paper).
 #' @references
 #' Telcs, A., Kurbucz, M. T. and Jakovac, A. (2025). Unified causality analysis based on the degrees of freedom. *Physical Review E*, 112(1), 014204. \doi{10.1103/PhysRevE.112.014204}, Sections 3.1, 6.1 and 6.4.
@@ -108,12 +151,16 @@
 #' x <- as.numeric(stats::arima.sim(list(ar = c(0.5, 0.3)), 300))
 #' d <- df_variance(x, max_constr = 3)
 #' d              # df = 2 (two accepted lags)
+#' # the same steps with the Gaussian conditional variance (linear systems)
+#' df_variance(x, max_constr = 3, estimator = "gaussian")$df
 #' \donttest{
 #' plot(d)        # the variance-reduction path and the permutation p values
 #' }
 df_variance <- function(x, max_constr = 6L, k = NULL, widths = NULL, alpha = 0.05, tol = 0.02,
-                        n_perm = 49L, k_perm = 5L, min_n = 5L, seed = NULL, cores = getOption("Rcausality.cores", 1L)) {
+                        n_perm = 49L, k_perm = 5L, min_n = 5L, seed = NULL, cores = getOption("Rcausality.cores", 1L),
+                        estimator = c("knn", "gaussian")) {
   cl <- match.call()
+  estimator <- match.arg(estimator)
   old <- .rng_setup(seed); on.exit(.rng_restore(old), add = TRUE)
   if (n_perm < ceiling(1 / alpha)) {
     message("df_variance: n_perm raised to ", ceiling(1 / alpha), " so that p < alpha is attainable.")
@@ -130,13 +177,13 @@ df_variance <- function(x, max_constr = 6L, k = NULL, widths = NULL, alpha = 0.0
   if (is.null(widths)) widths <- 2^seq(1, -7, by = -0.5)
   C <- .empty_C(ne)
   steps <- data.frame(n_constr = 0:max_constr, sigma = NA_real_, reduction = NA_real_, p_value = NA_real_)
-  steps$sigma[1] <- sqrt(exp(.cond_var_knn(pres, C, k)))
+  steps$sigma[1] <- sqrt(exp(.cond_var(pres, C, k, estimator)))
   prof <- list(); df <- 0L; open <- TRUE
   for (j in 0:max_constr) {
     if (j > 0) {
-      tst <- .cv_test(pres, C, .block_lags(Ms, t_idx, j), k, n_perm, k_perm, cores)
+      tst <- .cv_test(pres, C, .block_lags(Ms, t_idx, j), k, n_perm, k_perm, cores, estimator)
       C <- tst$C_new
-      steps$sigma[j + 1L] <- sqrt(exp(.cond_var_knn(pres, C, k)))
+      steps$sigma[j + 1L] <- sqrt(exp(.cond_var(pres, C, k, estimator)))
       steps$reduction[j + 1L] <- 1 - tst$sigma_ratio
       steps$p_value[j + 1L] <- tst$p_value
       if (open && tst$p_value < alpha && (1 - tst$sigma_ratio) > tol) df <- j else open <- FALSE
@@ -149,7 +196,7 @@ df_variance <- function(x, max_constr = 6L, k = NULL, widths = NULL, alpha = 0.0
   }
   profile <- do.call(rbind, prof)
   structure(list(df = df, df_profile = .df_from_profile(profile, tol = 0.1), steps = steps, sigma_knn = stats::setNames(steps$sigma, paste0("n_constr=", 0:max_constr)),
-                 profile = profile, n = n, k = k, alpha = alpha, tol = tol,
+                 profile = profile, n = n, k = k, estimator = estimator, alpha = alpha, tol = tol,
                  series = if (is.null(colnames(M))) "x" else paste(colnames(M), collapse = ","), call = cl),
             class = "dfvar")
 }
@@ -180,7 +227,9 @@ df_variance <- function(x, max_constr = 6L, k = NULL, widths = NULL, alpha = 0.0
 #' @export
 print.dfvar <- function(x, digits = 3, ...) {
   .out("Degrees of freedom by conditional-variance analysis (Telcs, Kurbucz & Jakovac, 2025)\n")
-  .out(sprintf("  series: %s, n = %d, k = %d, alpha = %g, tol = %g\n", x$series, x$n, x$k, x$alpha, x$tol))
+  gauss <- identical(x$estimator, "gaussian")
+  .out(sprintf("  series: %s, n = %d, %s, alpha = %g, tol = %g\n", x$series, x$n,
+               if (gauss) "Gaussian conditional variance" else sprintf("k = %d", x$k), x$alpha, x$tol))
   .out("  constraints on the past vs conditional sd of the present value:\n")
   S <- x$steps
   print(data.frame(n_constr = S$n_constr, cond.sd = round(S$sigma, digits),
@@ -188,7 +237,8 @@ print.dfvar <- function(x, digits = 3, ...) {
                    p = ifelse(is.na(S$p_value), "", .fmt_p(S$p_value)),
                    accepted = ifelse(is.na(S$p_value), "", ifelse(S$n_constr <= x$df, "yes", "no"))),
         row.names = FALSE)
-  .out(sprintf("  estimated df (past lags that significantly reduce the sd, adaptive windows): %d\n", x$df))
+  .out(sprintf("  estimated df (past lags that significantly reduce the sd, %s): %d\n",
+               if (gauss) "Gaussian conditional variance" else "adaptive windows", x$df))
   .out(sprintf("  profile reading (first line proportional to the width, else distinct saturated levels): %d\n",
               x$df_profile))
   invisible(x)
@@ -228,8 +278,11 @@ plot.dfvar <- function(x, main = NULL, ...) {
 # tested first; stop when no candidate brings a significant reduction.
 # This is the "number of conditions" of Table 1 of Telcs et al. (2025): for
 # y alone it may include conditions on x's past (y's order is (ox, oy) when
-# x drives y).
-.df_order <- function(pres, cands, t_idx, max_constr, k, alpha, tol, n_perm, k_perm, cores) {
+# x drives y).  search = "minimal": .df_order_min().
+.df_order <- function(pres, cands, t_idx, max_constr, k, alpha, tol, n_perm, k_perm, cores, estimator = "knn",
+                      search = "greedy") {
+  if (identical(search, "minimal"))
+    return(.df_order_min(pres, cands, t_idx, max_constr, k, alpha, tol, n_perm, k_perm, cores, estimator))
   ne <- length(t_idx); C <- .empty_C(ne)
   used <- stats::setNames(integer(length(cands)), names(cands)); chosen <- character(0); pv <- numeric(0)
   repeat {
@@ -237,11 +290,11 @@ plot.dfvar <- function(x, main = NULL, ...) {
     for (nm in names(cands)) if (used[[nm]] < max_constr)
       cand[[nm]] <- list(cands[[nm]][t_idx - used[[nm]] - 1L])
     if (!length(cand)) break
-    base <- .cond_var_knn(pres, C, k)
-    obs <- vapply(cand, function(cl) base - .cond_var_knn(pres, .add_cols(C, cl), k), 0)
+    base <- .cond_var(pres, C, k, estimator)
+    obs <- vapply(cand, function(cl) base - .cond_var(pres, .add_cols(C, cl), k, estimator), 0)
     accepted <- FALSE
     for (b in names(sort(obs, decreasing = TRUE))) {
-      tst <- .cv_test(pres, C, cand[[b]], k, n_perm, k_perm, cores)
+      tst <- .cv_test(pres, C, cand[[b]], k, n_perm, k_perm, cores, estimator)
       if (tst$p_value < alpha && (1 - tst$sigma_ratio) > tol) {
         C <- tst$C_new; accepted <- TRUE; used[[b]] <- used[[b]] + 1L
         chosen <- c(chosen, sprintf("%s[t-%d]", b, used[[b]])); pv <- c(pv, tst$p_value)
@@ -253,6 +306,50 @@ plot.dfvar <- function(x, main = NULL, ...) {
   list(df = sum(used), lags = used, chosen = chosen, p = pv)
 }
 
+# The order as the smallest number of conditions after which no further one (the next lag of any of the series)
+# reduces the conditional variance: the number of conditions that gives the Markov property (Section 3 and Table 1 of
+# Telcs et al., 2025).  The splits of m conditions among the series are examined for m = 0, 1, ..., those of one m in the
+# order of their conditional variances; the first split from which no extension brings a significant reduction larger
+# than `tol` gives the order.  The greedy search can take first the condition that brings the largest reduction and
+# need more conditions in all: for the rotation system of the paper (two oscillators with a hidden common driver,
+# one component of each observed, orders 4, 4 and 6) the past of the other series carries the driver, and the greedy
+# search took it and needed seven or eight conditions for the joint process in 19 of 20 data sets of 1500 points, the
+# minimal search six in 11 of them (Gaussian estimator, at most four lags of each series).
+.df_order_min <- function(pres, cands, t_idx, max_constr, k, alpha, tol, n_perm, k_perm, cores, estimator = "knn") {
+  nm <- names(cands); ne <- length(t_idx)
+  build <- function(u) {
+    C <- .empty_C(ne)
+    for (j in nm) for (l in seq_len(u[[j]])) C <- cbind(C, cands[[j]][t_idx - l])
+    C
+  }
+  splits <- function(m, K) {                       # the splits of m conditions among K series, at most max_constr each
+    if (K == 1L) return(if (m <= max_constr) list(m) else list())
+    out <- list()
+    for (a in 0:min(m, max_constr)) for (r in splits(m - a, K - 1L)) out[[length(out) + 1L]] <- c(a, r)
+    out
+  }
+  for (m in 0:(length(nm) * max_constr)) {
+    U <- lapply(splits(m, length(nm)), function(u) stats::setNames(as.integer(u), nm))
+    base <- vapply(U, function(u) .cond_var(pres, build(u), k, estimator), 0)
+    for (i in order(base)) {
+      u <- U[[i]]; C <- build(u); open <- nm[u < max_constr]; saturated <- TRUE
+      if (length(open)) {
+        ext <- stats::setNames(lapply(open, function(j) list(cands[[j]][t_idx - u[[j]] - 1L])), open)
+        obs <- vapply(ext, function(cl) base[i] - .cond_var(pres, .add_cols(C, cl), k, estimator), 0)
+        obs[!is.finite(obs)] <- -Inf
+        for (j in open[order(obs, decreasing = TRUE)]) {
+          if (1 - exp(-obs[[j]] / 2) <= tol) break  # (the remaining extensions reduce less)
+          tst <- .cv_test(pres, C, ext[[j]], k, n_perm, k_perm, cores, estimator)
+          if (tst$p_value < alpha && (1 - tst$sigma_ratio) > tol) { saturated <- FALSE; break }
+        }
+      }
+      if (saturated)
+        return(list(df = m, lags = u, chosen = unlist(lapply(nm, function(j) sprintf("%s[t-%d]", j, seq_len(u[[j]])))),
+                    p = NA_real_))
+    }
+  }
+}
+
 # Directed test cause -> effect at lag tau: does constraining cause[t - tau]
 # reduce the conditional variance of effect[t] beyond the effect's own
 # `history` past (and the controls)?  Statistic = relative reduction of the
@@ -262,7 +359,8 @@ plot.dfvar <- function(x, main = NULL, ...) {
 # replicate for all lags; or "local", local permutations (Runge 2018), which do not keep the serial dependence of the
 # cause: for two independent first-order autoregressions of 300 time points with coefficients 0.5 and 0.9 the p value
 # of the test with local permutations was below 0.05 in 9.5% and 26% of the pairs.
-.df_pair <- function(effect, cause, controls, lags, history, k, n_perm, k_perm = 5L, cores = 1L, reference = "local", own = 0L) {
+.df_pair <- function(effect, cause, controls, lags, history, k, n_perm, k_perm = 5L, cores = 1L, reference = "local", own = 0L,
+                     estimator = "knn") {
   n <- length(effect)
   Lmax <- max(lags, history); t_idx <- (Lmax + 1):n; ne <- length(t_idx)
   ys <- effect / stats::sd(effect); xs <- cause / stats::sd(cause)
@@ -275,8 +373,8 @@ plot.dfvar <- function(x, main = NULL, ...) {
   }
   if (reference == "shift" && n_perm > 0L) {
     X <- .num_mat(vapply(lags, function(tau) xs[t_idx - tau], numeric(ne)))
-    base <- .cond_var_knn(pres, Cz, k)
-    stat <- function(M) vapply(seq_len(ncol(M)), function(j) base - .cond_var_knn(pres, cbind(Cz, M[, j]), k), 0)
+    base <- .cond_var(pres, Cz, k, estimator)
+    stat <- function(M) vapply(seq_len(ncol(M)), function(j) base - .cond_var(pres, cbind(Cz, M[, j]), k, estimator), 0)
     sp <- .cond_split(.cond_extra(Cz, ys, t_idx, history, own), X); det <- .determined(sp$r2)
     if (!det) {
       obs <- stat(X); shifts <- .cmi_shifts(ne, n_perm, by = length(lags))
@@ -295,7 +393,7 @@ plot.dfvar <- function(x, main = NULL, ...) {
     # local permutations of the order tests, is used for the directed test (the caller reports it).
     local_fallback <- TRUE
   } else local_fallback <- FALSE
-  tests <- lapply(lags, function(tau) .cv_test(pres, Cz, list(xs[t_idx - tau]), k, n_perm, k_perm, cores))
+  tests <- lapply(lags, function(tau) .cv_test(pres, Cz, list(xs[t_idx - tau]), k, n_perm, k_perm, cores, estimator))
   obs <- vapply(tests, `[[`, 0, "statistic"); pl <- vapply(tests, `[[`, 0, "p_value"); pl[obs <= 0] <- 1
   null_max <- do.call(pmax, lapply(tests, `[[`, "null"))        # max-statistic test over the lags
   b <- which.max(obs)

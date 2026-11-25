@@ -120,6 +120,23 @@
 #'   permutations (a message says so; `$extra$reference` records the
 #'   reference of every test). A directed test whose statistic is not
 #'   positive (no reduction of the conditional variance) has p value 1.
+#'   `estimator`: the conditional variance of the order and the directed
+#'   tests, `"knn"` (default; adaptive windows of `k` nearest neighbours) or
+#'   `"gaussian"` (the variance of the conditional normal distribution, from
+#'   least-squares regressions; see [df_variance()]). The windows of the
+#'   neighbours cannot resolve conditional variances below the spread of the
+#'   present value over a neighbourhood, which in linear and nearly
+#'   deterministic systems hides the higher orders; the Gaussian estimator
+#'   resolves them, and it is the estimator for such systems. `search`: how
+#'   the orders are found, `"greedy"` (the condition with the largest
+#'   reduction first, until no condition reduces the variance) or
+#'   `"minimal"` (the smallest number of conditions after which no further
+#'   one reduces it, the order of Table 1 of the paper: every split of the
+#'   conditions among the two series is examined); `"auto"` (default) is
+#'   `"minimal"` with the Gaussian estimator and `"greedy"` with the windows:
+#'   with them the minimal search is slower (by about half on the rotation
+#'   system), and the resolution of the windows, not the search, limits the
+#'   orders.
 #' * `"markov"`: `memory` (`"auto"` from the PACF), `iid_injection`
 #'   (`"allowed"` or `"forbidden"` in the decision table), `k_nn`, `n_bins`,
 #'   `n_markov`, `k`, `k_perm`. Lags are fixed to 1.
@@ -557,12 +574,14 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     }
   }
   # "dfe": the classifier knows binary Markov chains of short memory.  A continuous series that is cut at its mean
-  # is a binary sequence with long memory, which the classifier reads as the trace of a hidden process: 93 of 100
-  # pairs of independent first-order autoregressions (coefficient 0.5, 300 time points) were classified as common_cause.
+  # is a binary sequence with longer memory, and the class depends on that memory: of 100 pairs of independent
+  # first-order autoregressions (300 time points) 90 were classified as common_cause with the coefficient 0.5 and 2
+  # with the coefficient 0.9 (89 as independent).
   if (method == "dfe" && any(vapply(D, function(v) length(unique(v[is.finite(v)])) > 2L, TRUE)))
     warning(paste0("dfe: the series are not binary and are cut at their mean. The classifier is trained on binary Markov chains with a ",
                    "memory of one or two steps; a continuous autocorrelated series that is cut at its mean has longer memory, and ",
-                   "unrelated series of this kind are usually classified as common_cause."), call. = FALSE)
+                   "the class of such series depends on their persistence rather than on their relation (unrelated, moderately ",
+                   "autocorrelated series are mostly classified as common_cause)."), call. = FALSE)
   mn <- .method_info(method)$min_n
   if (!is.null(mn) && nrow(D) < mn)
     warning(sprintf("%s: the series have %d time points, fewer than the advisable minimum of %d for this method (see causal_methods()); the result is unreliable.",
@@ -899,6 +918,8 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   cmi_ref <- if (method %in% c("cmi", "cmi_lag")) .cmi_ref_arg(.method_args(method, method_args)$reference) else "local"
   te_ref <- if (method == "te") .te_ref_arg(.method_args("te", method_args)$reference) else "conditional"
   df_ref <- if (method == "df") .cmi_ref_arg(.method_args("df", method_args)$reference) else "local"
+  df_est <- if (method == "df") .df_est_arg(.method_args("df", method_args)$estimator) else "knn"
+  df_search <- if (method == "df") .df_search_arg(.method_args("df", method_args)$search, df_est) else "greedy"
   pair_lags <- rep(list(cand_lags), nrow(grid))                    # the lags scanned for every pair
   if (method %in% c("te", "pid") || (method %in% c("cmi", "cmi_lag") && cmi_ref == "shift") || (method == "df" && df_ref == "shift")) {
     # The shifts of a scan over L lags are spaced by L (see .te_scan()), so that a scan leaves S / L replicates of the S
@@ -966,7 +987,8 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
   if (method == "df") {
     return(.rcausality_df(all, grid, causes, effects, alpha, adjust, conditional, lags = pair_lags,
                           history = hist_vec, k = k, k_perm = k_perm, n_perm = n_perm,
-                          max_constr = as.integer(max_constr), cl = cl, cores = cores, reference = df_ref, own = own_vec))
+                          max_constr = as.integer(max_constr), cl = cl, cores = cores, reference = df_ref, own = own_vec,
+                          estimator = df_est, search = df_search))
   }
   if (method == "markov") {
     if (conditional) stop("method = \"markov\" supports pairwise analysis only.", call. = FALSE)
@@ -1226,7 +1248,8 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
 
 # df (degrees of freedom) method driver -------------------------------------
 .rcausality_df <- function(all, grid, causes, effects, alpha, adjust, conditional, lags, history,
-                           k, k_perm, n_perm, max_constr, cl, cores, reference = "local", own = NULL) {
+                           k, k_perm, n_perm, max_constr, cl, cores, reference = "local", own = NULL, estimator = "knn",
+                           search = "greedy") {
   n <- nrow(all); if (is.null(own)) own <- rep(0L, nrow(grid))
   sc <- .split_cores(nrow(grid), cores); pair_cores <- sc$outer; inner_cores <- sc$inner
   res <- .plapply(seq_len(nrow(grid)), function(i) {
@@ -1234,7 +1257,8 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     ctrl_names <- if (conditional) setdiff(names(all), c(cs, ef)) else character(0)
     g <- .df_pair(all[[ef]], all[[cs]],
                   if (length(ctrl_names)) as.matrix(all[, ctrl_names, drop = FALSE]) else NULL,
-                  if (is.list(lags)) lags[[i]] else lags, history[i], k, n_perm, k_perm, cores = inner_cores, reference = reference, own = own[i])
+                  if (is.list(lags)) lags[[i]] else lags, history[i], k, n_perm, k_perm, cores = inner_cores, reference = reference, own = own[i],
+                  estimator = estimator)
     list(row = data.frame(cause = cs, effect = ef, lag = g$lag, statistic = g$statistic,
                           df1 = NA_real_, df2 = NA_real_, p_value = g$p_value, bf10 = NA_real_,
                           effect_size = g$statistic, r2_gain = g$statistic, sign = NA_real_,
@@ -1261,9 +1285,9 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
     x <- all[[up$v1[i]]]; y <- all[[up$v2[i]]]
     xs <- x / stats::sd(x); ys <- y / stats::sd(y)
     cands <- stats::setNames(list(xs, ys), c(up$v1[i], up$v2[i]))
-    ox <- .df_order(cbind(xs[t_idx]), cands, t_idx, max_constr, k, alpha, 0.02, n_perm_o, k_perm, inner_cores)
-    oy <- .df_order(cbind(ys[t_idx]), cands, t_idx, max_constr, k, alpha, 0.02, n_perm_o, k_perm, inner_cores)
-    oj <- .df_order(cbind(xs[t_idx], ys[t_idx]), cands, t_idx, max_constr, k, alpha, 0.02, n_perm_o, k_perm, inner_cores)
+    ox <- .df_order(cbind(xs[t_idx]), cands, t_idx, max_constr, k, alpha, 0.02, n_perm_o, k_perm, inner_cores, estimator, search)
+    oy <- .df_order(cbind(ys[t_idx]), cands, t_idx, max_constr, k, alpha, 0.02, n_perm_o, k_perm, inner_cores, estimator, search)
+    oj <- .df_order(cbind(xs[t_idx], ys[t_idx]), cands, t_idx, max_constr, k, alpha, 0.02, n_perm_o, k_perm, inner_cores, estimator, search)
     uses <- function(o, nm) any(startsWith(o$chosen, paste0(nm, "[")))
     data.frame(var1 = up$v1[i], var2 = up$v2[i], df_x = ox$df, df_y = oy$df, df_joint = oj$df,
                conditions_x = paste(ox$chosen, collapse = " "), conditions_y = paste(oy$chosen, collapse = " "),

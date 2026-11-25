@@ -333,6 +333,8 @@ rd$df                                                      # orders of x, y, joi
 rd$classes
 dv <- df_variance(d$y); dv                                 # how many past lags determine y[t]?
 plot(dv)                                                   # the conditional sd against the window width
+# linear or nearly linear systems: the Gaussian conditional variance resolves higher orders
+rcausality(d, method = "df", seed = 1, method_args = list(estimator = "gaussian"))$df
 ```
 
 ### Bayesian dimensional causality (`"dc"`)
@@ -792,7 +794,8 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
 * **Where in the paper:** Definition 1 and Sect. 6.1 (determining the df by
   constraining the past within windows of width sigma_W), Table 2 (orders of
   x, y and the joint process decide the causal case), Sect. 6.4 with
-  Eqs. (25)-(30) and Figures 1-2 (linear rotation system, z drives x and y),
+  Eqs. (25)-(30) and Figures 1-2 and 4 (linear rotation system, z drives x
+  and y),
   Sect. 7 and Figures 6-7 (chickens and eggs).
 * **Code:** `inst/reproduce/telcs2025_df.R` (`sim_df_rotation()`,
   `df_variance()`, `rcausality(method = "df")`).
@@ -824,9 +827,19 @@ The geodesic checks return "direct driving" for tau_LY > tau_LX + tau_XY,
   (egg -> chicken), but with 53 observations neither reduction is
   significant (p = 0.29 and 0.30), so we do not claim the paper's
   conclusion is reproduced, only its direction.
-* **Not yet reproduced:** the joint x-y constraint scheme of Fig. 4
-  (three pairs, hidden common cause); the Table-2 reading in `rcausality()`
-  implements the common-cause row but has not been checked on this system.
+* **Result, x-y subsystem (Fig. 4, hidden common cause; one component of
+  each oscillator observed, n = 1500):** with
+  `method_args = list(estimator = "gaussian")`, the conditional normal
+  distribution with which the paper computes this linear example, the
+  orders are 4 for x1, 4 for y1 and 6 for the joint process (the paper's
+  three pairs), so that Table 2 reads a hidden common driver; in the
+  simulations of the accompanying paper for 20 of 20 nearly deterministic
+  and 15 of 20 stochastic pairs. The default windows of the nearest
+  neighbours cannot resolve the conditional variances below about 6 % of
+  the standard deviation at this length (in the nearly deterministic set
+  the joint order stopped at four in every data set examined), and they
+  read a hidden common driver for 5 and 3 of the same 20 pairs. The x-y constraint scheme of
+  Fig. 4 itself (the y pair first, then the x pairs) is not reproduced.
 
 ### Benko et al. (2024) -- Bayesian dimensional causality
 

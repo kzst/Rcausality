@@ -1,7 +1,9 @@
 # Rcausality 0.0.13
 
-Two corrections of the Bayesian variants. The frequentist results do not
-change; the Bayesian decisions of `"df"` can declare fewer links.
+Two corrections of the Bayesian variants and a second estimator for the
+degrees-of-freedom method. The results of the default settings do not
+change, except that the Bayesian decisions of `"df"` can declare fewer
+links.
 
 * **`lag = "first"` with the Minnesota prior.** `rcausality(...,
   bayes = TRUE, prior = "minnesota", lag = "first")` (and
@@ -22,6 +24,38 @@ change; the Bayesian decisions of `"df"` can declare fewer links.
   accompanying paper (two independent autoregressions with coefficient 0.9,
   300 time points), 38 of the 42 Bayes factors above three of the directed
   test belonged to such statistics.
+* **The Gaussian conditional variance for `"df"`.** With
+  `method_args = list(estimator = "gaussian")` (and
+  `df_variance(..., estimator = "gaussian")`) the method measures the
+  conditional variance by least-squares regressions on the constrained past
+  values: the variance of the conditional normal distribution, with which
+  the paper of the method computes its linear example (Telcs, Kurbucz and
+  Jakovac, 2025, Sections 6.2-6.4). The default estimator, the pooled
+  variance in windows of nearest neighbours, cannot resolve conditional
+  variances below the spread of the present value over a neighbourhood. On
+  the rotation system of that paper (`sim_df_rotation()`: two oscillators
+  with a hidden common driver, one component of each observed, 1500 time
+  points) the default reported the common driver for 5 of 20 nearly
+  deterministic and 3 of 20 stochastic pairs, the Gaussian estimator for 20
+  and 15 of the same pairs. The Gaussian estimator is meant for linear or
+  nearly linear systems.
+* **The minimal order search for `"df"`.** With
+  `method_args = list(search = "minimal")` the order of a process is the
+  smallest number of conditions on the two pasts after which no further
+  condition reduces the conditional variance (Table 1 of the paper); every
+  split of the conditions between the series is examined. The greedy search
+  of the earlier versions takes the condition with the largest reduction
+  first and can need more conditions in all, where the past of the other
+  series carries a hidden driver (on the nearly deterministic rotation
+  pairs: 17 of 20 common drivers with the Gaussian estimator and the greedy
+  search). The default, `"auto"`, is the minimal search with the Gaussian
+  estimator and the greedy search, as before, with the windows of the
+  neighbours.
+* **The warning of `"dfe"` for continuous series** no longer says that
+  unrelated series of this kind are usually classified as a common cause:
+  the class depends on their persistence (of 100 pairs of independent
+  first-order autoregressions of 300 time points, 90 were classified as
+  `common_cause` with the coefficient 0.5 and 2 with the coefficient 0.9).
 * **Documentation.** The documentation of `lag` states the largest order of
   the regression methods: `floor((n - 2 - d) / (2 + 2 K))` lags for `K`
   series of `n` time points (`d = d_max` for `"toda_yamamoto"`, otherwise

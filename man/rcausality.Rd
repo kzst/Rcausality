@@ -275,6 +275,23 @@ systems for which the method is made, a directed test uses local
 permutations (a message says so; \verb{$extra$reference} records the
 reference of every test). A directed test whose statistic is not
 positive (no reduction of the conditional variance) has p value 1.
+\code{estimator}: the conditional variance of the order and the directed
+tests, \code{"knn"} (default; adaptive windows of \code{k} nearest neighbours) or
+\code{"gaussian"} (the variance of the conditional normal distribution, from
+least-squares regressions; see \code{\link[=df_variance]{df_variance()}}). The windows of the
+neighbours cannot resolve conditional variances below the spread of the
+present value over a neighbourhood, which in linear and nearly
+deterministic systems hides the higher orders; the Gaussian estimator
+resolves them, and it is the estimator for such systems. \code{search}: how
+the orders are found, \code{"greedy"} (the condition with the largest
+reduction first, until no condition reduces the variance) or
+\code{"minimal"} (the smallest number of conditions after which no further
+one reduces it, the order of Table 1 of the paper: every split of the
+conditions among the two series is examined); \code{"auto"} (default) is
+\code{"minimal"} with the Gaussian estimator and \code{"greedy"} with the windows:
+with them the minimal search is slower (by about half on the rotation
+system), and the resolution of the windows, not the search, limits the
+orders.
 \item \code{"markov"}: \code{memory} (\code{"auto"} from the PACF), \code{iid_injection}
 (\code{"allowed"} or \code{"forbidden"} in the decision table), \code{k_nn}, \code{n_bins},
 \code{n_markov}, \code{k}, \code{k_perm}. Lags are fixed to 1.
