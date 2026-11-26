@@ -30,8 +30,9 @@
 #'   cause's own past and adds a contemporaneous test whose significance,
 #'   without lagged links, indicates dependence within the sampling interval:
 #'   a common shock or an instantaneous relation; class `common_cause`), `"te"` (binned
-#'   transfer entropy, circular-shift surrogates), `"pid"` (MAR-PID: unique
-#'   + synergistic information of the cause's past).
+#'   transfer entropy, surrogate test by conditional shifts of the cause;
+#'   circular shifts as an option), `"pid"` (MAR-PID: the unique and the
+#'   synergistic information of the cause's past).
 #' * State-space and dynamical-systems methods: `"ccm"` (convergent cross
 #'   mapping), `"dc"` (Bayesian dimensional causality), `"ccdh"`
 #'   (complexity-based causal discovery), `"hirata"` (recurrence plots),
@@ -162,8 +163,7 @@
 #'   distribution; `"HAC"` adds the autocovariances of the scores with
 #'   Bartlett weights up to lag `floor(4 (n / 100)^(2/9))` (Newey and West
 #'   1987), for regressions whose errors are not martingale differences, as
-#'   those of a linear regression on a nonlinear process (it rejects a true
-#'   null hypothesis somewhat too often in short series). The regressions
+#'   those of a linear regression on a nonlinear process. The regressions
 #'   are tested for heteroskedasticity
 #'   (White's test in the form of Koenker 1981; `$extra$het_p`), and a
 #'   warning names these options when the test rejects at the 0.1% level:
@@ -1112,13 +1112,15 @@ rcausality <- function(x, y = NULL, method = "granger", bayes = FALSE, cores = g
                          "is redundant given the conditioning series, or the series share a trend (difference them), or they behave as ",
                          "a deterministic system, in which the driver is reconstructed from the driven series. For deterministic ",
                          "systems the state-space methods (\"ccm\", \"dc\", \"cd\", \"ccdh\", \"hirata\") or \"te\" with circular ",
-                         "shifts (method_args = list(reference = \"circular\")) are the tools; a shorter history%s leaves the ",
-                         "reconstruction incomplete."),
+                         "shifts (method_args = list(reference = \"circular\")) are the tools%s."),
                   s$method, if (length(lab) > 3L) sprintf("%s and %d further links", paste(lab[1:3], collapse = ", "), length(lab) - 3L)
                             else paste(lab, collapse = ", "),
                   if (isTRUE(s$conditional)) " and of the other series" else "",
                   if (min(v[bad]) >= 0.9995) "all" else sprintf("at least %.1f%%", floor(1000 * min(v[bad])) / 10),
-                  if (s$method %in% c("cmi", "cmi_lag", "te", "pid")) " (history = 1)" else " (lag = 1)"), call. = FALSE)
+                  # (the surrogates of the information measures and of the kernel test condition on the own lags of the
+                  # effect, which determine the driver as well; the forest test with lag = 1 conditions on one value)
+                  if (s$method == "rf_granger") "; for the forest test a conditioning past of one value (lag = 1) leaves the reconstruction incomplete" else ""),
+          call. = FALSE)
   invisible(NULL)
 }
 # Coarse conditioning.  "te" conditions on a few symbols of the past of the effect, "pid" on its binary code, and the

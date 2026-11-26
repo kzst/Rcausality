@@ -179,10 +179,9 @@ by conditional shifts of the cause, see below), \code{"cmi_lag"} (Zlatniczki et 
 cause's own past and adds a contemporaneous test whose significance,
 without lagged links, indicates dependence within the sampling interval:
 a common shock or an instantaneous relation; class \code{common_cause}), \code{"te"} (binned
-transfer entropy, circular-shift surrogates), \code{"pid"} (MAR-PID: unique
-\itemize{
-\item synergistic information of the cause's past).
-}
+transfer entropy, surrogate test by conditional shifts of the cause;
+circular shifts as an option), \code{"pid"} (MAR-PID: the unique and the
+synergistic information of the cause's past).
 \item State-space and dynamical-systems methods: \code{"ccm"} (convergent cross
 mapping), \code{"dc"} (Bayesian dimensional causality), \code{"ccdh"}
 (complexity-based causal discovery), \code{"hirata"} (recurrence plots),
@@ -317,8 +316,7 @@ divided by the number of restrictions and referred to the F
 distribution; \code{"HAC"} adds the autocovariances of the scores with
 Bartlett weights up to lag \code{floor(4 (n / 100)^(2/9))} (Newey and West
 1987), for regressions whose errors are not martingale differences, as
-those of a linear regression on a nonlinear process (it rejects a true
-null hypothesis somewhat too often in short series). The regressions
+those of a linear regression on a nonlinear process. The regressions
 are tested for heteroskedasticity
 (White's test in the form of Koenker 1981; \verb{$extra$het_p}), and a
 warning names these options when the test rejects at the 0.1\% level:

@@ -61,7 +61,23 @@ links.
   series of `n` time points (`d = d_max` for `"toda_yamamoto"`, otherwise
   0). A larger requested order is reduced with a warning, as before, except
   in the Bayesian regression with the Minnesota prior. The README lists the
-  side conditions that the Bayesian surrogate decisions keep.
+  side conditions that the Bayesian surrogate decisions keep. The
+  description of `"te"` in `causal_methods()` and on the help page of
+  `rcausality()` names its default reference, the conditional shifts (it
+  said circular shifts), and the entry of `"pid"` on that page is one item
+  again. The same page no longer says that the test with `vcov = "HAC"`
+  rejects true null hypotheses somewhat too often in short series: with the
+  own lags of the effect in the regression, its rejection rates in the
+  simulations of the accompanying paper were close to the level from 100
+  time points on, as those of the F test (both exceed it for strongly
+  persistent series).
+* **The warning for a cause that the conditioning past determines** no
+  longer advises a shorter history for `"cmi"`, `"cmi_lag"`, `"te"` and
+  `"pid"`: their surrogates condition on the own lags of the effect, which
+  determine the driver of a noise-free map as well, so that a shorter
+  history of the statistic does not make the test informative. For
+  `"rf_granger"` the warning names `lag = 1`, with which the forest
+  conditions on one past value. No result changes.
 
 # Rcausality 0.0.12
 

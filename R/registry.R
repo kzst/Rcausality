@@ -73,7 +73,7 @@
   te             = list(label = "Transfer entropy, binned (Schreiber, 2000) with surrogate test",
                         short = "transfer entropy (Schreiber 2000)", stat = "TE.bits", family = "surrogate", conditional = FALSE,
                         type = "nonlinear", pooled = TRUE, min_n = 50L,
-                        desc = "binned transfer entropy with circular-shift surrogates",
+                        desc = "binned transfer entropy with conditional-shift surrogates (circular shifts as an option)",
                         ref = "Schreiber (2000)", tuning = c("bins", "history")),
   ccm            = list(label = "Convergent cross mapping (Sugihara et al., 2012)",
                         short = "convergent cross mapping (Sugihara et al. 2012)", stat = "rho", family = "surrogate",
